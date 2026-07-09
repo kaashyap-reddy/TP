@@ -1,0 +1,178 @@
+import { Fragment, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { Submission, SubmissionStatus, useAssignmentsStore } from '../store/assignmentsStore';
+import { useBatchesStore } from '../store/batchesStore';
+import { useToastStore } from '../store/toastStore';
+import { useAuditLogStore } from '../store/auditLogStore';
+import { useAuthStore } from '../store/authStore';
+
+const STATUS_BADGE: Record<SubmissionStatus, string> = {
+  'Not Started': 'bg-gray-100 text-gray-500',
+  'Under Review': 'bg-yellow-100 text-yellow-800',
+  Completed: 'bg-green-100 text-green-800',
+  Late: 'bg-red-100 text-red-800'
+};
+
+export default function AssignmentDetailPage() {
+  const { assignmentId } = useParams();
+  const navigate = useNavigate();
+  const assignment = useAssignmentsStore((s) => s.assignments.find((a) => a.id === assignmentId));
+  const updateSubmission = useAssignmentsStore((s) => s.updateSubmission);
+  const batch = useBatchesStore((s) => s.batches.find((b) => b.id === assignment?.batchId));
+  const showToast = useToastStore((s) => s.showToast);
+  const logEvent = useAuditLogStore((s) => s.logEvent);
+  const role = useAuthStore((s) => s.role);
+
+  function goBackToAssignments() {
+    navigate(role ? `/${role}` : '/', { state: { tab: 'assignments' } });
+  }
+
+  const [gradingTrainee, setGradingTrainee] = useState<string | null>(null);
+  const [scoreInput, setScoreInput] = useState('');
+  const [feedbackInput, setFeedbackInput] = useState('');
+  const [statusInput, setStatusInput] = useState<SubmissionStatus>('Completed');
+
+  if (!assignment) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 text-gray-600">
+        <p className="mb-4">Assignment not found.</p>
+        <button onClick={() => navigate(-1)} className="text-blue-600 font-medium hover:underline">
+          ‹ Go back
+        </button>
+      </div>
+    );
+  }
+
+  function startGrading(traineeName: string, current: Submission) {
+    setGradingTrainee(traineeName);
+    setScoreInput(current.grade !== null ? String(current.grade) : '');
+    setFeedbackInput(current.feedback);
+    setStatusInput(current.status === 'Not Started' ? 'Completed' : current.status);
+  }
+
+  function saveGrade(traineeName: string) {
+    const grade = scoreInput.trim() === '' ? null : Number(scoreInput);
+    updateSubmission(assignment!.id, traineeName, { grade, feedback: feedbackInput, status: statusInput });
+    logEvent('Grading', `${traineeName} was graded ${grade ?? '—'}/100 on "${assignment!.title}".`);
+    showToast('Grade saved');
+    setGradingTrainee(null);
+  }
+
+  const completedCount = assignment.submissions.filter((s) => s.status === 'Completed').length;
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <header className="bg-white border-b border-gray-200 px-8 py-5">
+        <button onClick={goBackToAssignments} className="text-sm text-blue-600 hover:underline font-medium mb-3">
+          ‹ Back to Assignments
+        </button>
+        <div className="flex items-start justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">{assignment.title}</h1>
+            <p className="text-sm text-gray-500 mt-1">
+              {batch?.name ?? assignment.batchId} • Facilitator: {assignment.facilitator} • Deadline: {assignment.deadline}
+            </p>
+          </div>
+          <span className="text-sm bg-blue-50 text-blue-700 font-bold px-3 py-1.5 rounded-full">
+            {completedCount} / {assignment.submissions.length} graded
+          </span>
+        </div>
+        {assignment.description && <p className="text-sm text-gray-600 mt-3 max-w-2xl">{assignment.description}</p>}
+      </header>
+
+      <div className="p-8">
+        <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
+            <h2 className="font-bold text-gray-800">Batch Roster & Submissions</h2>
+          </div>
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
+                <th className="px-6 py-3 font-medium">Trainee</th>
+                <th className="px-6 py-3 font-medium">Status</th>
+                <th className="px-6 py-3 font-medium">Submitted On</th>
+                <th className="px-6 py-3 font-medium">Grade</th>
+                <th className="px-6 py-3 font-medium">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200 text-sm">
+              {assignment.submissions.map((s) => (
+                <Fragment key={s.traineeName}>
+                  <tr className="hover:bg-gray-50">
+                    <td className="px-6 py-4 font-medium text-gray-800">{s.traineeName}</td>
+                    <td className="px-6 py-4">
+                      <span className={`px-2 py-1 rounded-full font-bold text-xs ${STATUS_BADGE[s.status]}`}>{s.status}</span>
+                    </td>
+                    <td className="px-6 py-4 text-gray-500">{s.submittedOn}</td>
+                    <td className="px-6 py-4 font-bold text-gray-800">{s.grade !== null ? `${s.grade}/100` : '-'}</td>
+                    <td className="px-6 py-4">
+                      <button
+                        onClick={() => (gradingTrainee === s.traineeName ? setGradingTrainee(null) : startGrading(s.traineeName, s))}
+                        className={`text-xs font-bold rounded-full px-3 py-1.5 border transition-all duration-150 hover:scale-105 active:scale-95 ${
+                          gradingTrainee === s.traineeName
+                            ? 'text-gray-600 border-gray-200 bg-gray-50 hover:bg-gray-100'
+                            : 'text-blue-600 border-blue-200 bg-blue-50 hover:bg-blue-100'
+                        }`}
+                      >
+                        {gradingTrainee === s.traineeName ? 'Close' : 'Grade'}
+                      </button>
+                    </td>
+                  </tr>
+                  {gradingTrainee === s.traineeName && (
+                    <tr>
+                      <td colSpan={5} className="px-6 py-5 bg-blue-50/40 border-t border-blue-100">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div>
+                            <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Score (0-100)</label>
+                            <input
+                              type="number"
+                              min={0}
+                              max={100}
+                              value={scoreInput}
+                              onChange={(e) => setScoreInput(e.target.value)}
+                              className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 font-bold"
+                            />
+                          </div>
+                          <div className="md:col-span-1">
+                            <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Status</label>
+                            <select
+                              value={statusInput}
+                              onChange={(e) => setStatusInput(e.target.value as SubmissionStatus)}
+                              className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg outline-none"
+                            >
+                              <option>Not Started</option>
+                              <option>Under Review</option>
+                              <option>Completed</option>
+                              <option>Late</option>
+                            </select>
+                          </div>
+                          <div className="md:col-span-1 flex items-end">
+                            <button
+                              onClick={() => saveGrade(s.traineeName)}
+                              className="w-full py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700"
+                            >
+                              Save Grade
+                            </button>
+                          </div>
+                          <div className="md:col-span-3">
+                            <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Feedback</label>
+                            <textarea
+                              value={feedbackInput}
+                              onChange={(e) => setFeedbackInput(e.target.value)}
+                              className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg outline-none h-20"
+                              placeholder="Write constructive feedback here..."
+                            />
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
