@@ -10,6 +10,7 @@ import { useToastStore } from '../store/toastStore';
 import { Announcement, useAnnouncementsStore } from '../store/announcementsStore';
 import { useDiscussionsStore } from '../store/discussionsStore';
 import ConfirmDialog from '../components/ConfirmDialog';
+import Modal from '../components/Modal';
 import { useAuthStore } from '../store/authStore';
 import { clearSessionStorage } from '../utils/authSession';
 import { dateStrToIso, formatTimeRange, isoToDateStr, minutesToLabel, parseTimeRange } from '../utils/sessionTime';
@@ -184,12 +185,6 @@ export default function FacilitatorDashboardPage() {
   const [feedbackRating, setFeedbackRating] = useState('');
   const [feedbackComment, setFeedbackComment] = useState('');
 
-  useEscapeKey(() => { setAnnouncementModalOpen(false); setAnnouncementFormError(''); }, announcementModalOpen);
-  useEscapeKey(() => { setSessionModalOpen(false); setSessionFormError(''); }, sessionModalOpen);
-  useEscapeKey(() => { setAssignmentModalOpen(false); setAssignmentFormError(''); }, assignmentModalOpen);
-  useEscapeKey(() => setResourceModalOpen(false), resourceModalOpen);
-  useEscapeKey(() => setNewThreadModalOpen(false), newThreadModalOpen);
-  useEscapeKey(() => setExtendDeadlineModalOpen(false), extendDeadlineModalOpen);
   useEscapeKey(() => setQuickActionOpen(false), quickActionOpen);
   useEscapeKey(() => setThreadMenuOpenId(null), threadMenuOpenId !== null);
   useEscapeKey(() => setNotificationOpen(false), notificationOpen);
@@ -1472,9 +1467,12 @@ export default function FacilitatorDashboardPage() {
       </main>
 
       {/* Create Announcement Modal */}
-      <div className={`fixed inset-0 bg-gray-900 bg-opacity-50 ${announcementModalOpen ? 'flex' : 'hidden'} items-center justify-center z-50`} role="dialog" aria-modal="true" onClick={() => { setAnnouncementModalOpen(false); setAnnouncementFormError(''); }}>
-        <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
-          <h2 className="text-xl font-bold mb-4">Create Announcement</h2>
+      <Modal
+        open={announcementModalOpen}
+        onClose={() => { setAnnouncementModalOpen(false); setAnnouncementFormError(''); }}
+        title="Create Announcement"
+        maxWidth="md"
+      >
           <div className="space-y-4">
             {announcementFormError && (
               <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{announcementFormError}</div>
@@ -1500,13 +1498,15 @@ export default function FacilitatorDashboardPage() {
             <button onClick={() => { setAnnouncementModalOpen(false); setAnnouncementFormError(''); }} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium">Cancel</button>
             <SavingButton onClick={handlePostAnnouncement} isSaving={announcementFormSaving} label="Post" className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium" />
           </div>
-        </div>
-      </div>
+      </Modal>
 
       {/* Schedule Session Modal (repurposed Schedule Meeting modal) */}
-      <div className={`fixed inset-0 bg-gray-900 bg-opacity-50 ${sessionModalOpen ? 'flex' : 'hidden'} items-center justify-center z-50`} role="dialog" aria-modal="true" onClick={() => { setSessionModalOpen(false); setSessionFormError(''); }}>
-        <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
-          <h2 className="text-xl font-bold mb-4">Schedule Meeting</h2>
+      <Modal
+        open={sessionModalOpen}
+        onClose={() => { setSessionModalOpen(false); setSessionFormError(''); }}
+        title="Schedule Meeting"
+        maxWidth="md"
+      >
           <div className="space-y-4">
             {sessionFormError && (
               <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{sessionFormError}</div>
@@ -1552,13 +1552,15 @@ export default function FacilitatorDashboardPage() {
             <button onClick={() => { setSessionModalOpen(false); setSessionFormError(''); }} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium">Cancel</button>
             <SavingButton onClick={handleCreateSession} isSaving={sessionFormSaving} label="Schedule" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium" />
           </div>
-        </div>
-      </div>
+      </Modal>
 
       {/* Create Assignment Modal */}
-      <div className={`fixed inset-0 bg-gray-900 bg-opacity-50 ${assignmentModalOpen ? 'flex' : 'hidden'} items-center justify-center z-50`} role="dialog" aria-modal="true" onClick={() => { setAssignmentModalOpen(false); setAssignmentFormError(''); }}>
-        <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
-          <h2 className="text-xl font-bold mb-4">Create Assignment</h2>
+      <Modal
+        open={assignmentModalOpen}
+        onClose={() => { setAssignmentModalOpen(false); setAssignmentFormError(''); }}
+        title="Create Assignment"
+        maxWidth="md"
+      >
           <div className="space-y-4">
             {assignmentFormError && (
               <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{assignmentFormError}</div>
@@ -1602,13 +1604,10 @@ export default function FacilitatorDashboardPage() {
             <button onClick={() => { setAssignmentModalOpen(false); setAssignmentFormError(''); }} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium">Cancel</button>
             <SavingButton onClick={handleCreateAssignment} isSaving={assignmentFormSaving} label="Create" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium" />
           </div>
-        </div>
-      </div>
+      </Modal>
 
       {/* Upload Resource Modal */}
-      <div className={`fixed inset-0 bg-gray-900 bg-opacity-50 ${resourceModalOpen ? 'flex' : 'hidden'} items-center justify-center z-50`} role="dialog" aria-modal="true" onClick={() => setResourceModalOpen(false)}>
-        <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
-          <h2 className="text-xl font-bold mb-4">Upload Resource</h2>
+      <Modal open={resourceModalOpen} onClose={() => setResourceModalOpen(false)} title="Upload Resource" maxWidth="md">
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
@@ -1658,13 +1657,10 @@ export default function FacilitatorDashboardPage() {
             <button onClick={() => setResourceModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium">Cancel</button>
             <button onClick={handleUploadResource} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">Upload</button>
           </div>
-        </div>
-      </div>
+      </Modal>
 
       {/* New Discussion Modal */}
-      <div className={`fixed inset-0 bg-gray-900 bg-opacity-50 ${newThreadModalOpen ? 'flex' : 'hidden'} items-center justify-center z-50`} role="dialog" aria-modal="true" onClick={() => setNewThreadModalOpen(false)}>
-        <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
-          <h2 className="text-xl font-bold mb-4">New Discussion</h2>
+      <Modal open={newThreadModalOpen} onClose={() => setNewThreadModalOpen(false)} title="New Discussion" maxWidth="md">
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
@@ -1679,14 +1675,16 @@ export default function FacilitatorDashboardPage() {
             <button onClick={() => setNewThreadModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium">Cancel</button>
             <button onClick={handleCreateThread} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium">Create</button>
           </div>
-        </div>
-      </div>
+      </Modal>
 
       {/* Bulk Extend Deadline Modal */}
-      <div className={`fixed inset-0 bg-gray-900 bg-opacity-50 ${extendDeadlineModalOpen ? 'flex' : 'hidden'} items-center justify-center z-50`} role="dialog" aria-modal="true" onClick={() => setExtendDeadlineModalOpen(false)}>
-        <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
-          <h2 className="text-lg font-bold mb-1">Extend Deadline</h2>
-          <p className="text-sm text-gray-500 mb-4">New deadline for {selectedAssignmentIds.size} selected assignment(s).</p>
+      <Modal
+        open={extendDeadlineModalOpen}
+        onClose={() => setExtendDeadlineModalOpen(false)}
+        title="Extend Deadline"
+        subtitle={`New deadline for ${selectedAssignmentIds.size} selected assignment(s).`}
+        maxWidth="sm"
+      >
           <input
             type="date"
             value={extendDeadlineDraft}
@@ -1697,9 +1695,7 @@ export default function FacilitatorDashboardPage() {
             <button onClick={() => setExtendDeadlineModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium">Cancel</button>
             <button onClick={confirmBulkExtendAssignmentDeadline} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium">Apply</button>
           </div>
-        </div>
-      </div>
-
+      </Modal>
 
       <ConfirmDialog
         open={deleteThreadConfirmOpen}
