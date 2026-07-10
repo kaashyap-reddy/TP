@@ -37,8 +37,9 @@ import Pagination, { paginate } from '../components/Pagination';
 import BarChartComponent, { BarChartDatum } from '../components/BarChart';
 import SavingButton from '../components/SavingButton';
 import Table from '../components/Table';
+import DashboardLayout from '../layouts/DashboardLayout';
 import type { AdminTabId } from '../constants/navigation';
-import { ADMIN_HEADER_TITLES } from '../constants/navigation';
+import { ADMIN_HEADER_TITLES, ADMIN_BRAND_LABEL, ADMIN_NAV_ITEMS } from '../constants/navigation';
 import { PRIORITY_STYLES } from '../constants/announcements';
 import { ROUTES } from '../constants/routes';
 
@@ -74,11 +75,6 @@ const PROGRAM_COLORS: Record<string, string> = {
   'AI ML': 'bg-purple-50/60 text-purple-800',
   'UI/UX': 'bg-pink-50/60 text-pink-800'
 };
-
-const navItemClass = (active: boolean) =>
-  active
-    ? 'flex items-center px-4 py-2.5 bg-blue-50 text-blue-700 rounded-lg font-medium'
-    : 'flex items-center px-4 py-2.5 text-gray-600 hover:bg-gray-50 rounded-lg font-medium';
 
 export type ReportType = 'attendance' | 'assignment' | 'performance' | 'feedback' | 'session' | 'resource' | 'audit';
 
@@ -1019,108 +1015,60 @@ export default function AdminDashboardPage() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden text-gray-800" style={{ backgroundColor: '#f8fafc' }}>
-      {/* Sidebar */}
-      <aside className="w-64 bg-white border-r border-gray-200 flex flex-col z-20">
-        <div className="h-16 flex items-center px-6 border-b border-gray-200">
-          <span className="text-lg font-bold text-blue-600">Admin Portal</span>
-        </div>
-        <nav className="flex-1 overflow-y-auto p-4 space-y-1">
-          <a href="#" onClick={(e) => { e.preventDefault(); setActiveTab('analytics'); }} className={navItemClass(activeTab === 'analytics')}>
-            <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" /></svg>
-            Real-time Analytics
-          </a>
-          <a href="#" onClick={(e) => { e.preventDefault(); setActiveTab('batches'); }} className={navItemClass(activeTab === 'batches')}>
-            <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
-            Batch Management
-          </a>
-          <a href="#" onClick={(e) => { e.preventDefault(); setActiveTab('assignments'); }} className={navItemClass(activeTab === 'assignments')}>
-            <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
-            Assignments
-          </a>
-          <a href="#" onClick={(e) => { e.preventDefault(); setActiveTab('announcements'); }} className={navItemClass(activeTab === 'announcements')}>
-            <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" /></svg>
-            Announcements
-          </a>
-          <a href="#" onClick={(e) => { e.preventDefault(); setActiveTab('sessions'); }} className={navItemClass(activeTab === 'sessions')}>
-            <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
-            Sessions
-          </a>
-          <a href="#" onClick={(e) => { e.preventDefault(); setActiveTab('feedback'); }} className={navItemClass(activeTab === 'feedback')}>
-            <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-            Feedback
-          </a>
-          <a href="#" onClick={(e) => { e.preventDefault(); setActiveTab('reports'); }} className={navItemClass(activeTab === 'reports')}>
-            <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-            Reports
-          </a>
-          <a href="#" onClick={(e) => { e.preventDefault(); setActiveTab('resources'); }} className={navItemClass(activeTab === 'resources')}>
-            <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
-            Global Resources
-          </a>
-          <a href="#" onClick={(e) => { e.preventDefault(); setActiveTab('logs'); }} className={navItemClass(activeTab === 'logs')}>
-            <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-            Audit Logs
-          </a>
-        </nav>
-        <div className="p-4 border-t border-gray-200">
-          <button onClick={() => setLogoutConfirmOpen(true)} className="flex items-center px-4 py-2 text-gray-600 hover:text-red-600 transition-colors w-full">
-            <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
-            Logout
-          </button>
-        </div>
-      </aside>
-
-      {/* Main Content */}
-      <main className="flex-1 flex flex-col overflow-hidden">
-        {/* Header */}
-        <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8 z-10 shadow-sm">
-          <h1 className="text-xl font-bold text-gray-800 tracking-tight">{HEADER_TITLES[activeTab]}</h1>
-          <div className="flex items-center space-x-6">
+    <DashboardLayout
+      brandLabel={ADMIN_BRAND_LABEL}
+      navItems={ADMIN_NAV_ITEMS}
+      activeTab={activeTab}
+      onTabChange={setActiveTab}
+      onLogout={() => setLogoutConfirmOpen(true)}
+      headerTitle={HEADER_TITLES[activeTab]}
+      headerTitleClassName="text-xl font-bold text-gray-800 tracking-tight"
+      headerExtra={
+        <button
+          onClick={() => setGlobalSearchOpen(true)}
+          aria-label="Global search"
+          className="flex items-center gap-2 text-sm text-gray-400 hover:text-gray-600 border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z" /></svg>
+          Search
+          <kbd className="text-[10px] font-bold border border-gray-300 rounded px-1">Ctrl K</kbd>
+        </button>
+      }
+      headerRight={
+        <>
+          <div className="relative" ref={notificationMenuRef}>
             <button
-              onClick={() => setGlobalSearchOpen(true)}
-              aria-label="Global search"
-              className="flex items-center gap-2 text-sm text-gray-400 hover:text-gray-600 border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
+              onClick={toggleNotificationMenu}
+              className="relative text-gray-500 hover:text-gray-700 p-1 rounded-lg hover:bg-gray-100 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
+              aria-label="Notifications"
+              aria-haspopup="true"
+              aria-expanded={notificationOpen}
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z" /></svg>
-              Search
-              <kbd className="text-[10px] font-bold border border-gray-300 rounded px-1">Ctrl K</kbd>
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
+              {unreadCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1">{unreadCount}</span>
+              )}
             </button>
-            {/* Notifications */}
-            <div className="relative" ref={notificationMenuRef}>
-              <button
-                onClick={toggleNotificationMenu}
-                className="relative text-gray-500 hover:text-gray-700 p-1 rounded-lg hover:bg-gray-100 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
-                aria-label="Notifications"
-                aria-haspopup="true"
-                aria-expanded={notificationOpen}
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
-                {unreadCount > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1">{unreadCount}</span>
-                )}
-              </button>
-              <div className={`${notificationOpen ? '' : 'hidden'} absolute right-0 mt-2 bg-white rounded-xl shadow-xl border border-gray-200 z-50 overflow-hidden`}>
-                <NotificationPanel
-                  entries={auditEntries}
-                  readIds={readLogIds}
-                  onMarkRead={markNotificationRead}
-                  onMarkAllRead={markAllNotificationsRead}
-                  onViewAll={() => { setActiveTab('logs'); setNotificationOpen(false); }}
-                />
-              </div>
+            <div className={`${notificationOpen ? '' : 'hidden'} absolute right-0 mt-2 bg-white rounded-xl shadow-xl border border-gray-200 z-50 overflow-hidden`}>
+              <NotificationPanel
+                entries={auditEntries}
+                readIds={readLogIds}
+                onMarkRead={markNotificationRead}
+                onMarkAllRead={markAllNotificationsRead}
+                onViewAll={() => { setActiveTab('logs'); setNotificationOpen(false); }}
+              />
             </div>
-
-            {/* Profile */}
-            <ProfileDropdown
-              role="admin"
-              onSignOut={() => setLogoutConfirmOpen(true)}
-              forceClose={notificationOpen}
-              onOpenChange={(open) => { if (open) setNotificationOpen(false); }}
-            />
           </div>
-        </header>
 
+          <ProfileDropdown
+            role="admin"
+            onSignOut={() => setLogoutConfirmOpen(true)}
+            forceClose={notificationOpen}
+            onOpenChange={(open) => { if (open) setNotificationOpen(false); }}
+          />
+        </>
+      }
+    >
         {/* Content Area */}
         <div className="flex-1 overflow-y-auto p-8 relative">
           {tabLoading && (
@@ -2084,7 +2032,6 @@ export default function AdminDashboardPage() {
           </div>
 
         </div>
-      </main>
 
       {/* Modals */}
 
@@ -2555,6 +2502,6 @@ export default function AdminDashboardPage() {
         items={globalSearchItems}
         onSelect={handleGlobalSearchSelect}
       />
-    </div>
+    </DashboardLayout>
   );
 }
