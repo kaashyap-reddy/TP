@@ -35,6 +35,20 @@ export function effectiveStatus(assignment: Assignment): AssignmentStatus | 'Ove
   return isOverdue(assignment) ? 'Overdue' : assignment.status;
 }
 
+const VALID_ASSIGNMENT_STATUSES: AssignmentStatus[] = ['Draft', 'Open', 'Closed'];
+const VALID_SUBMISSION_STATUSES: SubmissionStatus[] = ['Not Started', 'Under Review', 'Completed', 'Late'];
+
+function sanitizeAssignment(a: Assignment): Assignment {
+  return {
+    ...a,
+    status: VALID_ASSIGNMENT_STATUSES.includes(a.status) ? a.status : 'Open',
+    submissions: (a.submissions ?? []).map((s) => ({
+      ...s,
+      status: VALID_SUBMISSION_STATUSES.includes(s.status) ? s.status : 'Not Started'
+    }))
+  };
+}
+
 function seedSubmissions(batchId: string, pattern: Array<[SubmissionStatus, string, number | null, string]>): Submission[] {
   const members = INITIAL_BATCHES.find((b) => b.id === batchId)?.members ?? [];
   return members.map((traineeName, i) => {
@@ -235,7 +249,14 @@ export const useAssignmentsStore = create<AssignmentsState>()(
     }));
   }
     }),
-    { name: 'tp-assignments' }
+    {
+      name: 'tp-assignments',
+      merge: (persistedState, currentState) => {
+        const persisted = persistedState as Partial<AssignmentsState> | undefined;
+        if (!Array.isArray(persisted?.assignments)) return currentState;
+        return { ...currentState, ...persisted, assignments: persisted.assignments.map(sanitizeAssignment) };
+      }
+    }
   )
 );
 

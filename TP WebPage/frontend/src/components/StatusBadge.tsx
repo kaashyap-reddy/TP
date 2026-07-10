@@ -24,6 +24,7 @@ const DEFAULT_COLORS: Record<string, string> = {
 };
 
 export default function StatusBadge({ status, colorMap }: StatusBadgeProps) {
-  const classes = (colorMap ?? DEFAULT_COLORS)[status] ?? 'bg-gray-100 text-gray-600';
-  return <span className={`px-2.5 py-1 rounded-full font-bold text-xs whitespace-nowrap ${classes}`}>{status}</span>;
+  const label = status && status.trim() ? status : 'Unknown';
+  const classes = (colorMap ?? DEFAULT_COLORS)[label] ?? 'bg-gray-100 text-gray-600';
+  return <span className={`px-2.5 py-1 rounded-full font-bold text-xs whitespace-nowrap ${classes}`}>{label}</span>;
 }

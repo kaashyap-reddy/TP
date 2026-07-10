@@ -11,6 +11,8 @@ const AdminDashboardPage = lazy(() => import('./pages/AdminDashboardPage'));
 const FacilitatorDashboardPage = lazy(() => import('./pages/FacilitatorDashboardPage'));
 const TraineeDashboardPage = lazy(() => import('./pages/TraineeDashboardPage'));
 const AssignmentDetailPage = lazy(() => import('./pages/AssignmentDetailPage'));
+const AccountSettingsPage = lazy(() => import('./pages/AccountSettingsPage'));
+const TraineeProfilePage = lazy(() => import('./pages/TraineeProfilePage'));
 
 function RouteLoadingFallback() {
   return (
@@ -64,6 +66,38 @@ export default function App() {
             }
           />
           <Route path="/assignments/:assignmentId" element={<AssignmentDetailPage />} />
+          <Route
+            path="/facilitator/trainees/:traineeName"
+            element={
+              <RequireAuth role="facilitator">
+                <TraineeProfilePage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/admin/account-settings"
+            element={
+              <RequireAuth role="admin">
+                <AccountSettingsPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/facilitator/account-settings"
+            element={
+              <RequireAuth role="facilitator">
+                <AccountSettingsPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/trainee/account-settings"
+            element={
+              <RequireAuth role="trainee">
+                <AccountSettingsPage />
+              </RequireAuth>
+            }
+          />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>

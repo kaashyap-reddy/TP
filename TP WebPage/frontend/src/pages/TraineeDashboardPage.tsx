@@ -18,6 +18,7 @@ import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useNotifications } from '../hooks/useNotifications';
 import ConfirmDialog from '../components/ConfirmDialog';
 import NotificationPanel from '../components/NotificationPanel';
+import ProfileDropdown from '../components/ProfileDropdown';
 import EmptyState from '../components/EmptyState';
 import StatusBadge from '../components/StatusBadge';
 import TrendIndicator from '../components/TrendIndicator';
@@ -73,14 +74,10 @@ export default function TraineeDashboardPage() {
   const threads = useDiscussionsStore((s) => s.threads);
   const createThread = useDiscussionsStore((s) => s.createThread);
   const addMessage = useDiscussionsStore((s) => s.addMessage);
-  const { email: authEmail, displayName, updateDisplayName, clearSession } = useAuthStore();
+  const { displayName, clearSession } = useAuthStore();
 
   const [activeTab, setActiveTab] = useState<TabId>('dashboard');
   const markedReadRef = useRef<Set<string>>(new Set());
-  const [profileOpen, setProfileOpen] = useState(false);
-  const profileMenuRef = useRef<HTMLDivElement>(null);
-  const [accountSettingsOpen, setAccountSettingsOpen] = useState(false);
-  const [displayNameDraft, setDisplayNameDraft] = useState(displayName ?? '');
 
   useEffect(() => {
     if (activeTab !== 'announcements') return;
@@ -94,7 +91,6 @@ export default function TraineeDashboardPage() {
   const [notificationOpen, setNotificationOpen] = useState(false);
   const notificationMenuRef = useRef<HTMLDivElement>(null);
   useClickOutside(notificationMenuRef, () => setNotificationOpen(false), notificationOpen);
-  useClickOutside(profileMenuRef, () => setProfileOpen(false), profileOpen);
   const { readLogIds, notificationEntries, unreadCount, markNotificationRead, markAllNotificationsRead } = useNotifications(auditEntries);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
 
@@ -130,8 +126,6 @@ export default function TraineeDashboardPage() {
   useEscapeKey(() => setNewThreadModalOpen(false), newThreadModalOpen);
   useEscapeKey(() => setResourcePreview(null), resourcePreview !== null);
   useEscapeKey(() => setNotificationOpen(false), notificationOpen);
-  useEscapeKey(() => setProfileOpen(false), profileOpen);
-  useEscapeKey(() => setAccountSettingsOpen(false), accountSettingsOpen);
 
   function hiddenUnless(tab: TabId) {
     return activeTab === tab ? '' : 'hidden';
@@ -221,13 +215,6 @@ export default function TraineeDashboardPage() {
     () => Object.keys(sessionsByDate).sort((a, b) => new Date(a).getTime() - new Date(b).getTime()),
     [sessionsByDate]
   );
-
-  function saveAccountSettings() {
-    if (!displayNameDraft.trim()) return;
-    updateDisplayName(displayNameDraft.trim());
-    showToast('Account settings updated');
-    setAccountSettingsOpen(false);
-  }
 
   function openSubmitModal(assignmentId: string, batchId: string) {
     setSubmitTarget({ assignmentId, batchId });
@@ -387,59 +374,7 @@ export default function TraineeDashboardPage() {
               </div>
             </div>
 
-            <div className="relative" ref={profileMenuRef}>
-              <button
-                onClick={() => setProfileOpen((open) => !open)}
-                className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white font-semibold shadow-inner hover:ring-2 hover:ring-blue-300 transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500"
-                aria-label="Account menu"
-                aria-haspopup="true"
-                aria-expanded={profileOpen}
-              >
-                {(displayName ?? 'U').charAt(0).toUpperCase()}
-              </button>
-              <div className={`${profileOpen ? '' : 'hidden'} absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-xl border border-gray-200 z-50 overflow-hidden`}>
-                <div className="bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-800 px-5 py-5 text-white relative overflow-hidden">
-                  <div className="absolute -top-8 -right-8 w-24 h-24 bg-white/10 rounded-full"></div>
-                  <div className="flex items-center space-x-3 relative z-10">
-                    <div className="w-14 h-14 bg-white/20 rounded-full flex items-center justify-center text-xl font-bold ring-2 ring-white/30">
-                      {(displayName ?? 'U').charAt(0).toUpperCase()}
-                    </div>
-                    <div>
-                      <div className="font-bold text-base">{displayName ?? 'Trainee'}</div>
-                      <div className="text-blue-100 text-xs">Trainee</div>
-                      <div className="mt-1.5 inline-flex items-center gap-1 bg-white/15 rounded-full px-2 py-0.5 text-[10px] font-semibold">
-                        <span className="w-1.5 h-1.5 bg-green-400 rounded-full"></span>
-                        Active now
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="p-4 space-y-2.5 text-sm">
-                  <div className="flex items-center justify-between">
-                    <span className="text-gray-400 flex items-center gap-2 text-xs uppercase font-bold tracking-wide">
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
-                      Email
-                    </span>
-                    <span className="font-medium text-gray-800">{authEmail ?? 'trainee@company.com'}</span>
-                  </div>
-                </div>
-                <div className="px-4 pb-4 space-y-1">
-                  <button
-                    onClick={() => {
-                      setDisplayNameDraft(displayName ?? '');
-                      setAccountSettingsOpen(true);
-                      setProfileOpen(false);
-                    }}
-                    className="block w-full text-center py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg font-medium transition-colors"
-                  >
-                    Account Settings
-                  </button>
-                  <button onClick={() => setLogoutConfirmOpen(true)} className="block w-full text-center py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg font-medium transition-colors">
-                    Sign Out
-                  </button>
-                </div>
-              </div>
-            </div>
+            <ProfileDropdown role="trainee" onSignOut={() => setLogoutConfirmOpen(true)} />
           </div>
         </header>
 
@@ -992,31 +927,6 @@ export default function TraineeDashboardPage() {
         onCancel={() => setLogoutConfirmOpen(false)}
       />
 
-      {/* Account Settings Modal */}
-      <div className={`fixed inset-0 bg-gray-900 bg-opacity-50 ${accountSettingsOpen ? 'flex' : 'hidden'} items-center justify-center z-50`} role="dialog" aria-modal="true" onClick={() => setAccountSettingsOpen(false)}>
-        <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
-          <h2 className="text-lg font-bold mb-4">Account Settings</h2>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Display Name</label>
-              <input
-                type="text"
-                value={displayNameDraft}
-                onChange={(e) => setDisplayNameDraft(e.target.value)}
-                className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-              <input type="email" value={authEmail ?? ''} readOnly className="w-full px-3 py-2 border rounded-lg outline-none bg-gray-50 text-gray-500" />
-            </div>
-          </div>
-          <div className="flex justify-end space-x-3 mt-6">
-            <button onClick={() => setAccountSettingsOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium">Cancel</button>
-            <button onClick={saveAccountSettings} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium">Save</button>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }

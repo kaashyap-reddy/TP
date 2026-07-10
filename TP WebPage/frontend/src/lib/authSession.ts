@@ -33,3 +33,15 @@ export function clearSessionStorage() {
   localStorage.removeItem(STORAGE_KEY);
   sessionStorage.removeItem(STORAGE_KEY);
 }
+
+export function updateStoredSession(patch: Partial<StoredSession>) {
+  const current = readSession();
+  if (!current) return;
+  const updated = { ...current, ...patch };
+  const payload = JSON.stringify(updated);
+  if (localStorage.getItem(STORAGE_KEY)) {
+    localStorage.setItem(STORAGE_KEY, payload);
+  } else {
+    sessionStorage.setItem(STORAGE_KEY, payload);
+  }
+}

@@ -8,6 +8,7 @@ interface AuthState {
   hydrated: boolean;
   setSession: (session: { email: string; role: Role; displayName?: string }) => void;
   updateDisplayName: (name: string) => void;
+  updateEmail: (email: string) => void;
   clearSession: () => void;
   markHydrated: () => void;
 }
@@ -20,6 +21,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   setSession: ({ email, role, displayName }) =>
     set({ email, role, displayName: displayName ?? email.split('@')[0], hydrated: true }),
   updateDisplayName: (name) => set({ displayName: name }),
+  updateEmail: (email) => set({ email }),
   clearSession: () => set({ email: null, role: null, displayName: null }),
   markHydrated: () => set({ hydrated: true })
 }));

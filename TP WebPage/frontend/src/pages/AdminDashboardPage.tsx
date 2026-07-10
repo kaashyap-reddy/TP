@@ -18,6 +18,7 @@ import RecentActivityWidget from '../components/admin/RecentActivityWidget';
 import UpcomingDeadlinesWidget from '../components/admin/UpcomingDeadlinesWidget';
 import SessionsCalendarView from '../components/admin/SessionsCalendarView';
 import NotificationPanel, { categorize } from '../components/NotificationPanel';
+import ProfileDropdown from '../components/ProfileDropdown';
 import BatchRow from '../components/admin/BatchRow';
 import { isRecentlyUpdated } from '../lib/dateUtils';
 import { downloadTextFile } from '../lib/downloadFile';
@@ -121,11 +122,10 @@ export default function AdminDashboardPage() {
   const { entries: auditEntries, logEvent } = useAuditLogStore();
   const { showToast } = useToastStore();
   const { announcements, postAnnouncement } = useAnnouncementsStore();
-  const { email: authEmail, displayName, updateDisplayName, clearSession } = useAuthStore();
+  const { clearSession } = useAuthStore();
 
   const dashboardLoadTime = useRef(new Date()).current;
   const notificationMenuRef = useRef<HTMLDivElement>(null);
-  const profileMenuRef = useRef<HTMLDivElement>(null);
   const baselineAvgScore = useRef(average(batches.map((b) => b.avgScore))).current;
   const baselineCompletion = useRef(average(batches.map((b) => b.completion))).current;
 
@@ -143,16 +143,11 @@ export default function AdminDashboardPage() {
     return () => clearTimeout(timer);
   }, [activeTab]);
   const [notificationOpen, setNotificationOpen] = useState(false);
-  const [profileOpen, setProfileOpen] = useState(false);
   useClickOutside(notificationMenuRef, () => setNotificationOpen(false), notificationOpen);
-  useClickOutside(profileMenuRef, () => setProfileOpen(false), profileOpen);
   const [readLogIds, setReadLogIds] = useState<Set<string>>(new Set());
   const [chartParameter, setChartParameter] = useState('completion');
   const [chartLabel, setChartLabel] = useState('Completion Rate - All 8 Active Batches');
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
-
-  const [accountSettingsOpen, setAccountSettingsOpen] = useState(false);
-  const [displayNameDraft, setDisplayNameDraft] = useState(displayName ?? '');
 
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [inviteForm, setInviteForm] = useState({ name: '', email: '', batchId: '' });
@@ -291,11 +286,9 @@ export default function AdminDashboardPage() {
   useEscapeKey(() => setEditBatchModalOpen(false), editBatchModalOpen);
   useEscapeKey(() => setFeedbackModalOpen(false), feedbackModalOpen);
   useEscapeKey(() => { setResourceUploadModalOpen(false); setResourceFormError(''); }, resourceUploadModalOpen);
-  useEscapeKey(() => setAccountSettingsOpen(false), accountSettingsOpen);
   useEscapeKey(() => closeInviteModal(), inviteModalOpen);
   useEscapeKey(() => setNotificationOpen(false), notificationOpen);
   useEscapeKey(() => setSessionEditingId(null), sessionEditingId !== null);
-  useEscapeKey(() => setProfileOpen(false), profileOpen);
 
   function hiddenUnless(tab: TabId) {
     return activeTab === tab ? '' : 'hidden';
@@ -316,13 +309,7 @@ export default function AdminDashboardPage() {
   }
 
   function toggleNotificationMenu() {
-    setProfileOpen(false);
     setNotificationOpen((open) => !open);
-  }
-
-  function toggleProfileMenu() {
-    setNotificationOpen(false);
-    setProfileOpen((open) => !open);
   }
 
   function updateChartPreview(value: string) {
@@ -402,13 +389,6 @@ export default function AdminDashboardPage() {
     logEvent('Batch', `${selectedBatch.name} was deleted.`);
     showToast('Batch deleted');
     setDeleteBatchConfirmOpen(false);
-  }
-
-  function saveAccountSettings() {
-    if (!displayNameDraft.trim()) return;
-    updateDisplayName(displayNameDraft.trim());
-    showToast('Account settings updated');
-    setAccountSettingsOpen(false);
   }
 
   async function sendInvite() {
@@ -1152,73 +1132,12 @@ export default function AdminDashboardPage() {
             </div>
 
             {/* Profile */}
-            <div className="relative" ref={profileMenuRef}>
-              <button
-                onClick={toggleProfileMenu}
-                className="w-9 h-9 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold shadow-inner hover:ring-2 hover:ring-blue-300 transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500"
-                aria-label="Account menu"
-                aria-haspopup="true"
-                aria-expanded={profileOpen}
-              >
-                {(displayName ?? 'A').charAt(0).toUpperCase()}
-              </button>
-              <div className={`${profileOpen ? '' : 'hidden'} absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-xl border border-gray-200 z-50 overflow-hidden`}>
-                <div className="bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-800 px-5 py-5 text-white relative overflow-hidden">
-                  <div className="absolute -top-8 -right-8 w-24 h-24 bg-white/10 rounded-full"></div>
-                  <div className="flex items-center space-x-3 relative z-10">
-                    <div className="w-14 h-14 bg-white/20 rounded-full flex items-center justify-center text-xl font-bold ring-2 ring-white/30">
-                      {(displayName ?? 'A').charAt(0).toUpperCase()}
-                    </div>
-                    <div>
-                      <div className="font-bold text-base">{displayName ?? 'Admin User'}</div>
-                      <div className="text-blue-100 text-xs">System Administrator</div>
-                      <div className="mt-1.5 inline-flex items-center gap-1 bg-white/15 rounded-full px-2 py-0.5 text-[10px] font-semibold">
-                        <span className="w-1.5 h-1.5 bg-green-400 rounded-full"></span>
-                        Active now
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="p-4 space-y-2.5 text-sm">
-                  <div className="flex items-center justify-between">
-                    <span className="text-gray-400 flex items-center gap-2 text-xs uppercase font-bold tracking-wide">
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
-                      Email
-                    </span>
-                    <span className="font-medium text-gray-800">{authEmail ?? 'admin@company.com'}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-gray-400 flex items-center gap-2 text-xs uppercase font-bold tracking-wide">
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>
-                      Phone
-                    </span>
-                    <span className="font-medium text-gray-800">+91 98765 43210</span>
-                  </div>
-                  <div className="border-t border-gray-100 pt-3">
-                    <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Company Details</div>
-                    <div className="flex justify-between mb-1.5"><span className="text-gray-500">Company</span><span className="font-medium text-gray-800">TechCorp Solutions</span></div>
-                    <div className="flex justify-between mb-1.5"><span className="text-gray-500">Department</span><span className="font-medium text-gray-800">Learning & Development</span></div>
-                    <div className="flex justify-between mb-1.5"><span className="text-gray-500">Employee ID</span><span className="font-medium text-gray-800">TC-ADM-0042</span></div>
-                    <div className="flex justify-between"><span className="text-gray-500">Location</span><span className="font-medium text-gray-800">Hyderabad, India</span></div>
-                  </div>
-                </div>
-                <div className="px-4 pb-4 space-y-1">
-                  <button
-                    onClick={() => {
-                      setDisplayNameDraft(displayName ?? '');
-                      setAccountSettingsOpen(true);
-                      setProfileOpen(false);
-                    }}
-                    className="block w-full text-center py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg font-medium transition-colors"
-                  >
-                    Account Settings
-                  </button>
-                  <button onClick={() => setLogoutConfirmOpen(true)} className="block w-full text-center py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg font-medium transition-colors">
-                    Sign Out
-                  </button>
-                </div>
-              </div>
-            </div>
+            <ProfileDropdown
+              role="admin"
+              onSignOut={() => setLogoutConfirmOpen(true)}
+              forceClose={notificationOpen}
+              onOpenChange={(open) => { if (open) setNotificationOpen(false); }}
+            />
           </div>
         </header>
 
@@ -2589,32 +2508,6 @@ export default function AdminDashboardPage() {
         }}
         onCancel={() => setLogoutConfirmOpen(false)}
       />
-
-      {/* Account Settings Modal */}
-      <div className={`fixed inset-0 bg-gray-900 bg-opacity-50 ${accountSettingsOpen ? 'flex' : 'hidden'} items-center justify-center z-50`} role="dialog" aria-modal="true" onClick={() => setAccountSettingsOpen(false)}>
-        <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
-          <h2 className="text-lg font-bold mb-4">Account Settings</h2>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Display Name</label>
-              <input
-                type="text"
-                value={displayNameDraft}
-                onChange={(e) => setDisplayNameDraft(e.target.value)}
-                className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-              <input type="email" value={authEmail ?? ''} readOnly className="w-full px-3 py-2 border rounded-lg outline-none bg-gray-50 text-gray-500" />
-            </div>
-          </div>
-          <div className="flex justify-end space-x-3 mt-6">
-            <button onClick={() => setAccountSettingsOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium">Cancel</button>
-            <button onClick={saveAccountSettings} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium">Save</button>
-          </div>
-        </div>
-      </div>
 
       {/* Invite Trainee Modal */}
       <div className={`fixed inset-0 bg-gray-900 bg-opacity-50 ${inviteModalOpen ? 'flex' : 'hidden'} items-center justify-center z-50`} role="dialog" aria-modal="true" onClick={closeInviteModal}>

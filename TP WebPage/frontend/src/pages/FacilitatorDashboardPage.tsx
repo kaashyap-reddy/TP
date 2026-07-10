@@ -25,6 +25,7 @@ import StatusBadge from '../components/StatusBadge';
 import Pagination, { paginate } from '../components/Pagination';
 import Breadcrumbs from '../components/Breadcrumbs';
 import NotificationPanel from '../components/NotificationPanel';
+import ProfileDropdown from '../components/ProfileDropdown';
 import SavingButton from '../components/SavingButton';
 
 type TabId = 'dashboard' | 'batches' | 'assignments' | 'discussions' | 'resources' | 'sessions' | 'calendar' | 'announcements' | 'feedback' | 'trainees';
@@ -99,15 +100,10 @@ export default function FacilitatorDashboardPage() {
   const createThread = useDiscussionsStore((s) => s.createThread);
   const addMessage = useDiscussionsStore((s) => s.addMessage);
   const deleteThread = useDiscussionsStore((s) => s.deleteThread);
-  const { email: authEmail, displayName, updateDisplayName, clearSession } = useAuthStore();
+  const { displayName, clearSession } = useAuthStore();
 
   const [activeTab, setActiveTab] = useState<TabId>(initialTab ?? 'dashboard');
   const markedAnnouncementsReadRef = useRef<Set<string>>(new Set());
-  const [profileTrainee, setProfileTrainee] = useState<string | null>(null);
-  const [profileOpen, setProfileOpen] = useState(false);
-  const profileMenuRef = useRef<HTMLDivElement>(null);
-  const [accountSettingsOpen, setAccountSettingsOpen] = useState(false);
-  const [displayNameDraft, setDisplayNameDraft] = useState(displayName ?? '');
   const [quickGradeTarget, setQuickGradeTarget] = useState<{ assignmentId: string; traineeName: string } | null>(null);
   const [quickGradeScore, setQuickGradeScore] = useState('');
   const [quickGradeStatus, setQuickGradeStatus] = useState<SubmissionStatus>('Completed');
@@ -154,7 +150,6 @@ export default function FacilitatorDashboardPage() {
   const threadMenuRef = useRef<HTMLDivElement>(null);
   const sessionEditPopoverRef = useRef<HTMLDivElement>(null);
   useClickOutside(notificationMenuRef, () => setNotificationOpen(false), notificationOpen);
-  useClickOutside(profileMenuRef, () => setProfileOpen(false), profileOpen);
   useClickOutside(quickActionMenuRef, () => setQuickActionOpen(false), quickActionOpen);
   useClickOutside(threadMenuRef, () => setThreadMenuOpenId(null), threadMenuOpenId !== null);
   const [announcementTitle, setAnnouncementTitle] = useState('');
@@ -209,12 +204,9 @@ export default function FacilitatorDashboardPage() {
   useEscapeKey(() => setResourceModalOpen(false), resourceModalOpen);
   useEscapeKey(() => setNewThreadModalOpen(false), newThreadModalOpen);
   useEscapeKey(() => setExtendDeadlineModalOpen(false), extendDeadlineModalOpen);
-  useEscapeKey(() => setProfileTrainee(null), profileTrainee !== null);
   useEscapeKey(() => setQuickActionOpen(false), quickActionOpen);
   useEscapeKey(() => setThreadMenuOpenId(null), threadMenuOpenId !== null);
   useEscapeKey(() => setNotificationOpen(false), notificationOpen);
-  useEscapeKey(() => setProfileOpen(false), profileOpen);
-  useEscapeKey(() => setAccountSettingsOpen(false), accountSettingsOpen);
 
   function hiddenUnless(tab: TabId) {
     return activeTab === tab ? '' : 'hidden';
@@ -401,19 +393,15 @@ export default function FacilitatorDashboardPage() {
   }
 
   function handleSchedule1on1(traineeName: string) {
-    createSession({
-      title: `1:1 with ${traineeName}`,
-      batchId: aimlBatch?.id ?? batches[0]?.id ?? '',
-      facilitator: FACILITATOR_NAME,
-      date: '',
-      time: 'TBD',
-      link: '',
-      platform: 'Google Meet',
-      status: 'Upcoming'
-    });
-    logEvent('Session', `1:1 session scheduled with ${traineeName}.`);
-    showToast(`1:1 with ${traineeName} scheduled — see Sessions`);
-    setActiveTab('sessions');
+    const batch = myBatches.find((b) => b.members.includes(traineeName));
+    setNewSessionTitle(`1:1 with ${traineeName}`);
+    setNewSessionBatchId(batch?.id ?? aimlBatch?.id ?? batches[0]?.id ?? '');
+    setNewSessionDate('');
+    setNewSessionTime('');
+    setNewSessionLink('');
+    setNewSessionPlatform('Google Meet');
+    setSessionFormError('');
+    setSessionModalOpen(true);
   }
 
   function handleContactTrainee(name: string) {
@@ -464,13 +452,6 @@ export default function FacilitatorDashboardPage() {
     setThreadMenuOpenId(null);
     setSelectedThreadId(null);
     showToast('Discussion deleted');
-  }
-
-  function saveAccountSettings() {
-    if (!displayNameDraft.trim()) return;
-    updateDisplayName(displayNameDraft.trim());
-    showToast('Account settings updated');
-    setAccountSettingsOpen(false);
   }
 
   function handlePostAnnouncement() {
@@ -716,59 +697,7 @@ export default function FacilitatorDashboardPage() {
               </div>
             </div>
 
-            <div className="relative" ref={profileMenuRef}>
-              <button
-                onClick={() => setProfileOpen((open) => !open)}
-                className="w-8 h-8 bg-purple-600 rounded-full flex items-center justify-center text-white font-semibold shadow-inner hover:ring-2 hover:ring-purple-300 transition-all cursor-pointer focus:outline-none focus:ring-2 focus:ring-purple-500"
-                aria-label="Account menu"
-                aria-haspopup="true"
-                aria-expanded={profileOpen}
-              >
-                {(displayName ?? 'F').charAt(0).toUpperCase()}
-              </button>
-              <div className={`${profileOpen ? '' : 'hidden'} absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-xl border border-gray-200 z-50 overflow-hidden`}>
-                <div className="bg-gradient-to-r from-purple-600 via-purple-700 to-indigo-800 px-5 py-5 text-white relative overflow-hidden">
-                  <div className="absolute -top-8 -right-8 w-24 h-24 bg-white/10 rounded-full"></div>
-                  <div className="flex items-center space-x-3 relative z-10">
-                    <div className="w-14 h-14 bg-white/20 rounded-full flex items-center justify-center text-xl font-bold ring-2 ring-white/30">
-                      {(displayName ?? 'F').charAt(0).toUpperCase()}
-                    </div>
-                    <div>
-                      <div className="font-bold text-base">{displayName ?? 'Facilitator'}</div>
-                      <div className="text-purple-100 text-xs">Facilitator</div>
-                      <div className="mt-1.5 inline-flex items-center gap-1 bg-white/15 rounded-full px-2 py-0.5 text-[10px] font-semibold">
-                        <span className="w-1.5 h-1.5 bg-green-400 rounded-full"></span>
-                        Active now
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="p-4 space-y-2.5 text-sm">
-                  <div className="flex items-center justify-between">
-                    <span className="text-gray-400 flex items-center gap-2 text-xs uppercase font-bold tracking-wide">
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
-                      Email
-                    </span>
-                    <span className="font-medium text-gray-800">{authEmail ?? 'facilitator@company.com'}</span>
-                  </div>
-                </div>
-                <div className="px-4 pb-4 space-y-1">
-                  <button
-                    onClick={() => {
-                      setDisplayNameDraft(displayName ?? '');
-                      setAccountSettingsOpen(true);
-                      setProfileOpen(false);
-                    }}
-                    className="block w-full text-center py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg font-medium transition-colors"
-                  >
-                    Account Settings
-                  </button>
-                  <button onClick={() => setLogoutConfirmOpen(true)} className="block w-full text-center py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg font-medium transition-colors">
-                    Sign Out
-                  </button>
-                </div>
-              </div>
-            </div>
+            <ProfileDropdown role="facilitator" onSignOut={() => setLogoutConfirmOpen(true)} />
           </div>
         </header>
 
@@ -848,7 +777,12 @@ export default function FacilitatorDashboardPage() {
                       <div className="flex gap-2 mt-2">
                         <button onClick={() => handleSendReminder(t.name)} className="text-xs bg-white border border-gray-300 px-3 py-1 rounded hover:bg-gray-50 transition-colors">Send Reminder</button>
                         <button onClick={() => handleSchedule1on1(t.name)} className="text-xs bg-white border border-gray-300 px-3 py-1 rounded hover:bg-gray-50 transition-colors">Schedule 1:1</button>
-                        <button onClick={() => setProfileTrainee(t.name)} className="text-xs bg-white border border-gray-300 px-3 py-1 rounded hover:bg-gray-50 transition-colors">View Profile</button>
+                        <button
+                          onClick={() => navigate(`/facilitator/trainees/${encodeURIComponent(t.name)}`)}
+                          className="text-xs bg-white border border-gray-300 px-3 py-1 rounded hover:bg-gray-50 transition-colors"
+                        >
+                          View Profile
+                        </button>
                       </div>
                     </div>
                   ))}
@@ -1521,14 +1455,29 @@ export default function FacilitatorDashboardPage() {
                 </div>
               )}
               {filteredTrainees.map((t) => (
-                <div key={t.name} className="bg-white border border-gray-200 p-5 rounded-xl shadow-sm">
+                <div key={t.name} className="bg-white border border-gray-200 p-5 rounded-xl shadow-sm flex flex-col">
                   <div className="w-12 h-12 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center font-bold mb-4">
                     {t.name.split(' ').map((p) => p.charAt(0)).join('').slice(0, 2).toUpperCase()}
                   </div>
                   <h3 className="font-bold text-gray-800">{t.name}</h3>
                   <p className="text-sm text-gray-500 mt-1">{t.batchName}</p>
-                  <p className="text-xs text-gray-400 mt-2">{t.pendingCount > 0 ? `${t.pendingCount} pending submission(s)` : 'All caught up'}</p>
-                  <button onClick={() => handleContactTrainee(t.name)} className="mt-4 w-full py-2 bg-blue-50 text-blue-700 font-bold rounded-lg hover:bg-blue-100">Contact</button>
+                  <p className="text-xs text-gray-400 mt-2 mb-4">{t.pendingCount > 0 ? `${t.pendingCount} pending submission(s)` : 'All caught up'}</p>
+                  <div className="mt-auto space-y-2">
+                    <button
+                      onClick={() => navigate(`/facilitator/trainees/${encodeURIComponent(t.name)}`)}
+                      className="w-full py-2 bg-blue-50 text-blue-700 font-bold rounded-lg hover:bg-blue-100 text-sm"
+                    >
+                      View Profile
+                    </button>
+                    <div className="flex gap-2">
+                      <button onClick={() => handleSchedule1on1(t.name)} className="flex-1 py-2 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 text-sm">
+                        Schedule 1:1
+                      </button>
+                      <button onClick={() => handleContactTrainee(t.name)} className="flex-1 py-2 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 text-sm">
+                        Contact
+                      </button>
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
@@ -1765,33 +1714,6 @@ export default function FacilitatorDashboardPage() {
         </div>
       </div>
 
-      {/* View Profile Modal */}
-      <div className={`fixed inset-0 bg-gray-900 bg-opacity-50 ${profileTrainee ? 'flex' : 'hidden'} items-center justify-center z-50`} role="dialog" aria-modal="true" onClick={() => setProfileTrainee(null)}>
-        <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
-          {profileTrainee && (() => {
-            const stat = traineeStats.find((t) => t.name === profileTrainee);
-            const traineeFeedback = feedback.filter((f) => f.trainee === profileTrainee);
-            const avgRating = average(traineeFeedback.map((f) => f.rating));
-            return (
-              <>
-                <div className="w-14 h-14 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center font-bold text-lg mb-4">
-                  {profileTrainee.split(' ').map((p) => p.charAt(0)).join('').slice(0, 2).toUpperCase()}
-                </div>
-                <h2 className="text-lg font-bold text-gray-900 mb-1">{profileTrainee}</h2>
-                <p className="text-sm text-gray-500 mb-4">{stat?.batchName ?? 'Unassigned'}</p>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between"><span className="text-gray-500">Missing/Late Submissions</span><span className="font-bold text-gray-800">{stat?.missingCount ?? 0}</span></div>
-                  <div className="flex justify-between"><span className="text-gray-500">Average Grade</span><span className="font-bold text-gray-800">{stat?.avgGrade !== null && stat?.avgGrade !== undefined ? `${stat.avgGrade}%` : '—'}</span></div>
-                  <div className="flex justify-between"><span className="text-gray-500">Average Feedback Rating</span><span className="font-bold text-gray-800">{avgRating !== null ? `${avgRating}/5` : '—'}</span></div>
-                </div>
-                <div className="flex justify-end mt-6">
-                  <button onClick={() => setProfileTrainee(null)} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700">Close</button>
-                </div>
-              </>
-            );
-          })()}
-        </div>
-      </div>
 
       <ConfirmDialog
         open={deleteThreadConfirmOpen}
@@ -1817,31 +1739,6 @@ export default function FacilitatorDashboardPage() {
         onCancel={() => setLogoutConfirmOpen(false)}
       />
 
-      {/* Account Settings Modal */}
-      <div className={`fixed inset-0 bg-gray-900 bg-opacity-50 ${accountSettingsOpen ? 'flex' : 'hidden'} items-center justify-center z-50`} role="dialog" aria-modal="true" onClick={() => setAccountSettingsOpen(false)}>
-        <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
-          <h2 className="text-lg font-bold mb-4">Account Settings</h2>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Display Name</label>
-              <input
-                type="text"
-                value={displayNameDraft}
-                onChange={(e) => setDisplayNameDraft(e.target.value)}
-                className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-              <input type="email" value={authEmail ?? ''} readOnly className="w-full px-3 py-2 border rounded-lg outline-none bg-gray-50 text-gray-500" />
-            </div>
-          </div>
-          <div className="flex justify-end space-x-3 mt-6">
-            <button onClick={() => setAccountSettingsOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium">Cancel</button>
-            <button onClick={saveAccountSettings} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium">Save</button>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
