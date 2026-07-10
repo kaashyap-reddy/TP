@@ -36,6 +36,7 @@ import { SkeletonCards, SkeletonRows } from '../components/Skeleton';
 import Pagination, { paginate } from '../components/Pagination';
 import BarChartComponent, { BarChartDatum } from '../components/BarChart';
 import SavingButton from '../components/SavingButton';
+import Table from '../components/Table';
 import type { AdminTabId } from '../constants/navigation';
 import { ADMIN_HEADER_TITLES } from '../constants/navigation';
 import { PRIORITY_STYLES } from '../constants/announcements';
@@ -1676,25 +1677,32 @@ export default function AdminDashboardPage() {
                 </div>
               )}
 
-              <table className="w-full text-left border-collapse">
-                <thead className="sticky top-0 z-10">
-                  <tr className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
-                    <th className="px-6 py-3 font-medium w-8">
-                      <input type="checkbox" checked={pagedAssignments.length > 0 && selectedAssignmentIds.size === pagedAssignments.length} onChange={toggleSelectAllAssignments} aria-label="Select all assignments" />
-                    </th>
-                    <th className="px-6 py-3 font-medium">Title</th>
-                    <th className="px-6 py-3 font-medium">Batch</th>
-                    <th className="px-6 py-3 font-medium">Facilitator</th>
-                    <th className="px-6 py-3 font-medium">Deadline</th>
-                    <th className="px-6 py-3 font-medium">Status</th>
-                    <th className="px-6 py-3 font-medium">Submitted / Pending / Late</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200 text-sm">
-                  {pagedAssignments.length === 0 && (
-                    <tr><td colSpan={7}><EmptyState title="No assignments match these filters" icon="search" /></td></tr>
-                  )}
-                  {pagedAssignments.map((a) => {
+              <Table
+                columns={[
+                  {
+                    key: 'select',
+                    className: 'w-8',
+                    label: (
+                      <input
+                        type="checkbox"
+                        checked={pagedAssignments.length > 0 && selectedAssignmentIds.size === pagedAssignments.length}
+                        onChange={toggleSelectAllAssignments}
+                        aria-label="Select all assignments"
+                      />
+                    )
+                  },
+                  { key: 'title', label: 'Title' },
+                  { key: 'batch', label: 'Batch' },
+                  { key: 'facilitator', label: 'Facilitator' },
+                  { key: 'deadline', label: 'Deadline' },
+                  { key: 'status', label: 'Status' },
+                  { key: 'progress', label: 'Submitted / Pending / Late' }
+                ]}
+              >
+                {pagedAssignments.length === 0 && (
+                  <tr><td colSpan={7}><EmptyState title="No assignments match these filters" icon="search" /></td></tr>
+                )}
+                {pagedAssignments.map((a) => {
                     const batch = batches.find((b) => b.id === a.batchId);
                     const submitted = a.submissions.filter((s) => s.status === 'Completed').length;
                     const late = a.submissions.filter((s) => s.status === 'Late').length;
@@ -1728,8 +1736,7 @@ export default function AdminDashboardPage() {
                       </tr>
                     );
                   })}
-                </tbody>
-              </table>
+              </Table>
               <Pagination page={assignmentPage} pageCount={assignmentPageCount} onPageChange={setAssignmentPage} totalItems={filteredAssignments.length} pageSize={ASSIGNMENT_PAGE_SIZE} />
             </div>
           </div>
@@ -2032,23 +2039,23 @@ export default function AdminDashboardPage() {
                   <option value="rating">Sort: Highest Rating</option>
                 </select>
               </div>
-              <table className="w-full text-left border-collapse">
-                <thead className="sticky top-0 z-10">
-                  <tr className="bg-white text-gray-500 text-xs uppercase tracking-wider border-b border-gray-200">
-                    <th className="px-6 py-3 font-medium">Trainee</th>
-                    <th className="px-6 py-3 font-medium">Facilitator</th>
-                    <th className="px-6 py-3 font-medium">Batch</th>
-                    <th className="px-6 py-3 font-medium">Category</th>
-                    <th className="px-6 py-3 font-medium">Rating</th>
-                    <th className="px-6 py-3 font-medium">Date</th>
-                    <th className="px-6 py-3 font-medium">Submit Feedback</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 text-sm">
-                  {filteredFeedback.length === 0 && (
-                    <tr><td colSpan={7}><EmptyState title="No feedback matches these filters" icon="search" /></td></tr>
-                  )}
-                  {filteredFeedback.map((f) => {
+              <Table
+                theadRowClassName="bg-white text-gray-500 text-xs uppercase tracking-wider border-b border-gray-200"
+                tbodyClassName="divide-y divide-gray-100 text-sm"
+                columns={[
+                  { key: 'trainee', label: 'Trainee' },
+                  { key: 'facilitator', label: 'Facilitator' },
+                  { key: 'batch', label: 'Batch' },
+                  { key: 'category', label: 'Category' },
+                  { key: 'rating', label: 'Rating' },
+                  { key: 'date', label: 'Date' },
+                  { key: 'submit', label: 'Submit Feedback' }
+                ]}
+              >
+                {filteredFeedback.length === 0 && (
+                  <tr><td colSpan={7}><EmptyState title="No feedback matches these filters" icon="search" /></td></tr>
+                )}
+                {filteredFeedback.map((f) => {
                     const batch = batches.find((b) => b.id === f.batchId);
                     return (
                       <tr key={f.id} className="hover:bg-gray-50">
@@ -2072,8 +2079,7 @@ export default function AdminDashboardPage() {
                       </tr>
                     );
                   })}
-                </tbody>
-              </table>
+              </Table>
             </div>
           </div>
 
