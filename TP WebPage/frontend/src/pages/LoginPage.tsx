@@ -1,6 +1,6 @@
 import { FormEvent, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { forgotPassword, login } from '../api/auth';
+import { login, resetPassword } from '../services/authService';
 import { useAuthStore } from '../store/authStore';
 import { writeSession } from '../utils/authSession';
 import { useToastStore } from '../store/toastStore';
@@ -40,11 +40,10 @@ export default function LoginPage() {
     setError('');
     setIsSigningIn(true);
     try {
-      const { role } = await login(email, password);
-      const displayName = email.split('@')[0].replace(/\b\w/g, (c) => c.toUpperCase());
-      setSession({ email, role, displayName });
-      writeSession({ email, role, displayName }, rememberMe);
-      navigate(ROUTES.DASHBOARD_FOR_ROLE(role));
+      const user = await login(email, password);
+      setSession({ id: user.id, email: user.email, role: user.role, displayName: user.name });
+      writeSession({ id: user.id, email: user.email, role: user.role, displayName: user.name }, rememberMe);
+      navigate(ROUTES.DASHBOARD_FOR_ROLE(user.role));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to sign in.');
       showToast(err instanceof Error ? err.message : 'Unable to sign in.', 'error');
@@ -65,7 +64,7 @@ export default function LoginPage() {
     }
     setIsResetting(true);
     try {
-      await forgotPassword(forgotEmail, forgotPass);
+      await resetPassword(forgotEmail, forgotPass);
       showToast('Password reset. You can now sign in with your new password.');
       setForgotOpen(false);
       setForgotEmail('');

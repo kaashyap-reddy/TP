@@ -3,6 +3,7 @@ import { Role } from '../api/auth';
 const STORAGE_KEY = 'tp_auth';
 
 export interface StoredSession {
+  id?: string;
   email: string;
   role: Role;
   displayName: string;

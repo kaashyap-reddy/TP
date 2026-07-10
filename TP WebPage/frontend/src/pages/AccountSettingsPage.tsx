@@ -1,6 +1,7 @@
 import { ChangeEvent, ReactNode, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Role, forgotPassword } from '../api/auth';
+import { Role } from '../api/auth';
+import { resetPassword } from '../services/authService';
 import { useAuthStore } from '../store/authStore';
 import { useProfileStore } from '../store/profileStore';
 import { useToastStore } from '../store/toastStore';
@@ -138,7 +139,7 @@ export default function AccountSettingsPage() {
     setSaving(true);
     try {
       if (form.newPassword) {
-        await forgotPassword(form.email.trim(), form.newPassword);
+        await resetPassword(form.email.trim(), form.newPassword);
       }
       updateDisplayName(form.name.trim());
       updateEmail(form.email.trim());

@@ -10,8 +10,7 @@ import { useToastStore } from '../store/toastStore';
 import { Announcement, useAnnouncementsStore } from '../store/announcementsStore';
 import ConfirmDialog from '../components/ConfirmDialog';
 import Modal from '../components/Modal';
-import { useAuthStore } from '../store/authStore';
-import { clearSessionStorage } from '../utils/authSession';
+import { logout } from '../services/authService';
 import { createInvite } from '../api/auth';
 import { dateStrToIso, formatTimeRange, isoToDateStr, minutesToLabel, parseTimeRange } from '../utils/sessionTime';
 import QuickActionsBar from '../components/admin/QuickActionsBar';
@@ -107,7 +106,6 @@ export default function AdminDashboardPage() {
   const { entries: auditEntries, logEvent } = useAuditLogStore();
   const { showToast } = useToastStore();
   const { announcements, postAnnouncement } = useAnnouncementsStore();
-  const { clearSession } = useAuthStore();
 
   const dashboardLoadTime = useRef(new Date()).current;
   const notificationMenuRef = useRef<HTMLDivElement>(null);
@@ -2440,8 +2438,7 @@ export default function AdminDashboardPage() {
         confirmLabel="Log Out"
         danger
         onConfirm={() => {
-          clearSession();
-          clearSessionStorage();
+          logout();
           navigate(ROUTES.LOGIN);
         }}
         onCancel={() => setLogoutConfirmOpen(false)}

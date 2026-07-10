@@ -12,7 +12,7 @@ import { useDiscussionsStore } from '../store/discussionsStore';
 import ConfirmDialog from '../components/ConfirmDialog';
 import Modal from '../components/Modal';
 import { useAuthStore } from '../store/authStore';
-import { clearSessionStorage } from '../utils/authSession';
+import { logout } from '../services/authService';
 import { dateStrToIso, formatTimeRange, isoToDateStr, minutesToLabel, parseTimeRange } from '../utils/sessionTime';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { useEscapeKey } from '../hooks/useEscapeKey';
@@ -87,7 +87,7 @@ export default function FacilitatorDashboardPage() {
   const createThread = useDiscussionsStore((s) => s.createThread);
   const addMessage = useDiscussionsStore((s) => s.addMessage);
   const deleteThread = useDiscussionsStore((s) => s.deleteThread);
-  const { displayName, clearSession } = useAuthStore();
+  const { displayName } = useAuthStore();
 
   const [activeTab, setActiveTab] = useState<TabId>(initialTab ?? 'dashboard');
   const markedAnnouncementsReadRef = useRef<Set<string>>(new Set());
@@ -1661,8 +1661,7 @@ export default function FacilitatorDashboardPage() {
         confirmLabel="Log Out"
         danger
         onConfirm={() => {
-          clearSession();
-          clearSessionStorage();
+          logout();
           navigate(ROUTES.LOGIN);
         }}
         onCancel={() => setLogoutConfirmOpen(false)}

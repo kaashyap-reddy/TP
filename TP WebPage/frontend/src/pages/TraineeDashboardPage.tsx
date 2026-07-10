@@ -10,7 +10,7 @@ import { useAuditLogStore } from '../store/auditLogStore';
 import { useBatchesStore } from '../store/batchesStore';
 import { useDiscussionsStore } from '../store/discussionsStore';
 import { useAuthStore } from '../store/authStore';
-import { clearSessionStorage } from '../utils/authSession';
+import { logout } from '../services/authService';
 import { isRecentlyUpdated } from '../utils/dateUtils';
 import { average } from '../utils/mathUtils';
 import { useClickOutside } from '../hooks/useClickOutside';
@@ -53,7 +53,7 @@ export default function TraineeDashboardPage() {
   const threads = useDiscussionsStore((s) => s.threads);
   const createThread = useDiscussionsStore((s) => s.createThread);
   const addMessage = useDiscussionsStore((s) => s.addMessage);
-  const { displayName, clearSession } = useAuthStore();
+  const { displayName } = useAuthStore();
 
   const [activeTab, setActiveTab] = useState<TabId>('dashboard');
   const markedReadRef = useRef<Set<string>>(new Set());
@@ -793,8 +793,7 @@ export default function TraineeDashboardPage() {
         confirmLabel="Log Out"
         danger
         onConfirm={() => {
-          clearSession();
-          clearSessionStorage();
+          logout();
           navigate(ROUTES.LOGIN);
         }}
         onCancel={() => setLogoutConfirmOpen(false)}
