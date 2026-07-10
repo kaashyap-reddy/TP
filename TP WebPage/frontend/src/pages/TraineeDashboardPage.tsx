@@ -26,6 +26,10 @@ import TrendIndicator from '../components/TrendIndicator';
 import BarChart, { BarChartDatum } from '../components/BarChart';
 import HighlightMatch from '../components/HighlightMatch';
 import SavingButton from '../components/SavingButton';
+import StatCard from '../components/StatCard';
+import PageHeader from '../components/PageHeader';
+import SearchInput from '../components/SearchInput';
+import Table from '../components/Table';
 import type { TraineeTabId } from '../constants/navigation';
 import { TRAINEE_HEADER_TITLES } from '../constants/navigation';
 import { PRIORITY_STYLES } from '../constants/announcements';
@@ -372,23 +376,20 @@ export default function TraineeDashboardPage() {
                 <div className="mt-1"><TrendIndicator current={avgCompletion} baseline={baselineCompletion} /></div>
               </div>
 
-              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-center">
-                <div className="text-gray-500 text-sm font-medium uppercase tracking-wide">Average Score</div>
-                <div className="text-4xl font-bold mt-2 text-gray-800">{avgScoreAll ?? '—'}<span className="text-xl text-gray-400">/100</span></div>
-                <div className="mt-2"><TrendIndicator current={avgScoreAll} baseline={baselineScore} suffix=" pts" /></div>
-              </div>
+              <StatCard
+                label="Average Score"
+                value={avgScoreAll ?? '—'}
+                valueSuffix={<span className="text-xl text-gray-400">/100</span>}
+                trend={<TrendIndicator current={avgScoreAll} baseline={baselineScore} suffix=" pts" />}
+              />
 
-              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-center cursor-pointer hover:shadow-md transition" onClick={() => setActiveTab('assignments')}>
-                <div className="text-gray-500 text-sm font-medium uppercase tracking-wide">Pending Tasks</div>
-                <div className="text-4xl font-bold mt-2 text-gray-800">{pendingCount}</div>
-                <div className="text-yellow-500 text-sm mt-2 font-medium">View Assignments</div>
-              </div>
+              <StatCard label="Pending Tasks" value={pendingCount} actionText="View Assignments" onClick={() => setActiveTab('assignments')} />
 
-              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-center">
-                <div className="text-gray-500 text-sm font-medium uppercase tracking-wide">Attendance</div>
-                <div className="text-4xl font-bold mt-2 text-gray-800">{avgAttendance !== null ? `${avgAttendance}%` : '—'}</div>
-                <div className="mt-2"><TrendIndicator current={avgAttendance} baseline={baselineAttendance} /></div>
-              </div>
+              <StatCard
+                label="Attendance"
+                value={avgAttendance !== null ? `${avgAttendance}%` : '—'}
+                trend={<TrendIndicator current={avgAttendance} baseline={baselineAttendance} />}
+              />
             </div>
 
             <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
@@ -403,28 +404,9 @@ export default function TraineeDashboardPage() {
 
           {/* Assignments Tab */}
           <div className={hiddenUnless('assignments')}>
-            <div className="flex justify-between items-center mb-6 gap-4 flex-wrap">
-              <h2 className="text-2xl font-bold">Online Assignment Tracking</h2>
+            <PageHeader title="Online Assignment Tracking">
               <div className="flex items-center gap-3">
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={assignmentSearch}
-                    onChange={(e) => setAssignmentSearch(e.target.value)}
-                    placeholder="Search assignments..."
-                    aria-label="Search assignments"
-                    className="px-4 py-2 border rounded-lg outline-none w-64 shadow-sm focus:ring-2 focus:ring-blue-500"
-                  />
-                  {assignmentSearch && (
-                    <button
-                      onClick={() => setAssignmentSearch('')}
-                      aria-label="Clear search"
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                    >
-                      ×
-                    </button>
-                  )}
-                </div>
+                <SearchInput value={assignmentSearch} onChange={setAssignmentSearch} placeholder="Search assignments..." ariaLabel="Search assignments" clearable />
                 <select
                   value={assignmentStatusFilter}
                   onChange={(e) => setAssignmentStatusFilter(e.target.value as typeof assignmentStatusFilter)}
@@ -437,49 +419,46 @@ export default function TraineeDashboardPage() {
                   <option value="Draft">Draft</option>
                 </select>
               </div>
-            </div>
+            </PageHeader>
             <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
               {filteredAssignments.length === 0 ? (
                 <EmptyState title="No assignments found" message="Try adjusting your search or status filter." icon="search" />
               ) : (
-                <table className="w-full text-left border-collapse">
-                  <thead className="sticky top-0 z-10">
-                    <tr className="bg-gray-50 text-gray-600 text-xs uppercase tracking-wider">
-                      <th className="px-6 py-3 font-medium">Assignment</th>
-                      <th className="px-6 py-3 font-medium">Batch</th>
-                      <th className="px-6 py-3 font-medium">Status</th>
-                      <th className="px-6 py-3 font-medium">Deadline</th>
-                      <th className="px-6 py-3 font-medium">Submissions</th>
-                      <th className="px-6 py-3 font-medium">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200 text-sm">
-                    {filteredAssignments.map((a) => {
-                      const batch = batches.find((b) => b.id === a.batchId);
-                      const completed = a.submissions.filter((s) => s.status === 'Completed').length;
-                      return (
-                        <tr key={a.id} className="hover:bg-gray-50 transition-colors">
-                          <td className="px-6 py-4">
-                            <div className="font-bold text-gray-800"><HighlightMatch text={a.title} query={assignmentSearch} /></div>
-                            {a.description && <div className="text-xs text-gray-500 mt-1">{a.description}</div>}
-                          </td>
-                          <td className="px-6 py-4 text-gray-600 font-medium">{batch?.name ?? a.batchId}</td>
-                          <td className="px-6 py-4"><StatusBadge status={effectiveStatus(a)} /></td>
-                          <td className="px-6 py-4 text-gray-600 font-medium">{a.deadline}</td>
-                          <td className="px-6 py-4"><span className="text-blue-600 font-medium">{completed} / {a.submissions.length}</span></td>
-                          <td className="px-6 py-4">
-                            <button
-                              onClick={() => openSubmitModal(a.id, a.batchId)}
-                              className="px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 shadow-sm transition-colors"
-                            >
-                              Submit Work
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                <Table
+                  columns={[
+                    { key: 'assignment', label: 'Assignment' },
+                    { key: 'batch', label: 'Batch' },
+                    { key: 'status', label: 'Status' },
+                    { key: 'deadline', label: 'Deadline' },
+                    { key: 'submissions', label: 'Submissions' },
+                    { key: 'action', label: 'Action' }
+                  ]}
+                >
+                  {filteredAssignments.map((a) => {
+                    const batch = batches.find((b) => b.id === a.batchId);
+                    const completed = a.submissions.filter((s) => s.status === 'Completed').length;
+                    return (
+                      <tr key={a.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-6 py-4">
+                          <div className="font-bold text-gray-800"><HighlightMatch text={a.title} query={assignmentSearch} /></div>
+                          {a.description && <div className="text-xs text-gray-500 mt-1">{a.description}</div>}
+                        </td>
+                        <td className="px-6 py-4 text-gray-600 font-medium">{batch?.name ?? a.batchId}</td>
+                        <td className="px-6 py-4"><StatusBadge status={effectiveStatus(a)} /></td>
+                        <td className="px-6 py-4 text-gray-600 font-medium">{a.deadline}</td>
+                        <td className="px-6 py-4"><span className="text-blue-600 font-medium">{completed} / {a.submissions.length}</span></td>
+                        <td className="px-6 py-4">
+                          <button
+                            onClick={() => openSubmitModal(a.id, a.batchId)}
+                            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 shadow-sm transition-colors"
+                          >
+                            Submit Work
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </Table>
               )}
             </div>
           </div>
@@ -628,16 +607,9 @@ export default function TraineeDashboardPage() {
 
           {/* Facilitators Directory Tab */}
           <div className={hiddenUnless('facilitators')}>
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-bold">Facilitator Contacts</h2>
-              <input
-                type="text"
-                value={facilitatorSearch}
-                onChange={(e) => setFacilitatorSearch(e.target.value)}
-                placeholder="Search facilitators..."
-                className="px-4 py-2 border rounded-lg outline-none w-64 shadow-sm"
-              />
-            </div>
+            <PageHeader title="Facilitator Contacts" wrap={false}>
+              <SearchInput value={facilitatorSearch} onChange={setFacilitatorSearch} placeholder="Search facilitators..." />
+            </PageHeader>
             {filteredFacilitators.length === 0 && (
               <EmptyState title="No facilitators found" message="Try a different search term." icon="search" />
             )}
@@ -658,28 +630,9 @@ export default function TraineeDashboardPage() {
 
           {/* Digital Resource Library Tab */}
           <div className={hiddenUnless('resources')}>
-            <div className="flex justify-between items-center mb-6 gap-4 flex-wrap">
-              <h2 className="text-2xl font-bold">Learning Repository</h2>
+            <PageHeader title="Learning Repository">
               <div className="flex items-center gap-3">
-                <div className="relative">
-                  <input
-                    type="text"
-                    value={resourceSearch}
-                    onChange={(e) => setResourceSearch(e.target.value)}
-                    placeholder="Search materials..."
-                    aria-label="Search materials"
-                    className="px-4 py-2 border rounded-lg outline-none w-64 shadow-sm focus:ring-2 focus:ring-blue-500"
-                  />
-                  {resourceSearch && (
-                    <button
-                      onClick={() => setResourceSearch('')}
-                      aria-label="Clear search"
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                    >
-                      ×
-                    </button>
-                  )}
-                </div>
+                <SearchInput value={resourceSearch} onChange={setResourceSearch} placeholder="Search materials..." ariaLabel="Search materials" clearable />
                 <select
                   value={resourceSort}
                   onChange={(e) => setResourceSort(e.target.value as typeof resourceSort)}
@@ -692,7 +645,7 @@ export default function TraineeDashboardPage() {
                   <option value="alpha">Alphabetical</option>
                 </select>
               </div>
-            </div>
+            </PageHeader>
             {filteredResources.length === 0 ? (
               <EmptyState title="No resources found" message="Try a different search term." icon="search" />
             ) : (
@@ -764,16 +717,9 @@ export default function TraineeDashboardPage() {
 
           {/* Grades & Feedback Tab */}
           <div className={hiddenUnless('grades')}>
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-bold">Historical Feedback & Grades</h2>
-              <input
-                type="text"
-                value={feedbackSearch}
-                onChange={(e) => setFeedbackSearch(e.target.value)}
-                placeholder="Search feedback..."
-                className="px-4 py-2 border rounded-lg outline-none w-64 shadow-sm"
-              />
-            </div>
+            <PageHeader title="Historical Feedback & Grades" wrap={false}>
+              <SearchInput value={feedbackSearch} onChange={setFeedbackSearch} placeholder="Search feedback..." />
+            </PageHeader>
             <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden mb-8">
               <div className="p-6 border-b border-gray-200 bg-gray-50">
                 <h3 className="font-bold text-lg">Facilitator Feedback History</h3>
