@@ -17,6 +17,7 @@ import { useClickOutside } from '../hooks/useClickOutside';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useNotifications } from '../hooks/useNotifications';
 import ConfirmDialog from '../components/ConfirmDialog';
+import Modal from '../components/Modal';
 import NotificationPanel from '../components/NotificationPanel';
 import ProfileDropdown from '../components/ProfileDropdown';
 import EmptyState from '../components/EmptyState';
@@ -100,9 +101,6 @@ export default function TraineeDashboardPage() {
   const [newThreadTitle, setNewThreadTitle] = useState('');
   const [newThreadMessage, setNewThreadMessage] = useState('');
 
-  useEscapeKey(() => { setSubmitModalOpen(false); setSubmitFormError(''); }, submitModalOpen);
-  useEscapeKey(() => setNewThreadModalOpen(false), newThreadModalOpen);
-  useEscapeKey(() => setResourcePreview(null), resourcePreview !== null);
   useEscapeKey(() => setNotificationOpen(false), notificationOpen);
 
   function hiddenUnless(tab: TabId) {
@@ -806,10 +804,13 @@ export default function TraineeDashboardPage() {
       </main>
 
       {/* Submit Assignment Modal */}
-      <div className={`fixed inset-0 bg-gray-900 bg-opacity-50 ${submitModalOpen ? 'flex' : 'hidden'} items-center justify-center z-50`} role="dialog" aria-modal="true" onClick={() => { setSubmitModalOpen(false); setSubmitFormError(''); }}>
-        <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
-          <h2 className="text-xl font-bold mb-1">Submit Assignment</h2>
-          <p className="text-sm text-gray-500 mb-4">You can replace your submission before the deadline.</p>
+      <Modal
+        open={submitModalOpen}
+        onClose={() => { setSubmitModalOpen(false); setSubmitFormError(''); }}
+        title="Submit Assignment"
+        subtitle="You can replace your submission before the deadline."
+        maxWidth="md"
+      >
           <div className="space-y-4">
             {submitFormError && (
               <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{submitFormError}</div>
@@ -849,13 +850,10 @@ export default function TraineeDashboardPage() {
             <button onClick={() => { setSubmitModalOpen(false); setSubmitFormError(''); }} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium">Cancel</button>
             <SavingButton onClick={handleSubmitAssignment} isSaving={submitFormSaving} label="Submit" />
           </div>
-        </div>
-      </div>
+      </Modal>
 
       {/* New Discussion Modal */}
-      <div className={`fixed inset-0 bg-gray-900 bg-opacity-50 ${newThreadModalOpen ? 'flex' : 'hidden'} items-center justify-center z-50`} role="dialog" aria-modal="true" onClick={() => setNewThreadModalOpen(false)}>
-        <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
-          <h2 className="text-xl font-bold mb-4">New Discussion</h2>
+      <Modal open={newThreadModalOpen} onClose={() => setNewThreadModalOpen(false)} title="New Discussion" maxWidth="md">
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
@@ -870,12 +868,10 @@ export default function TraineeDashboardPage() {
             <button onClick={() => setNewThreadModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium">Cancel</button>
             <button onClick={handleCreateThread} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium">Create</button>
           </div>
-        </div>
-      </div>
+      </Modal>
 
       {/* Resource Preview Modal */}
-      <div className={`fixed inset-0 bg-gray-900 bg-opacity-50 ${resourcePreview ? 'flex' : 'hidden'} items-center justify-center z-50`} role="dialog" aria-modal="true" onClick={() => setResourcePreview(null)}>
-        <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
+      <Modal open={resourcePreview !== null} onClose={() => setResourcePreview(null)} maxWidth="sm">
           <h2 className="text-lg font-bold mb-2">{resourcePreview?.title}</h2>
           <div className="text-sm text-gray-600 space-y-1 mb-4">
             <div>Category: {resourcePreview?.category}</div>
@@ -888,8 +884,7 @@ export default function TraineeDashboardPage() {
           <div className="flex justify-end">
             <button onClick={() => setResourcePreview(null)} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700">Close</button>
           </div>
-        </div>
-      </div>
+      </Modal>
 
       <ConfirmDialog
         open={logoutConfirmOpen}
