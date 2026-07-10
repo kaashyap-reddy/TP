@@ -30,18 +30,14 @@ import StatCard from '../components/StatCard';
 import PageHeader from '../components/PageHeader';
 import SearchInput from '../components/SearchInput';
 import Table from '../components/Table';
+import DashboardLayout from '../layouts/DashboardLayout';
 import type { TraineeTabId } from '../constants/navigation';
-import { TRAINEE_HEADER_TITLES } from '../constants/navigation';
+import { TRAINEE_HEADER_TITLES, TRAINEE_BRAND_LABEL, TRAINEE_NAV_ITEMS } from '../constants/navigation';
 import { PRIORITY_STYLES } from '../constants/announcements';
 import { ROUTES } from '../constants/routes';
 
 type TabId = TraineeTabId;
 const HEADER_TITLES = TRAINEE_HEADER_TITLES;
-
-const navItemClass = (active: boolean) =>
-  active
-    ? 'flex items-center px-4 py-2.5 bg-blue-50 text-blue-700 rounded-lg font-medium shadow-sm'
-    : 'flex items-center px-4 py-2.5 text-gray-600 hover:bg-gray-50 rounded-lg font-medium';
 
 export default function TraineeDashboardPage() {
   const navigate = useNavigate();
@@ -271,93 +267,46 @@ export default function TraineeDashboardPage() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden text-gray-800" style={{ backgroundColor: '#f8fafc' }}>
-      {/* Sidebar */}
-      <aside className="w-64 bg-white border-r border-gray-200 flex flex-col z-20">
-        <div className="h-16 flex items-center px-6 border-b border-gray-200">
-          <span className="text-lg font-bold text-blue-600">My Workspace</span>
-        </div>
-        <nav className="flex-1 overflow-y-auto p-4 space-y-1">
-          <a href="#" onClick={(e) => { e.preventDefault(); setActiveTab('dashboard'); }} className={navItemClass(activeTab === 'dashboard')}>
-            <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
-            My Progress
-          </a>
-          <a href="#" onClick={(e) => { e.preventDefault(); setActiveTab('assignments'); }} className={navItemClass(activeTab === 'assignments')}>
-            <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
-            Assignments
-          </a>
-          <a href="#" onClick={(e) => { e.preventDefault(); setActiveTab('discussions'); }} className={navItemClass(activeTab === 'discussions')}>
-            <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8h2a2 2 0 012 2v6a2 2 0 01-2 2h-2v4l-4-4H9a1.994 1.994 0 01-1.414-.586m0 0L11 14h4a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2v4l.586-.586z" /></svg>
-            Discussions
-          </a>
-          <a href="#" onClick={(e) => { e.preventDefault(); setActiveTab('resources'); }} className={navItemClass(activeTab === 'resources')}>
-            <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
-            Learning Repository
-          </a>
-          <a href="#" onClick={(e) => { e.preventDefault(); setActiveTab('calendar'); }} className={navItemClass(activeTab === 'calendar')}>
-            <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-            Calendar & Events
-          </a>
-          <a href="#" onClick={(e) => { e.preventDefault(); setActiveTab('grades'); }} className={navItemClass(activeTab === 'grades')}>
-            <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
-            Feedback & Grades
-          </a>
-          <a href="#" onClick={(e) => { e.preventDefault(); setActiveTab('announcements'); }} className={navItemClass(activeTab === 'announcements')}>
-            <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" /></svg>
-            Announcements
-          </a>
-          <a href="#" onClick={(e) => { e.preventDefault(); setActiveTab('meetings'); }} className={navItemClass(activeTab === 'meetings')}>
-            <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
-            Sessions
-          </a>
-          <a href="#" onClick={(e) => { e.preventDefault(); setActiveTab('facilitators'); }} className={navItemClass(activeTab === 'facilitators')}>
-            <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a4 4 0 00-4-4h-1M9 20H4v-2a4 4 0 014-4h1m0-4a4 4 0 100-8 4 4 0 000 8zm8 0a4 4 0 100-8 4 4 0 000 8z" /></svg>
-            Facilitators
-          </a>
-        </nav>
-        <div className="p-4 border-t border-gray-200">
-          <button onClick={() => setLogoutConfirmOpen(true)} className="flex items-center px-4 py-2 text-gray-600 hover:text-red-600 transition-colors w-full">
-            <svg className="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
-            Logout
-          </button>
-        </div>
-      </aside>
+    <DashboardLayout
+      brandLabel={TRAINEE_BRAND_LABEL}
+      navItems={TRAINEE_NAV_ITEMS}
+      activeTab={activeTab}
+      onTabChange={setActiveTab}
+      activeNavExtraClass="shadow-sm"
+      onLogout={() => setLogoutConfirmOpen(true)}
+      headerTitle={HEADER_TITLES[activeTab]}
+      headerRight={
+        <>
+          <div className="relative" ref={notificationMenuRef}>
+            <button
+              className="relative text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-lg p-1"
+              onClick={() => setNotificationOpen(!notificationOpen)}
+              aria-label="Notifications"
+              aria-haspopup="true"
+              aria-expanded={notificationOpen}
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
+              {unreadCount > 0 && (
+                <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] text-white">{unreadCount}</span>
+              )}
+            </button>
 
-      {/* Main Content */}
-      <main className="flex-1 flex flex-col overflow-hidden">
-        <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8 z-10 shadow-sm">
-          <h1 className="text-xl font-semibold">{HEADER_TITLES[activeTab]}</h1>
-          <div className="flex items-center space-x-6">
-            <div className="relative" ref={notificationMenuRef}>
-              <button
-                className="relative text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-lg p-1"
-                onClick={() => setNotificationOpen(!notificationOpen)}
-                aria-label="Notifications"
-                aria-haspopup="true"
-                aria-expanded={notificationOpen}
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
-                {unreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] text-white">{unreadCount}</span>
-                )}
-              </button>
-
-              <div className={`${notificationOpen ? '' : 'hidden'} absolute top-full right-0 mt-2 bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden z-50`}>
-                <NotificationPanel
-                  entries={auditEntries}
-                  readIds={readLogIds}
-                  onMarkRead={markNotificationRead}
-                  onMarkAllRead={markAllNotificationsRead}
-                  onViewAll={() => setNotificationOpen(false)}
-                  viewAllLabel="Close"
-                />
-              </div>
+            <div className={`${notificationOpen ? '' : 'hidden'} absolute top-full right-0 mt-2 bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden z-50`}>
+              <NotificationPanel
+                entries={auditEntries}
+                readIds={readLogIds}
+                onMarkRead={markNotificationRead}
+                onMarkAllRead={markAllNotificationsRead}
+                onViewAll={() => setNotificationOpen(false)}
+                viewAllLabel="Close"
+              />
             </div>
-
-            <ProfileDropdown role="trainee" onSignOut={() => setLogoutConfirmOpen(true)} />
           </div>
-        </header>
 
+          <ProfileDropdown role="trainee" onSignOut={() => setLogoutConfirmOpen(true)} />
+        </>
+      }
+    >
         <div className="flex-1 overflow-y-auto p-8 bg-slate-50">
           {/* Individual Trainee Progress Dashboard */}
           <div className={hiddenUnless('dashboard')}>
@@ -753,7 +702,6 @@ export default function TraineeDashboardPage() {
             </div>
           </div>
         </div>
-      </main>
 
       {/* Submit Assignment Modal */}
       <Modal
@@ -852,6 +800,6 @@ export default function TraineeDashboardPage() {
         onCancel={() => setLogoutConfirmOpen(false)}
       />
 
-    </div>
+    </DashboardLayout>
   );
 }
