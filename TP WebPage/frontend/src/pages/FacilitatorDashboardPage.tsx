@@ -28,6 +28,10 @@ import Breadcrumbs from '../components/Breadcrumbs';
 import NotificationPanel from '../components/NotificationPanel';
 import ProfileDropdown from '../components/ProfileDropdown';
 import SavingButton from '../components/SavingButton';
+import StatCard from '../components/StatCard';
+import PageHeader from '../components/PageHeader';
+import SearchInput from '../components/SearchInput';
+import Table from '../components/Table';
 import type { FacilitatorTabId } from '../constants/navigation';
 import { FACILITATOR_HEADER_TITLES } from '../constants/navigation';
 import { PRIORITY_STYLES } from '../constants/announcements';
@@ -720,21 +724,24 @@ export default function FacilitatorDashboardPage() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-150">
-                <div className="text-gray-500 text-sm font-medium uppercase tracking-wide">Average Score</div>
-                <div className="text-4xl font-bold mt-2 text-gray-800">{facilitatorAvgScore !== null ? `${facilitatorAvgScore}%` : '—'}</div>
-                <div className="mt-2"><TrendIndicator current={facilitatorAvgScore} baseline={baselineAvgScore} /></div>
-              </div>
-              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-150">
-                <div className="text-gray-500 text-sm font-medium uppercase tracking-wide">Pending Reviews</div>
-                <div className="text-4xl font-bold mt-2 text-gray-800">{facilitatorPendingReviews}</div>
-                <div className="text-yellow-500 text-sm mt-2 font-medium">{facilitatorPendingReviews > 0 ? 'Needs grading' : 'All caught up'}</div>
-              </div>
-              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-150">
-                <div className="text-gray-500 text-sm font-medium uppercase tracking-wide">Attendance</div>
-                <div className="text-4xl font-bold mt-2 text-gray-800">{facilitatorAttendance !== null ? `${facilitatorAttendance}%` : '—'}</div>
-                <div className="mt-2"><TrendIndicator current={facilitatorAttendance} baseline={baselineAttendance} /></div>
-              </div>
+              <StatCard
+                label="Average Score"
+                value={facilitatorAvgScore !== null ? `${facilitatorAvgScore}%` : '—'}
+                trend={<TrendIndicator current={facilitatorAvgScore} baseline={baselineAvgScore} />}
+                hoverClassName="hover:shadow-md hover:-translate-y-0.5 transition-all duration-150"
+              />
+              <StatCard
+                label="Pending Reviews"
+                value={facilitatorPendingReviews}
+                actionText={facilitatorPendingReviews > 0 ? 'Needs grading' : 'All caught up'}
+                hoverClassName="hover:shadow-md hover:-translate-y-0.5 transition-all duration-150"
+              />
+              <StatCard
+                label="Attendance"
+                value={facilitatorAttendance !== null ? `${facilitatorAttendance}%` : '—'}
+                trend={<TrendIndicator current={facilitatorAttendance} baseline={baselineAttendance} />}
+                hoverClassName="hover:shadow-md hover:-translate-y-0.5 transition-all duration-150"
+              />
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -1010,53 +1017,49 @@ export default function FacilitatorDashboardPage() {
             <h2 className="text-2xl font-bold mb-6">My Batches</h2>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-                <div className="text-gray-500 text-sm font-medium uppercase tracking-wide">Batches</div>
-                <div className="text-3xl font-bold mt-2 text-gray-800">{myBatches.length}</div>
-              </div>
-              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-                <div className="text-gray-500 text-sm font-medium uppercase tracking-wide">Total Trainees</div>
-                <div className="text-3xl font-bold mt-2 text-gray-800">{myBatches.reduce((sum, b) => sum + b.traineeCount, 0)}</div>
-              </div>
-              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
-                <div className="text-gray-500 text-sm font-medium uppercase tracking-wide">Avg Completion</div>
-                <div className="text-3xl font-bold mt-2 text-gray-800">{average(myBatches.map((b) => b.completion)) ?? '—'}{average(myBatches.map((b) => b.completion)) !== null ? '%' : ''}</div>
-              </div>
+              <StatCard label="Batches" value={myBatches.length} valueClassName="text-3xl font-bold mt-2 text-gray-800" />
+              <StatCard
+                label="Total Trainees"
+                value={myBatches.reduce((sum, b) => sum + b.traineeCount, 0)}
+                valueClassName="text-3xl font-bold mt-2 text-gray-800"
+              />
+              <StatCard
+                label="Avg Completion"
+                value={`${average(myBatches.map((b) => b.completion)) ?? '—'}${average(myBatches.map((b) => b.completion)) !== null ? '%' : ''}`}
+                valueClassName="text-3xl font-bold mt-2 text-gray-800"
+              />
             </div>
 
             <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
               {myBatches.length === 0 ? (
                 <EmptyState title="No batches assigned yet" message="Batches you're the point of contact for will show up here." icon="inbox" />
               ) : (
-                <table className="w-full text-left border-collapse">
-                  <thead className="sticky top-0 z-10">
-                    <tr className="bg-gray-50 text-gray-600 text-xs uppercase tracking-wider">
-                      <th className="px-6 py-3 font-medium">Batch</th>
-                      <th className="px-6 py-3 font-medium">Program</th>
-                      <th className="px-6 py-3 font-medium">Trainees</th>
-                      <th className="px-6 py-3 font-medium">Avg Score</th>
-                      <th className="px-6 py-3 font-medium">Completion</th>
-                      <th className="px-6 py-3 font-medium">Attendance</th>
-                      <th className="px-6 py-3 font-medium">Status</th>
+                <Table
+                  columns={[
+                    { key: 'batch', label: 'Batch' },
+                    { key: 'program', label: 'Program' },
+                    { key: 'trainees', label: 'Trainees' },
+                    { key: 'avgScore', label: 'Avg Score' },
+                    { key: 'completion', label: 'Completion' },
+                    { key: 'attendance', label: 'Attendance' },
+                    { key: 'status', label: 'Status' }
+                  ]}
+                >
+                  {myBatches.map((b) => (
+                    <tr key={b.id} className="hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => setActiveTab('trainees')}>
+                      <td className="px-6 py-4">
+                        <div className="font-bold text-gray-800">{b.name}</div>
+                        <div className="text-xs text-gray-500 mt-1">Started {b.startMonth}</div>
+                      </td>
+                      <td className="px-6 py-4 text-gray-600 font-medium">{b.program} • {b.track}</td>
+                      <td className="px-6 py-4 text-gray-600 font-medium">{b.traineeCount}</td>
+                      <td className="px-6 py-4 text-gray-600 font-medium">{b.avgScore !== null ? `${b.avgScore}/100` : '—'}</td>
+                      <td className="px-6 py-4 w-40"><ProgressBar value={b.completion} /></td>
+                      <td className="px-6 py-4 text-gray-600 font-medium">{b.attendanceRate !== null ? `${b.attendanceRate}%` : '—'}</td>
+                      <td className="px-6 py-4"><StatusBadge status={b.status} /></td>
                     </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200 text-sm">
-                    {myBatches.map((b) => (
-                      <tr key={b.id} className="hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => setActiveTab('trainees')}>
-                        <td className="px-6 py-4">
-                          <div className="font-bold text-gray-800">{b.name}</div>
-                          <div className="text-xs text-gray-500 mt-1">Started {b.startMonth}</div>
-                        </td>
-                        <td className="px-6 py-4 text-gray-600 font-medium">{b.program} • {b.track}</td>
-                        <td className="px-6 py-4 text-gray-600 font-medium">{b.traineeCount}</td>
-                        <td className="px-6 py-4 text-gray-600 font-medium">{b.avgScore !== null ? `${b.avgScore}/100` : '—'}</td>
-                        <td className="px-6 py-4 w-40"><ProgressBar value={b.completion} /></td>
-                        <td className="px-6 py-4 text-gray-600 font-medium">{b.attendanceRate !== null ? `${b.attendanceRate}%` : '—'}</td>
-                        <td className="px-6 py-4"><StatusBadge status={b.status} /></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                  ))}
+                </Table>
               )}
             </div>
           </div>
@@ -1103,52 +1106,59 @@ export default function FacilitatorDashboardPage() {
                 </div>
               )}
 
-              <table className="w-full text-left border-collapse">
-                <thead className="sticky top-0 z-10">
-                  <tr className="bg-gray-100 text-gray-600 text-xs uppercase tracking-wider">
-                    <th className="px-6 py-3 font-medium w-8">
-                      <input type="checkbox" checked={pagedFacilitatorAssignments.length > 0 && selectedAssignmentIds.size === pagedFacilitatorAssignments.length} onChange={toggleSelectAllAssignments} aria-label="Select all assignments" />
-                    </th>
-                    <th className="px-6 py-3 font-medium">Assignment</th>
-                    <th className="px-6 py-3 font-medium">Batch</th>
-                    <th className="px-6 py-3 font-medium">Deadline</th>
-                    <th className="px-6 py-3 font-medium">Status</th>
-                    <th className="px-6 py-3 font-medium">Grading Progress</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200 text-sm">
-                  {pagedFacilitatorAssignments.length === 0 && (
-                    <tr><td colSpan={6}><EmptyState title="No assignments match these filters" icon="search" /></td></tr>
-                  )}
-                  {pagedFacilitatorAssignments.map((a) => {
-                    const batch = batches.find((b) => b.id === a.batchId);
-                    const gradedCount = a.submissions.filter((s) => s.status === 'Completed').length;
-                    const gradedPercent = a.submissions.length > 0 ? Math.round((gradedCount / a.submissions.length) * 100) : 0;
-                    return (
-                      <tr key={a.id} className="hover:bg-gray-50 transition-colors">
-                        <td className="px-6 py-4">
-                          <input type="checkbox" checked={selectedAssignmentIds.has(a.id)} onChange={() => toggleAssignmentSelected(a.id)} aria-label={`Select ${a.title}`} />
-                        </td>
-                        <td className="px-6 py-4 font-medium">
-                          <Link
-                            to={`/assignments/${a.id}`}
-                            className="inline-block text-blue-600 font-medium px-2 py-1 -mx-2 rounded-full border border-blue-100 bg-blue-50/50 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 transition-colors duration-150"
-                          >
-                            {a.title}
-                          </Link>
-                        </td>
-                        <td className="px-6 py-4 text-gray-500">{batch?.name ?? a.batchId}</td>
-                        <td className="px-6 py-4 text-gray-500">{a.deadline}</td>
-                        <td className="px-6 py-4"><StatusBadge status={effectiveStatus(a)} /></td>
-                        <td className="px-6 py-4 w-48">
-                          <div className="text-[11px] text-gray-500 font-bold mb-1">{gradedCount}/{a.submissions.length} graded</div>
-                          <ProgressBar value={gradedPercent} color="bg-blue-500" size="sm" />
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+              <Table
+                theadRowClassName="bg-gray-100 text-gray-600 text-xs uppercase tracking-wider"
+                columns={[
+                  {
+                    key: 'select',
+                    className: 'w-8',
+                    label: (
+                      <input
+                        type="checkbox"
+                        checked={pagedFacilitatorAssignments.length > 0 && selectedAssignmentIds.size === pagedFacilitatorAssignments.length}
+                        onChange={toggleSelectAllAssignments}
+                        aria-label="Select all assignments"
+                      />
+                    )
+                  },
+                  { key: 'assignment', label: 'Assignment' },
+                  { key: 'batch', label: 'Batch' },
+                  { key: 'deadline', label: 'Deadline' },
+                  { key: 'status', label: 'Status' },
+                  { key: 'grading', label: 'Grading Progress' }
+                ]}
+              >
+                {pagedFacilitatorAssignments.length === 0 && (
+                  <tr><td colSpan={6}><EmptyState title="No assignments match these filters" icon="search" /></td></tr>
+                )}
+                {pagedFacilitatorAssignments.map((a) => {
+                  const batch = batches.find((b) => b.id === a.batchId);
+                  const gradedCount = a.submissions.filter((s) => s.status === 'Completed').length;
+                  const gradedPercent = a.submissions.length > 0 ? Math.round((gradedCount / a.submissions.length) * 100) : 0;
+                  return (
+                    <tr key={a.id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-6 py-4">
+                        <input type="checkbox" checked={selectedAssignmentIds.has(a.id)} onChange={() => toggleAssignmentSelected(a.id)} aria-label={`Select ${a.title}`} />
+                      </td>
+                      <td className="px-6 py-4 font-medium">
+                        <Link
+                          to={`/assignments/${a.id}`}
+                          className="inline-block text-blue-600 font-medium px-2 py-1 -mx-2 rounded-full border border-blue-100 bg-blue-50/50 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 transition-colors duration-150"
+                        >
+                          {a.title}
+                        </Link>
+                      </td>
+                      <td className="px-6 py-4 text-gray-500">{batch?.name ?? a.batchId}</td>
+                      <td className="px-6 py-4 text-gray-500">{a.deadline}</td>
+                      <td className="px-6 py-4"><StatusBadge status={effectiveStatus(a)} /></td>
+                      <td className="px-6 py-4 w-48">
+                        <div className="text-[11px] text-gray-500 font-bold mb-1">{gradedCount}/{a.submissions.length} graded</div>
+                        <ProgressBar value={gradedPercent} color="bg-blue-500" size="sm" />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </Table>
               <Pagination page={assignmentPage} pageCount={assignmentPageCount} onPageChange={setAssignmentPage} totalItems={filteredFacilitatorAssignments.length} pageSize={ASSIGNMENT_PAGE_SIZE} />
             </div>
           </div>
@@ -1419,16 +1429,9 @@ export default function FacilitatorDashboardPage() {
 
           {/* Trainee Directory Tab */}
           <div className={hiddenUnless('trainees')}>
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-bold">Trainee Directory</h2>
-              <input
-                type="text"
-                value={traineeSearch}
-                onChange={(e) => setTraineeSearch(e.target.value)}
-                placeholder="Search trainees..."
-                className="px-4 py-2 border rounded-lg outline-none w-64 shadow-sm"
-              />
-            </div>
+            <PageHeader title="Trainee Directory" wrap={false}>
+              <SearchInput value={traineeSearch} onChange={setTraineeSearch} placeholder="Search trainees..." />
+            </PageHeader>
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
               {filteredTrainees.length === 0 && (
                 <div className="col-span-full">

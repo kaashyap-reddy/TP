@@ -2,7 +2,8 @@ import { ReactNode } from 'react';
 
 interface Column {
   key: string;
-  label: string;
+  label: ReactNode;
+  className?: string;
 }
 
 interface TableProps {
@@ -23,7 +24,7 @@ export default function Table({
       <thead className="sticky top-0 z-10">
         <tr className={theadRowClassName}>
           {columns.map((col) => (
-            <th key={col.key} className="px-6 py-3 font-medium">
+            <th key={col.key} className={`px-6 py-3 font-medium${col.className ? ` ${col.className}` : ''}`}>
               {col.label}
             </th>
           ))}

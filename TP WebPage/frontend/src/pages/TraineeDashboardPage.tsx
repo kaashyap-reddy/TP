@@ -383,7 +383,13 @@ export default function TraineeDashboardPage() {
                 trend={<TrendIndicator current={avgScoreAll} baseline={baselineScore} suffix=" pts" />}
               />
 
-              <StatCard label="Pending Tasks" value={pendingCount} actionText="View Assignments" onClick={() => setActiveTab('assignments')} />
+              <StatCard
+                label="Pending Tasks"
+                value={pendingCount}
+                actionText="View Assignments"
+                onClick={() => setActiveTab('assignments')}
+                hoverClassName="hover:shadow-md transition"
+              />
 
               <StatCard
                 label="Attendance"
