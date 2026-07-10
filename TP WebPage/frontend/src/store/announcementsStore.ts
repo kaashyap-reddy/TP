@@ -1,20 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import type { Announcement } from '../types/announcement';
 
-export interface Announcement {
-  id: string;
-  title: string;
-  message: string;
-  priority: 'Normal' | 'Important' | 'Critical';
-  audience: string;
-  author: string;
-  date: string;
-  pinned: boolean;
-  scheduledFor: string | null;
-  expiresAt: string | null;
-  readByCount: number;
-  audienceCount: number;
-}
+export type { Announcement } from '../types/announcement';
 
 let idCounter = 100;
 function nextAnnouncementId() {

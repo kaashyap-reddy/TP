@@ -1,6 +1,7 @@
 import { Navigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { Role } from '../api/auth';
+import { ROUTES } from '../constants/routes';
 
 export default function RequireAuth({ role, children }: { role: Role; children: JSX.Element }) {
   const currentRole = useAuthStore((s) => s.role);
@@ -11,7 +12,7 @@ export default function RequireAuth({ role, children }: { role: Role; children: 
   }
 
   if (currentRole !== role) {
-    return <Navigate to="/" replace />;
+    return <Navigate to={ROUTES.LOGIN} replace />;
   }
 
   return children;

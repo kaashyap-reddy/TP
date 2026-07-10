@@ -1,16 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import type { FeedbackEntry } from '../types/feedback';
 
-export interface FeedbackEntry {
-  id: string;
-  trainee: string;
-  facilitator: string;
-  batchId: string;
-  category: string;
-  rating: number;
-  comment: string;
-  date: string;
-}
+export type { FeedbackEntry } from '../types/feedback';
 
 let idCounter = 100;
 function nextFeedbackId() {

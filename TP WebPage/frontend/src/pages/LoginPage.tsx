@@ -2,10 +2,11 @@ import { FormEvent, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { forgotPassword, login } from '../api/auth';
 import { useAuthStore } from '../store/authStore';
-import { writeSession } from '../lib/authSession';
+import { writeSession } from '../utils/authSession';
 import { useToastStore } from '../store/toastStore';
 import SavingButton from '../components/SavingButton';
 import { useEscapeKey } from '../hooks/useEscapeKey';
+import { ROUTES } from '../constants/routes';
 
 const pageBackground = { background: 'linear-gradient(135deg, #f0f4f8 0%, #e0eaf5 100%)' };
 const glassCard = {
@@ -43,7 +44,7 @@ export default function LoginPage() {
       const displayName = email.split('@')[0].replace(/\b\w/g, (c) => c.toUpperCase());
       setSession({ email, role, displayName });
       writeSession({ email, role, displayName }, rememberMe);
-      navigate(`/${role}`);
+      navigate(ROUTES.DASHBOARD_FOR_ROLE(role));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to sign in.');
       showToast(err instanceof Error ? err.message : 'Unable to sign in.', 'error');

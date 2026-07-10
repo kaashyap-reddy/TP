@@ -1,4 +1,5 @@
-export type Role = 'admin' | 'facilitator' | 'trainee';
+export type { Role } from '../types/role';
+import type { Role } from '../types/role';
 
 async function parseJsonResponse(response: Response): Promise<{ role: Role }> {
   const data = await response.json();

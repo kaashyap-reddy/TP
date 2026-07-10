@@ -1,25 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import type { DiscussionRole, DiscussionMessage, DiscussionThread } from '../types/discussion';
 
-export type DiscussionRole = 'trainee' | 'facilitator' | 'admin';
-
-export interface DiscussionMessage {
-  id: string;
-  author: string;
-  role: DiscussionRole;
-  text: string;
-  at: string;
-}
-
-export interface DiscussionThread {
-  id: string;
-  title: string;
-  batchId: string;
-  author: string;
-  role: DiscussionRole;
-  createdAt: string;
-  messages: DiscussionMessage[];
-}
+export type { DiscussionRole, DiscussionMessage, DiscussionThread } from '../types/discussion';
 
 let threadIdCounter = 100;
 function nextThreadId() {

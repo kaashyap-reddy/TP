@@ -3,16 +3,16 @@ import { useNavigate } from 'react-router-dom';
 import { useResourcesStore } from '../store/resourcesStore';
 import { Session, useSessionsStore } from '../store/sessionsStore';
 import { useToastStore } from '../store/toastStore';
-import { Announcement, useAnnouncementsStore } from '../store/announcementsStore';
+import { useAnnouncementsStore } from '../store/announcementsStore';
 import { effectiveStatus, useAssignmentsStore } from '../store/assignmentsStore';
 import { useFeedbackStore } from '../store/feedbackStore';
 import { useAuditLogStore } from '../store/auditLogStore';
 import { useBatchesStore } from '../store/batchesStore';
 import { useDiscussionsStore } from '../store/discussionsStore';
 import { useAuthStore } from '../store/authStore';
-import { clearSessionStorage } from '../lib/authSession';
-import { isRecentlyUpdated } from '../lib/dateUtils';
-import { average } from '../lib/mathUtils';
+import { clearSessionStorage } from '../utils/authSession';
+import { isRecentlyUpdated } from '../utils/dateUtils';
+import { average } from '../utils/mathUtils';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useNotifications } from '../hooks/useNotifications';
@@ -25,35 +25,13 @@ import TrendIndicator from '../components/TrendIndicator';
 import BarChart, { BarChartDatum } from '../components/BarChart';
 import HighlightMatch from '../components/HighlightMatch';
 import SavingButton from '../components/SavingButton';
+import type { TraineeTabId } from '../constants/navigation';
+import { TRAINEE_HEADER_TITLES } from '../constants/navigation';
+import { PRIORITY_STYLES } from '../constants/announcements';
+import { ROUTES } from '../constants/routes';
 
-const PRIORITY_STYLES: Record<Announcement['priority'], { border: string; badge: string }> = {
-  Critical: { border: 'border-l-red-500', badge: 'bg-red-100 text-red-700' },
-  Important: { border: 'border-l-blue-500', badge: 'bg-blue-100 text-blue-700' },
-  Normal: { border: 'border-l-gray-300', badge: 'bg-gray-100 text-gray-600' }
-};
-
-type TabId =
-  | 'dashboard'
-  | 'assignments'
-  | 'discussions'
-  | 'resources'
-  | 'calendar'
-  | 'grades'
-  | 'announcements'
-  | 'meetings'
-  | 'facilitators';
-
-const HEADER_TITLES: Record<TabId, string> = {
-  dashboard: 'My Progress & Analytics',
-  assignments: 'Online Assignment Tracking',
-  discussions: 'Communication Hub',
-  announcements: 'Announcements',
-  meetings: 'Upcoming Sessions',
-  facilitators: 'Facilitator Contacts',
-  resources: 'Learning Repository',
-  calendar: 'Assignment Calendar',
-  grades: 'Historical Feedback & Grades'
-};
+type TabId = TraineeTabId;
+const HEADER_TITLES = TRAINEE_HEADER_TITLES;
 
 const navItemClass = (active: boolean) =>
   active
@@ -922,7 +900,7 @@ export default function TraineeDashboardPage() {
         onConfirm={() => {
           clearSession();
           clearSessionStorage();
-          navigate('/');
+          navigate(ROUTES.LOGIN);
         }}
         onCancel={() => setLogoutConfirmOpen(false)}
       />

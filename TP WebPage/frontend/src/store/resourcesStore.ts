@@ -1,21 +1,10 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import type { Resource } from '../types/resource';
+import { RESOURCE_CATEGORIES } from '../constants/resources';
 
-export const RESOURCE_CATEGORIES = ['PDF Guides', 'Presentations', 'Video Recordings', 'External Links', 'Templates'] as const;
-
-export interface Resource {
-  id: string;
-  title: string;
-  category: string;
-  batchId: string | 'All';
-  uploadedBy: string;
-  verified: boolean;
-  uploadedAt: string;
-  lastUpdated: string;
-  version: string;
-  downloadCount: number;
-  fileSize: string;
-}
+export type { Resource } from '../types/resource';
+export { RESOURCE_CATEGORIES } from '../constants/resources';
 
 let idCounter = 100;
 function nextResourceId() {

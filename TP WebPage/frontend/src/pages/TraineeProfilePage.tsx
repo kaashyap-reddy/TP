@@ -7,10 +7,11 @@ import { useDiscussionsStore } from '../store/discussionsStore';
 import { MeetingPlatform, useSessionsStore } from '../store/sessionsStore';
 import { useAuditLogStore } from '../store/auditLogStore';
 import { useToastStore } from '../store/toastStore';
-import { average } from '../lib/mathUtils';
+import { average } from '../utils/mathUtils';
 import Breadcrumbs from '../components/Breadcrumbs';
 import StatusBadge from '../components/StatusBadge';
 import SavingButton from '../components/SavingButton';
+import { ROUTES } from '../constants/routes';
 
 const FACILITATOR_NAME = 'Junaid Mohammed';
 
@@ -55,7 +56,7 @@ export default function TraineeProfilePage() {
   const [saving, setSaving] = useState(false);
 
   function goBack() {
-    navigate('/facilitator', { state: { tab: 'trainees' } });
+    navigate(ROUTES.FACILITATOR, { state: { tab: 'trainees' } });
   }
 
   if (!traineeName || !batch) {
@@ -119,7 +120,7 @@ export default function TraineeProfilePage() {
       message: `Hi ${traineeName}, wanted to reach out regarding your progress.`
     });
     showToast(`Discussion started with ${traineeName}`);
-    navigate('/facilitator', { state: { tab: 'discussions' } });
+    navigate(ROUTES.FACILITATOR, { state: { tab: 'discussions' } });
   }
 
   const initials = traineeName

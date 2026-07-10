@@ -4,14 +4,15 @@ import { Role, forgotPassword } from '../api/auth';
 import { useAuthStore } from '../store/authStore';
 import { useProfileStore } from '../store/profileStore';
 import { useToastStore } from '../store/toastStore';
-import { updateStoredSession } from '../lib/authSession';
+import { updateStoredSession } from '../utils/authSession';
 import SavingButton from '../components/SavingButton';
 import Breadcrumbs from '../components/Breadcrumbs';
+import { ROUTES } from '../constants/routes';
 
 const ROLE_META: Record<Role, { dashboardLabel: string; dashboardPath: string; roleLabel: string; accentBtn: string; ring: string; idLabel: string }> = {
   admin: {
     dashboardLabel: 'Admin Dashboard',
-    dashboardPath: '/admin',
+    dashboardPath: ROUTES.ADMIN,
     roleLabel: 'System Administrator',
     accentBtn: 'bg-blue-600 hover:bg-blue-700',
     ring: 'focus:ring-blue-500',
@@ -19,7 +20,7 @@ const ROLE_META: Record<Role, { dashboardLabel: string; dashboardPath: string; r
   },
   facilitator: {
     dashboardLabel: 'Facilitator Dashboard',
-    dashboardPath: '/facilitator',
+    dashboardPath: ROUTES.FACILITATOR,
     roleLabel: 'Facilitator',
     accentBtn: 'bg-purple-600 hover:bg-purple-700',
     ring: 'focus:ring-purple-500',
@@ -27,7 +28,7 @@ const ROLE_META: Record<Role, { dashboardLabel: string; dashboardPath: string; r
   },
   trainee: {
     dashboardLabel: 'Trainee Dashboard',
-    dashboardPath: '/trainee',
+    dashboardPath: ROUTES.TRAINEE,
     roleLabel: 'Trainee',
     accentBtn: 'bg-blue-600 hover:bg-blue-700',
     ring: 'focus:ring-blue-500',

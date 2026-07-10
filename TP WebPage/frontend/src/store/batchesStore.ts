@@ -1,22 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import type { Batch } from '../types/batch';
 
-export interface Batch {
-  id: string;
-  name: string;
-  program: 'BA' | 'Data Engineering' | 'AI ML' | 'UI/UX';
-  track: 'BTech' | 'MBA';
-  poc: string;
-  traineeCount: number;
-  startMonth: string;
-  avgScore: number | null;
-  completion: number | null;
-  attendanceRate: number | null;
-  submissionRate: number | null;
-  feedbackRating: number | null;
-  status: 'Active' | 'Upcoming';
-  members: string[];
-}
+export type { Batch } from '../types/batch';
 
 export const INITIAL_BATCHES: Batch[] = [
   { id: 'ba-btech', name: 'BA BTech', program: 'BA', track: 'BTech', poc: 'Srikar Kulkarni', traineeCount: 28, startMonth: 'March', avgScore: 89, completion: 94, attendanceRate: 96, submissionRate: 92, feedbackRating: 4.7, status: 'Active', members: ['John Doe', 'Priya Sharma', 'Bob Williams', 'Alice Smith', 'Vikram Singh'] },

@@ -5,6 +5,13 @@ import { useAuthStore } from '../store/authStore';
 import { useProfileStore } from '../store/profileStore';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { useEscapeKey } from '../hooks/useEscapeKey';
+import { ROUTES } from '../constants/routes';
+
+const ACCOUNT_SETTINGS_ROUTE: Record<Role, string> = {
+  admin: ROUTES.ADMIN_ACCOUNT_SETTINGS,
+  facilitator: ROUTES.FACILITATOR_ACCOUNT_SETTINGS,
+  trainee: ROUTES.TRAINEE_ACCOUNT_SETTINGS
+};
 
 interface ProfileDropdownProps {
   role: Role;
@@ -167,7 +174,7 @@ export default function ProfileDropdown({ role, onSignOut, forceClose, onOpenCha
           <button
             onClick={() => {
               setOpen(false);
-              navigate(`/${role}/account-settings`);
+              navigate(ACCOUNT_SETTINGS_ROUTE[role]);
             }}
             className="block w-full text-center py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg font-medium transition-colors"
           >

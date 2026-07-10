@@ -2,7 +2,8 @@ import { FormEvent, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { acceptInvite } from '../api/auth';
 import { useAuthStore } from '../store/authStore';
-import { writeSession } from '../lib/authSession';
+import { writeSession } from '../utils/authSession';
+import { ROUTES } from '../constants/routes';
 
 const pageBackground = { background: 'linear-gradient(135deg, #f0f4f8 0%, #e0eaf5 100%)' };
 const glassCard = {
@@ -35,7 +36,7 @@ export default function InvitePage() {
       const displayName = inviteEmail.split('@')[0].replace(/\b\w/g, (c) => c.toUpperCase());
       setSession({ email: inviteEmail, role, displayName });
       writeSession({ email: inviteEmail, role, displayName }, true);
-      navigate('/trainee');
+      navigate(ROUTES.TRAINEE);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to activate account.');
     }

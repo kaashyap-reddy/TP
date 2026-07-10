@@ -1,18 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import type { AuditLogEntry, LogEventMeta } from '../types/auditLog';
 
-export interface AuditLogEntry {
-  id: string;
-  time: string;
-  date: string;
-  type: string;
-  message: string;
-  user: string;
-  module: string;
-  previousValue: string;
-  newValue: string;
-  ipAddress: string;
-}
+export type { AuditLogEntry, LogEventMeta } from '../types/auditLog';
 
 function placeholderIp(id: string): string {
   let hash = 0;
@@ -65,13 +55,6 @@ let idCounter = 100;
 function nextLogId() {
   idCounter += 1;
   return `log-${idCounter}`;
-}
-
-export interface LogEventMeta {
-  user?: string;
-  module?: string;
-  previousValue?: string;
-  newValue?: string;
 }
 
 interface AuditLogState {

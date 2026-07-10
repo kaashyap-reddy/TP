@@ -1,28 +1,9 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { INITIAL_BATCHES } from './batchesStore';
+import type { SubmissionStatus, AssignmentStatus, Submission, Assignment } from '../types/assignment';
 
-export type SubmissionStatus = 'Not Started' | 'Under Review' | 'Completed' | 'Late';
-export type AssignmentStatus = 'Draft' | 'Open' | 'Closed';
-
-export interface Submission {
-  traineeName: string;
-  status: SubmissionStatus;
-  submittedOn: string;
-  grade: number | null;
-  feedback: string;
-}
-
-export interface Assignment {
-  id: string;
-  title: string;
-  batchId: string;
-  facilitator: string;
-  deadline: string;
-  description: string;
-  status: AssignmentStatus;
-  submissions: Submission[];
-}
+export type { SubmissionStatus, AssignmentStatus, Submission, Assignment } from '../types/assignment';
 
 export function isOverdue(assignment: Assignment): boolean {
   if (assignment.status !== 'Open') return false;

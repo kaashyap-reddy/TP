@@ -10,9 +10,9 @@ import { useToastStore } from '../store/toastStore';
 import { Announcement, useAnnouncementsStore } from '../store/announcementsStore';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { useAuthStore } from '../store/authStore';
-import { clearSessionStorage } from '../lib/authSession';
+import { clearSessionStorage } from '../utils/authSession';
 import { createInvite } from '../api/auth';
-import { dateStrToIso, formatTimeRange, isoToDateStr, minutesToLabel, parseTimeRange } from '../lib/sessionTime';
+import { dateStrToIso, formatTimeRange, isoToDateStr, minutesToLabel, parseTimeRange } from '../utils/sessionTime';
 import QuickActionsBar from '../components/admin/QuickActionsBar';
 import RecentActivityWidget from '../components/admin/RecentActivityWidget';
 import UpcomingDeadlinesWidget from '../components/admin/UpcomingDeadlinesWidget';
@@ -20,9 +20,9 @@ import SessionsCalendarView from '../components/admin/SessionsCalendarView';
 import NotificationPanel, { categorize } from '../components/NotificationPanel';
 import ProfileDropdown from '../components/ProfileDropdown';
 import BatchRow from '../components/admin/BatchRow';
-import { isRecentlyUpdated } from '../lib/dateUtils';
-import { downloadTextFile } from '../lib/downloadFile';
-import { average } from '../lib/mathUtils';
+import { isRecentlyUpdated } from '../utils/dateUtils';
+import { downloadTextFile } from '../utils/downloadFile';
+import { average } from '../utils/mathUtils';
 import GlobalSearch, { SearchItem } from '../components/GlobalSearch';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { useEscapeKey } from '../hooks/useEscapeKey';
@@ -35,20 +35,13 @@ import { SkeletonCards, SkeletonRows } from '../components/Skeleton';
 import Pagination, { paginate } from '../components/Pagination';
 import BarChartComponent, { BarChartDatum } from '../components/BarChart';
 import SavingButton from '../components/SavingButton';
+import type { AdminTabId } from '../constants/navigation';
+import { ADMIN_HEADER_TITLES } from '../constants/navigation';
+import { PRIORITY_STYLES } from '../constants/announcements';
+import { ROUTES } from '../constants/routes';
 
-type TabId = 'analytics' | 'batches' | 'assignments' | 'announcements' | 'sessions' | 'feedback' | 'reports' | 'resources' | 'logs';
-
-const HEADER_TITLES: Record<TabId, string> = {
-  analytics: 'System Analytics Dashboard',
-  batches: 'Batch Management & Onboarding',
-  assignments: 'Global Assignments Overview',
-  announcements: 'Global Announcements',
-  sessions: 'Sessions — All Batches',
-  feedback: 'Global Feedback Reviews',
-  reports: 'Automated Reports',
-  resources: 'Global Content Repository',
-  logs: 'Audit Logs & Notifications'
-};
+type TabId = AdminTabId;
+const HEADER_TITLES = ADMIN_HEADER_TITLES;
 
 const CHART_LABEL_MAP: Record<string, string> = {
   completion: 'Completion Rate',
@@ -72,12 +65,6 @@ function getChartBarValue(batch: Batch, parameter: string): { percent: number; l
     batch.completion;
   return { percent: raw ?? 0, label: raw !== null ? `${raw}%` : '—' };
 }
-
-const PRIORITY_STYLES: Record<Announcement['priority'], { border: string; badge: string }> = {
-  Critical: { border: 'border-l-red-500', badge: 'bg-red-100 text-red-700' },
-  Important: { border: 'border-l-blue-500', badge: 'bg-blue-100 text-blue-700' },
-  Normal: { border: 'border-l-gray-300', badge: 'bg-gray-100 text-gray-600' }
-};
 
 const PROGRAM_COLORS: Record<string, string> = {
   BA: 'bg-blue-50/60 text-blue-800',
@@ -2504,7 +2491,7 @@ export default function AdminDashboardPage() {
         onConfirm={() => {
           clearSession();
           clearSessionStorage();
-          navigate('/');
+          navigate(ROUTES.LOGIN);
         }}
         onCancel={() => setLogoutConfirmOpen(false)}
       />

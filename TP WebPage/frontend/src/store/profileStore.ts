@@ -1,17 +1,9 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { Role } from '../api/auth';
+import type { Role } from '../types/role';
+import type { RoleProfile } from '../types/profile';
 
-export interface RoleProfile {
-  phone: string;
-  location: string;
-  avatarDataUrl: string | null;
-  company?: string;
-  department?: string;
-  idNumber?: string;
-  batch?: string;
-  course?: string;
-}
+export type { RoleProfile } from '../types/profile';
 
 const DEFAULT_PROFILES: Record<Role, RoleProfile> = {
   admin: {

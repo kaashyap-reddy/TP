@@ -11,14 +11,14 @@ import { Announcement, useAnnouncementsStore } from '../store/announcementsStore
 import { useDiscussionsStore } from '../store/discussionsStore';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { useAuthStore } from '../store/authStore';
-import { clearSessionStorage } from '../lib/authSession';
-import { dateStrToIso, formatTimeRange, isoToDateStr, minutesToLabel, parseTimeRange } from '../lib/sessionTime';
+import { clearSessionStorage } from '../utils/authSession';
+import { dateStrToIso, formatTimeRange, isoToDateStr, minutesToLabel, parseTimeRange } from '../utils/sessionTime';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useNotifications } from '../hooks/useNotifications';
-import { downloadTextFile } from '../lib/downloadFile';
+import { downloadTextFile } from '../utils/downloadFile';
 import TrendIndicator from '../components/TrendIndicator';
-import { average } from '../lib/mathUtils';
+import { average } from '../utils/mathUtils';
 import EmptyState from '../components/EmptyState';
 import ProgressBar from '../components/ProgressBar';
 import StatusBadge from '../components/StatusBadge';
@@ -27,27 +27,13 @@ import Breadcrumbs from '../components/Breadcrumbs';
 import NotificationPanel from '../components/NotificationPanel';
 import ProfileDropdown from '../components/ProfileDropdown';
 import SavingButton from '../components/SavingButton';
+import type { FacilitatorTabId } from '../constants/navigation';
+import { FACILITATOR_HEADER_TITLES } from '../constants/navigation';
+import { PRIORITY_STYLES } from '../constants/announcements';
+import { ROUTES } from '../constants/routes';
 
-type TabId = 'dashboard' | 'batches' | 'assignments' | 'discussions' | 'resources' | 'sessions' | 'calendar' | 'announcements' | 'feedback' | 'trainees';
-
-const PRIORITY_STYLES: Record<Announcement['priority'], { border: string; badge: string }> = {
-  Critical: { border: 'border-l-red-500', badge: 'bg-red-100 text-red-700' },
-  Important: { border: 'border-l-blue-500', badge: 'bg-blue-100 text-blue-700' },
-  Normal: { border: 'border-l-gray-300', badge: 'bg-gray-100 text-gray-600' }
-};
-
-const HEADER_TITLES: Record<TabId, string> = {
-  dashboard: 'Facilitator Workspace Overview',
-  batches: 'Batch Management',
-  assignments: 'Assignment Management',
-  discussions: 'Communication Hub',
-  resources: 'Digital Resource Library',
-  sessions: 'Sessions',
-  calendar: 'Session Calendar',
-  announcements: 'Announcements',
-  feedback: 'Integrated Feedback System',
-  trainees: 'Trainee Directory'
-};
+type TabId = FacilitatorTabId;
+const HEADER_TITLES = FACILITATOR_HEADER_TITLES;
 
 const navItemClass = (active: boolean) =>
   active
@@ -778,7 +764,7 @@ export default function FacilitatorDashboardPage() {
                         <button onClick={() => handleSendReminder(t.name)} className="text-xs bg-white border border-gray-300 px-3 py-1 rounded hover:bg-gray-50 transition-colors">Send Reminder</button>
                         <button onClick={() => handleSchedule1on1(t.name)} className="text-xs bg-white border border-gray-300 px-3 py-1 rounded hover:bg-gray-50 transition-colors">Schedule 1:1</button>
                         <button
-                          onClick={() => navigate(`/facilitator/trainees/${encodeURIComponent(t.name)}`)}
+                          onClick={() => navigate(ROUTES.FACILITATOR_TRAINEE_PROFILE(t.name))}
                           className="text-xs bg-white border border-gray-300 px-3 py-1 rounded hover:bg-gray-50 transition-colors"
                         >
                           View Profile
@@ -1464,7 +1450,7 @@ export default function FacilitatorDashboardPage() {
                   <p className="text-xs text-gray-400 mt-2 mb-4">{t.pendingCount > 0 ? `${t.pendingCount} pending submission(s)` : 'All caught up'}</p>
                   <div className="mt-auto space-y-2">
                     <button
-                      onClick={() => navigate(`/facilitator/trainees/${encodeURIComponent(t.name)}`)}
+                      onClick={() => navigate(ROUTES.FACILITATOR_TRAINEE_PROFILE(t.name))}
                       className="w-full py-2 bg-blue-50 text-blue-700 font-bold rounded-lg hover:bg-blue-100 text-sm"
                     >
                       View Profile
@@ -1734,7 +1720,7 @@ export default function FacilitatorDashboardPage() {
         onConfirm={() => {
           clearSession();
           clearSessionStorage();
-          navigate('/');
+          navigate(ROUTES.LOGIN);
         }}
         onCancel={() => setLogoutConfirmOpen(false)}
       />

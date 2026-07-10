@@ -5,7 +5,8 @@ import InvitePage from './pages/InvitePage';
 import RequireAuth from './components/RequireAuth';
 import Toast from './components/Toast';
 import { useAuthStore } from './store/authStore';
-import { readSession } from './lib/authSession';
+import { readSession } from './utils/authSession';
+import { ROUTES, ROUTE_PATTERNS } from './constants/routes';
 
 const AdminDashboardPage = lazy(() => import('./pages/AdminDashboardPage'));
 const FacilitatorDashboardPage = lazy(() => import('./pages/FacilitatorDashboardPage'));
@@ -39,10 +40,10 @@ export default function App() {
     <>
       <Suspense fallback={<RouteLoadingFallback />}>
         <Routes>
-          <Route path="/" element={<LoginPage />} />
-          <Route path="/invite" element={<InvitePage />} />
+          <Route path={ROUTES.LOGIN} element={<LoginPage />} />
+          <Route path={ROUTES.INVITE} element={<InvitePage />} />
           <Route
-            path="/admin"
+            path={ROUTES.ADMIN}
             element={
               <RequireAuth role="admin">
                 <AdminDashboardPage />
@@ -50,7 +51,7 @@ export default function App() {
             }
           />
           <Route
-            path="/facilitator"
+            path={ROUTES.FACILITATOR}
             element={
               <RequireAuth role="facilitator">
                 <FacilitatorDashboardPage />
@@ -58,16 +59,16 @@ export default function App() {
             }
           />
           <Route
-            path="/trainee"
+            path={ROUTES.TRAINEE}
             element={
               <RequireAuth role="trainee">
                 <TraineeDashboardPage />
               </RequireAuth>
             }
           />
-          <Route path="/assignments/:assignmentId" element={<AssignmentDetailPage />} />
+          <Route path={ROUTE_PATTERNS.ASSIGNMENT_DETAIL} element={<AssignmentDetailPage />} />
           <Route
-            path="/facilitator/trainees/:traineeName"
+            path={ROUTE_PATTERNS.FACILITATOR_TRAINEE_PROFILE}
             element={
               <RequireAuth role="facilitator">
                 <TraineeProfilePage />
@@ -75,7 +76,7 @@ export default function App() {
             }
           />
           <Route
-            path="/admin/account-settings"
+            path={ROUTES.ADMIN_ACCOUNT_SETTINGS}
             element={
               <RequireAuth role="admin">
                 <AccountSettingsPage />
@@ -83,7 +84,7 @@ export default function App() {
             }
           />
           <Route
-            path="/facilitator/account-settings"
+            path={ROUTES.FACILITATOR_ACCOUNT_SETTINGS}
             element={
               <RequireAuth role="facilitator">
                 <AccountSettingsPage />
@@ -91,14 +92,14 @@ export default function App() {
             }
           />
           <Route
-            path="/trainee/account-settings"
+            path={ROUTES.TRAINEE_ACCOUNT_SETTINGS}
             element={
               <RequireAuth role="trainee">
                 <AccountSettingsPage />
               </RequireAuth>
             }
           />
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<Navigate to={ROUTES.LOGIN} replace />} />
         </Routes>
       </Suspense>
       <Toast />

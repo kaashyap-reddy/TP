@@ -5,6 +5,7 @@ import { useBatchesStore } from '../store/batchesStore';
 import { useToastStore } from '../store/toastStore';
 import { useAuditLogStore } from '../store/auditLogStore';
 import { useAuthStore } from '../store/authStore';
+import { ROUTES } from '../constants/routes';
 
 const STATUS_BADGE: Record<SubmissionStatus, string> = {
   'Not Started': 'bg-gray-100 text-gray-500',
@@ -24,7 +25,7 @@ export default function AssignmentDetailPage() {
   const role = useAuthStore((s) => s.role);
 
   function goBackToAssignments() {
-    navigate(role ? `/${role}` : '/', { state: { tab: 'assignments' } });
+    navigate(role ? ROUTES.DASHBOARD_FOR_ROLE(role) : ROUTES.LOGIN, { state: { tab: 'assignments' } });
   }
 
   const [gradingTrainee, setGradingTrainee] = useState<string | null>(null);
