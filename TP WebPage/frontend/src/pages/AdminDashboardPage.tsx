@@ -9,6 +9,7 @@ import { useAuditLogStore } from '../store/auditLogStore';
 import { useToastStore } from '../store/toastStore';
 import { Announcement, useAnnouncementsStore } from '../store/announcementsStore';
 import ConfirmDialog from '../components/ConfirmDialog';
+import Modal from '../components/Modal';
 import { useAuthStore } from '../store/authStore';
 import { clearSessionStorage } from '../utils/authSession';
 import { createInvite } from '../api/auth';
@@ -264,16 +265,7 @@ export default function AdminDashboardPage() {
   const [resourceFormSaving, setResourceFormSaving] = useState(false);
 
   useEscapeKey(() => setBulkUploadModalOpen(false), bulkUploadModalOpen);
-  useEscapeKey(() => { setCreateAssignmentModalOpen(false); setAssignmentFormError(''); }, createAssignmentModalOpen);
-  useEscapeKey(() => setExtendDeadlineModalOpen(false), extendDeadlineModalOpen);
-  useEscapeKey(() => { setCreateAnnouncementModalOpen(false); setAnnouncementFormError(''); }, createAnnouncementModalOpen);
-  useEscapeKey(() => { setCreateSessionModalOpen(false); setSessionFormError(''); }, createSessionModalOpen);
   useEscapeKey(() => setBatchManageModalOpen(false), batchManageModalOpen);
-  useEscapeKey(() => setRescheduleModalOpen(false), rescheduleModalOpen);
-  useEscapeKey(() => setEditBatchModalOpen(false), editBatchModalOpen);
-  useEscapeKey(() => setFeedbackModalOpen(false), feedbackModalOpen);
-  useEscapeKey(() => { setResourceUploadModalOpen(false); setResourceFormError(''); }, resourceUploadModalOpen);
-  useEscapeKey(() => closeInviteModal(), inviteModalOpen);
   useEscapeKey(() => setNotificationOpen(false), notificationOpen);
   useEscapeKey(() => setSessionEditingId(null), sessionEditingId !== null);
 
@@ -2158,9 +2150,12 @@ export default function AdminDashboardPage() {
       </div>
 
       {/* Create Assignment Modal */}
-      <div className={`fixed inset-0 bg-gray-900 bg-opacity-50 ${createAssignmentModalOpen ? 'flex' : 'hidden'} items-center justify-center z-50`} role="dialog" aria-modal="true" onClick={() => { setCreateAssignmentModalOpen(false); setAssignmentFormError(''); }}>
-        <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
-          <h2 className="text-xl font-bold mb-4">Create Global Assignment</h2>
+      <Modal
+        open={createAssignmentModalOpen}
+        onClose={() => { setCreateAssignmentModalOpen(false); setAssignmentFormError(''); }}
+        title="Create Global Assignment"
+        maxWidth="md"
+      >
           <div className="space-y-4">
             {assignmentFormError && (
               <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{assignmentFormError}</div>
@@ -2195,14 +2190,16 @@ export default function AdminDashboardPage() {
             <button onClick={() => { setCreateAssignmentModalOpen(false); setAssignmentFormError(''); }} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium">Cancel</button>
             <SavingButton onClick={createNewAssignment} isSaving={assignmentFormSaving} label="Create" />
           </div>
-        </div>
-      </div>
+      </Modal>
 
       {/* Bulk Extend Deadline Modal */}
-      <div className={`fixed inset-0 bg-gray-900 bg-opacity-50 ${extendDeadlineModalOpen ? 'flex' : 'hidden'} items-center justify-center z-50`} role="dialog" aria-modal="true" onClick={() => setExtendDeadlineModalOpen(false)}>
-        <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
-          <h2 className="text-lg font-bold mb-1">Extend Deadline</h2>
-          <p className="text-sm text-gray-500 mb-4">New deadline for {selectedAssignmentIds.size} selected assignment(s).</p>
+      <Modal
+        open={extendDeadlineModalOpen}
+        onClose={() => setExtendDeadlineModalOpen(false)}
+        title="Extend Deadline"
+        subtitle={`New deadline for ${selectedAssignmentIds.size} selected assignment(s).`}
+        maxWidth="sm"
+      >
           <input
             type="date"
             value={extendDeadlineDraft}
@@ -2213,13 +2210,15 @@ export default function AdminDashboardPage() {
             <button onClick={() => setExtendDeadlineModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium">Cancel</button>
             <button onClick={confirmBulkExtendDeadline} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium">Apply</button>
           </div>
-        </div>
-      </div>
+      </Modal>
 
       {/* Broadcast Announcement Modal */}
-      <div className={`fixed inset-0 bg-gray-900 bg-opacity-50 ${createAnnouncementModalOpen ? 'flex' : 'hidden'} items-center justify-center z-50`} role="dialog" aria-modal="true" onClick={() => { setCreateAnnouncementModalOpen(false); setAnnouncementFormError(''); }}>
-        <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
-          <h2 className="text-xl font-bold mb-4">Broadcast Announcement</h2>
+      <Modal
+        open={createAnnouncementModalOpen}
+        onClose={() => { setCreateAnnouncementModalOpen(false); setAnnouncementFormError(''); }}
+        title="Broadcast Announcement"
+        maxWidth="md"
+      >
           <div className="space-y-4">
             {announcementFormError && (
               <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{announcementFormError}</div>
@@ -2269,13 +2268,15 @@ export default function AdminDashboardPage() {
             <button onClick={() => { setCreateAnnouncementModalOpen(false); setAnnouncementFormError(''); }} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium">Cancel</button>
             <SavingButton onClick={postNewAnnouncement} isSaving={announcementFormSaving} label="Post" className="px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700" />
           </div>
-        </div>
-      </div>
+      </Modal>
 
       {/* Schedule Session Modal */}
-      <div className={`fixed inset-0 bg-gray-900 bg-opacity-50 ${createSessionModalOpen ? 'flex' : 'hidden'} items-center justify-center z-50`} role="dialog" aria-modal="true" onClick={() => { setCreateSessionModalOpen(false); setSessionFormError(''); }}>
-        <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
-          <h2 className="text-xl font-bold mb-4">Schedule Session</h2>
+      <Modal
+        open={createSessionModalOpen}
+        onClose={() => { setCreateSessionModalOpen(false); setSessionFormError(''); }}
+        title="Schedule Session"
+        maxWidth="md"
+      >
           <div className="space-y-4">
             {sessionFormError && (
               <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{sessionFormError}</div>
@@ -2314,8 +2315,7 @@ export default function AdminDashboardPage() {
             <button onClick={() => { setCreateSessionModalOpen(false); setSessionFormError(''); }} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium">Cancel</button>
             <SavingButton onClick={createNewSession} isSaving={sessionFormSaving} label="Schedule" />
           </div>
-        </div>
-      </div>
+      </Modal>
 
       {/* Batch Manage Modal */}
       <div className={`fixed inset-0 bg-gray-900 bg-opacity-50 ${batchManageModalOpen ? 'flex' : 'hidden'} items-center justify-center z-50`} role="dialog" aria-modal="true" onClick={() => setBatchManageModalOpen(false)}>
@@ -2338,9 +2338,7 @@ export default function AdminDashboardPage() {
       </div>
 
       {/* Reschedule Modal */}
-      <div className={`fixed inset-0 bg-gray-900 bg-opacity-50 ${rescheduleModalOpen ? 'flex' : 'hidden'} items-center justify-center z-50`} role="dialog" aria-modal="true" onClick={() => setRescheduleModalOpen(false)}>
-        <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
-          <h2 className="text-lg font-bold mb-4">Reschedule Batch Session</h2>
+      <Modal open={rescheduleModalOpen} onClose={() => setRescheduleModalOpen(false)} title="Reschedule Batch Session" maxWidth="sm">
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
@@ -2355,13 +2353,10 @@ export default function AdminDashboardPage() {
             <button onClick={() => setRescheduleModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium">Cancel</button>
             <button onClick={saveReschedule} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium">Save</button>
           </div>
-        </div>
-      </div>
+      </Modal>
 
       {/* Edit Batch Modal */}
-      <div className={`fixed inset-0 bg-gray-900 bg-opacity-50 ${editBatchModalOpen ? 'flex' : 'hidden'} items-center justify-center z-50`} role="dialog" aria-modal="true" onClick={() => setEditBatchModalOpen(false)}>
-        <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
-          <h2 className="text-lg font-bold mb-4">Edit Batch Details</h2>
+      <Modal open={editBatchModalOpen} onClose={() => setEditBatchModalOpen(false)} title="Edit Batch Details" maxWidth="sm">
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">POC</label>
@@ -2389,14 +2384,16 @@ export default function AdminDashboardPage() {
             <button onClick={() => setEditBatchModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium">Cancel</button>
             <button onClick={saveEditBatch} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium">Save</button>
           </div>
-        </div>
-      </div>
+      </Modal>
 
       {/* Submit Feedback Modal */}
-      <div className={`fixed inset-0 bg-gray-900 bg-opacity-50 ${feedbackModalOpen ? 'flex' : 'hidden'} items-center justify-center z-50`} role="dialog" aria-modal="true" onClick={() => setFeedbackModalOpen(false)}>
-        <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
-          <h2 className="text-lg font-bold mb-1">Submit Trainer Feedback</h2>
-          <p className="text-sm text-gray-500 mb-4">Rating: {feedbackTarget?.facilitator}</p>
+      <Modal
+        open={feedbackModalOpen}
+        onClose={() => setFeedbackModalOpen(false)}
+        title="Submit Trainer Feedback"
+        subtitle={`Rating: ${feedbackTarget?.facilitator}`}
+        maxWidth="sm"
+      >
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Your Name</label>
@@ -2415,13 +2412,15 @@ export default function AdminDashboardPage() {
             <button onClick={() => setFeedbackModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium">Cancel</button>
             <button onClick={saveSubmitFeedback} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium">Submit</button>
           </div>
-        </div>
-      </div>
+      </Modal>
 
       {/* Resource Upload Modal */}
-      <div className={`fixed inset-0 bg-gray-900 bg-opacity-50 ${resourceUploadModalOpen ? 'flex' : 'hidden'} items-center justify-center z-50`} role="dialog" aria-modal="true" onClick={() => { setResourceUploadModalOpen(false); setResourceFormError(''); }}>
-        <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
-          <h2 className="text-lg font-bold mb-4">Upload Master Resource</h2>
+      <Modal
+        open={resourceUploadModalOpen}
+        onClose={() => { setResourceUploadModalOpen(false); setResourceFormError(''); }}
+        title="Upload Master Resource"
+        maxWidth="sm"
+      >
           <div className="space-y-4">
             {resourceFormError && (
               <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{resourceFormError}</div>
@@ -2459,8 +2458,7 @@ export default function AdminDashboardPage() {
             <button onClick={() => { setResourceUploadModalOpen(false); setResourceFormError(''); }} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium">Cancel</button>
             <SavingButton onClick={() => uploadResource(null)} isSaving={resourceFormSaving} label="Upload" />
           </div>
-        </div>
-      </div>
+      </Modal>
 
       <ConfirmDialog
         open={bulkDeleteResourcesConfirmOpen}
@@ -2497,9 +2495,7 @@ export default function AdminDashboardPage() {
       />
 
       {/* Invite Trainee Modal */}
-      <div className={`fixed inset-0 bg-gray-900 bg-opacity-50 ${inviteModalOpen ? 'flex' : 'hidden'} items-center justify-center z-50`} role="dialog" aria-modal="true" onClick={closeInviteModal}>
-        <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
-          <h2 className="text-lg font-bold mb-4">Invite Trainee</h2>
+      <Modal open={inviteModalOpen} onClose={closeInviteModal} title="Invite Trainee" maxWidth="sm">
           {!inviteLink ? (
             <>
               <div className="space-y-4">
@@ -2545,8 +2541,7 @@ export default function AdminDashboardPage() {
               </div>
             </>
           )}
-        </div>
-      </div>
+      </Modal>
 
       <GlobalSearch
         open={globalSearchOpen}
