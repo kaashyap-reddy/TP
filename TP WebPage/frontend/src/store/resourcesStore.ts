@@ -1,32 +1,51 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 import type { Resource } from '../types/resource';
-import * as resourcesService from '../services/resources.service';
+import * as resourceService from '../services/api/resourceService';
 
 export type { Resource } from '../types/resource';
 export { RESOURCE_CATEGORIES } from '../constants/resources';
 
 interface ResourcesState {
   resources: Resource[];
-  addResource: (input: Omit<Resource, 'id' | 'verified' | 'downloadCount' | 'lastUpdated' | 'version' | 'fileSize'> & { version?: string }) => Resource;
-  verifyResource: (id: string) => void;
-  incrementDownloadCount: (id: string) => void;
-  deleteResource: (id: string) => void;
+  isLoading: boolean;
+  error: string | null;
+  fetchResources: (filters?: { batchId?: string; category?: string; verified?: boolean }) => Promise<void>;
+  addResource: (input: resourceService.CreateResourceInput) => Promise<Resource>;
+  verifyResource: (id: string) => Promise<void>;
+  downloadResource: (id: string) => Promise<void>;
+  deleteResource: (id: string) => Promise<void>;
 }
 
-export const useResourcesStore = create<ResourcesState>()(
-  persist(
-    (set) => ({
-      resources: resourcesService.getResources(),
-      addResource: (input) => {
-        const resource = resourcesService.addResource(input);
-        set((state) => ({ resources: [resource, ...state.resources] }));
-        return resource;
-      },
-      verifyResource: (id) => set((state) => ({ resources: resourcesService.verifyResource(state.resources, id) })),
-      incrementDownloadCount: (id) => set((state) => ({ resources: resourcesService.incrementDownloadCount(state.resources, id) })),
-      deleteResource: (id) => set((state) => ({ resources: resourcesService.deleteResource(state.resources, id) }))
-    }),
-    { name: 'tp-resources' }
-  )
-);
+export const useResourcesStore = create<ResourcesState>()((set, get) => ({
+  resources: [],
+  isLoading: false,
+  error: null,
+  fetchResources: async (filters) => {
+    set({ isLoading: true, error: null });
+    try {
+      const resources = await resourceService.listResources(filters);
+      set({ resources, isLoading: false });
+    } catch (err) {
+      set({ isLoading: false, error: err instanceof Error ? err.message : 'Unable to load resources.' });
+    }
+  },
+  addResource: async (input) => {
+    const resource = await resourceService.createResource(input);
+    set({ resources: [resource, ...get().resources] });
+    return resource;
+  },
+  verifyResource: async (id) => {
+    const updated = await resourceService.verifyResource(id);
+    set({ resources: get().resources.map((r) => (r.id === id ? updated : r)) });
+  },
+  downloadResource: async (id) => {
+    const resource = get().resources.find((r) => r.id === id);
+    if (!resource) return;
+    await resourceService.downloadResource(id, resource.title);
+    set({ resources: get().resources.map((r) => (r.id === id ? { ...r, downloadCount: r.downloadCount + 1 } : r)) });
+  },
+  deleteResource: async (id) => {
+    await resourceService.deleteResource(id);
+    set({ resources: get().resources.filter((r) => r.id !== id) });
+  }
+}));

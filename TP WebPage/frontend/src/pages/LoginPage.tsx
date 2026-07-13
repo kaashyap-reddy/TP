@@ -1,12 +1,13 @@
 import { FormEvent, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { login, resetPassword } from '../services/authService';
+import { forgotPassword, login } from '../services/api/authService';
+import { startDemoSession } from '../services/api/demoMode';
 import { useAuthStore } from '../store/authStore';
-import { writeSession } from '../utils/authSession';
 import { useToastStore } from '../store/toastStore';
 import SavingButton from '../components/SavingButton';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { ROUTES } from '../constants/routes';
+import type { Role } from '../types/role';
 
 const pageBackground = { background: 'linear-gradient(135deg, #f0f4f8 0%, #e0eaf5 100%)' };
 const glassCard = {
@@ -35,14 +36,20 @@ export default function LoginPage() {
 
   useEscapeKey(() => setForgotOpen(false), forgotOpen);
 
+  function viewDemo(role: Role) {
+    const user = startDemoSession(role);
+    setSession({ id: user.id, email: user.email, role: user.role, displayName: user.name, permissions: [] });
+    showToast(`Viewing a demo ${role} account — sample data, not a real database.`);
+    navigate(ROUTES.DASHBOARD_FOR_ROLE(user.role));
+  }
+
   async function handleLogin(event: FormEvent) {
     event.preventDefault();
     setError('');
     setIsSigningIn(true);
     try {
-      const user = await login(email, password);
-      setSession({ id: user.id, email: user.email, role: user.role, displayName: user.name });
-      writeSession({ id: user.id, email: user.email, role: user.role, displayName: user.name }, rememberMe);
+      const user = await login(email, password, rememberMe);
+      setSession({ id: user.id, email: user.email, role: user.role, displayName: user.name, permissions: user.permissions });
       navigate(ROUTES.DASHBOARD_FOR_ROLE(user.role));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to sign in.');
@@ -58,13 +65,13 @@ export default function LoginPage() {
       setForgotError('Passwords do not match.');
       return;
     }
-    if (forgotPass.length < 6) {
-      setForgotError('Password must be at least 6 characters.');
+    if (forgotPass.length < 8) {
+      setForgotError('Password must be at least 8 characters.');
       return;
     }
     setIsResetting(true);
     try {
-      await resetPassword(forgotEmail, forgotPass);
+      await forgotPassword(forgotEmail, forgotPass);
       showToast('Password reset. You can now sign in with your new password.');
       setForgotOpen(false);
       setForgotEmail('');
@@ -94,8 +101,9 @@ export default function LoginPage() {
             <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-2">{error}</div>
           )}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Company Email</label>
+            <label htmlFor="login-email" className="block text-sm font-medium text-gray-700 mb-2">Company Email</label>
             <input
+              id="login-email"
               type="email"
               placeholder="you@company.com"
               className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
@@ -106,8 +114,9 @@ export default function LoginPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
+            <label htmlFor="login-password" className="block text-sm font-medium text-gray-700 mb-2">Password</label>
             <input
+              id="login-password"
               type="password"
               placeholder="••••••••"
               className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
@@ -153,6 +162,21 @@ export default function LoginPage() {
             </a>
           </p>
         </div>
+
+        <div className="mt-6 pt-6 border-t border-gray-200 relative z-10 text-center">
+          <p className="text-xs text-gray-400 mb-2">No account handy? Preview the app with sample data:</p>
+          <div className="flex justify-center gap-2">
+            <button onClick={() => viewDemo('admin')} className="px-3 py-1.5 text-xs font-medium border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50">
+              View as Admin
+            </button>
+            <button onClick={() => viewDemo('facilitator')} className="px-3 py-1.5 text-xs font-medium border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50">
+              View as Facilitator
+            </button>
+            <button onClick={() => viewDemo('trainee')} className="px-3 py-1.5 text-xs font-medium border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50">
+              View as Trainee
+            </button>
+          </div>
+        </div>
       </div>
 
       {forgotOpen && (
@@ -165,8 +189,9 @@ export default function LoginPage() {
                 <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-2">{forgotError}</div>
               )}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Company Email</label>
+                <label htmlFor="forgot-email" className="block text-sm font-medium text-gray-700 mb-1">Company Email</label>
                 <input
+                  id="forgot-email"
                   type="email"
                   required
                   value={forgotEmail}
@@ -176,8 +201,9 @@ export default function LoginPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
+                <label htmlFor="forgot-new-password" className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
                 <input
+                  id="forgot-new-password"
                   type="password"
                   required
                   value={forgotPass}
@@ -185,11 +211,12 @@ export default function LoginPage() {
                   className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none"
                   placeholder="••••••••"
                 />
-                <p className="text-xs text-gray-400 mt-1">At least 6 characters.</p>
+                <p className="text-xs text-gray-400 mt-1">At least 8 characters.</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Confirm New Password</label>
+                <label htmlFor="forgot-confirm-password" className="block text-sm font-medium text-gray-700 mb-1">Confirm New Password</label>
                 <input
+                  id="forgot-confirm-password"
                   type="password"
                   required
                   value={forgotConfirm}

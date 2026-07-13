@@ -1,0 +1,551 @@
+// Trainee Portal — production schema.
+// Translates backend/docs/DATABASE_DESIGN.md into a working Prisma schema.
+// DB table/column names stay snake_case (via @@map/@map) matching the design doc's raw SQL;
+// Prisma client field/model names are idiomatic camelCase/PascalCase.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  // Runtime queries: point this at a pooled connection string (e.g. Neon's "-pooler" host,
+  // or PgBouncer) in production so short-lived serverless/PaaS instances don't exhaust
+  // Postgres' connection limit.
+  url       = env("DATABASE_URL")
+  // Schema migrations need a direct (non-pooled) connection. Set DIRECT_URL to the same
+  // value as DATABASE_URL if you're not using a pooler (e.g. local dev).
+  directUrl = env("DIRECT_URL")
+}
+
+// ---------- Enums ----------
+
+enum BatchProgram {
+  BA
+  DataEngineering @map("Data Engineering")
+  AIML            @map("AI ML")
+  UIUX            @map("UI/UX")
+}
+
+enum BatchTrack {
+  BTech
+  MBA
+}
+
+enum BatchStatus {
+  Active
+  Upcoming
+}
+
+enum AssignmentStatus {
+  Draft
+  Open
+  Closed
+}
+
+enum SubmissionStatus {
+  NotStarted  @map("Not Started")
+  UnderReview @map("Under Review")
+  Completed
+  Late
+}
+
+enum SessionPlatform {
+  GoogleMeet     @map("Google Meet")
+  MicrosoftTeams @map("Microsoft Teams")
+  Zoom
+  Other
+}
+
+enum SessionStatus {
+  Upcoming
+  Live
+  Completed
+  Cancelled
+  Rescheduled
+}
+
+enum AttendanceStatus {
+  Present
+  Absent
+  Late
+  Excused
+}
+
+enum AnnouncementPriority {
+  Normal
+  Important
+  Critical
+}
+
+enum DiscussionRole {
+  admin
+  facilitator
+  trainee
+}
+
+enum InviteStatus {
+  Pending
+  Accepted
+  Expired
+  Revoked
+}
+
+enum FeedbackDirection {
+  FacilitatorToTrainee
+  TraineeToFacilitator
+}
+
+// ---------- Auth & identity ----------
+
+model Role {
+  id          Int              @id @default(autoincrement())
+  name        String           @unique
+  description String?
+  users       User[]
+  permissions RolePermission[]
+  invites     UserInvite[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          Int              @id @default(autoincrement())
+  key         String           @unique
+  description String?
+  roles       RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       Int @map("role_id")
+  permissionId Int @map("permission_id")
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model User {
+  id                  String    @id @default(uuid())
+  name                String
+  email               String    @unique
+  passwordHash        String    @map("password_hash")
+  roleId              Int       @map("role_id")
+  isActive            Boolean   @default(true) @map("is_active")
+  lastLoginAt         DateTime? @map("last_login_at")
+  failedLoginAttempts Int       @default(0) @map("failed_login_attempts")
+  lockedUntil         DateTime? @map("locked_until")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+  deletedAt           DateTime? @map("deleted_at")
+
+  role Role @relation(fields: [roleId], references: [id])
+
+  profile               UserProfile?
+  refreshTokens         RefreshToken[]
+  invitesSent           UserInvite[]        @relation("InviteSentBy")
+  batchesAsFacilitator  Batch[]             @relation("BatchFacilitator")
+  batchEnrollments      BatchTrainee[]
+  assignmentsCreated    Assignment[]
+  submissions           Submission[]
+  sessionsAsFacilitator Session[]
+  attendanceMarked      Attendance[]        @relation("AttendanceMarkedBy")
+  attendanceRecords     Attendance[]        @relation("AttendanceTrainee")
+  resourcesUploaded     Resource[]
+  feedbackAsTrainee     FeedbackEntry[]     @relation("FeedbackTrainee")
+  feedbackAsFacilitator FeedbackEntry[]     @relation("FeedbackFacilitator")
+  announcements         Announcement[]
+  announcementReads     AnnouncementRead[]
+  discussionThreads     DiscussionThread[]
+  discussionMessages    DiscussionMessage[]
+  auditLogEntries       AuditLog[]
+  notificationReads     NotificationRead[]
+
+  // Matches the admin user-listing endpoint's role filter (GET /users?role=...).
+  @@index([roleId])
+  @@map("users")
+}
+
+model UserProfile {
+  userId           String    @id @map("user_id")
+  phone            String?
+  location         String?
+  company          String?
+  department       String?
+  idNumber         String?   @map("id_number")
+  avatarStorageKey String?   @map("avatar_storage_key")
+  avatarMimeType   String?   @map("avatar_mime_type")
+  avatarSizeBytes  Int?      @map("avatar_size_bytes")
+  avatarUpdatedAt  DateTime? @map("avatar_updated_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_profiles")
+}
+
+model UserInvite {
+  id         String       @id @default(uuid())
+  email      String
+  roleId     Int          @map("role_id")
+  invitedBy  String?      @map("invited_by")
+  tokenHash  String       @unique @map("token_hash")
+  status     InviteStatus @default(Pending)
+  expiresAt  DateTime     @map("expires_at")
+  acceptedAt DateTime?    @map("accepted_at")
+  createdAt  DateTime     @default(now()) @map("created_at")
+
+  role    Role  @relation(fields: [roleId], references: [id])
+  inviter User? @relation("InviteSentBy", fields: [invitedBy], references: [id], onDelete: SetNull)
+
+  @@index([email, status])
+  @@map("user_invites")
+}
+
+model RefreshToken {
+  id         String    @id @default(uuid())
+  userId     String    @map("user_id")
+  tokenHash  String    @unique @map("token_hash")
+  userAgent  String?   @map("user_agent")
+  ipAddress  String?   @map("ip_address")
+  rememberMe Boolean   @default(false) @map("remember_me")
+  expiresAt  DateTime  @map("expires_at")
+  revokedAt  DateTime? @map("revoked_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+// ---------- Batches ----------
+
+model Batch {
+  id            String       @id @default(uuid())
+  code          String       @unique
+  name          String
+  program       BatchProgram
+  track         BatchTrack
+  facilitatorId String?      @map("facilitator_id")
+  startMonth    DateTime?    @map("start_month")
+  endDate       DateTime?    @map("end_date")
+  status        BatchStatus  @default(Upcoming)
+  archivedAt    DateTime?    @map("archived_at")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+  deletedAt     DateTime?    @map("deleted_at")
+
+  facilitator User? @relation("BatchFacilitator", fields: [facilitatorId], references: [id], onDelete: SetNull)
+
+  trainees          BatchTrainee[]
+  assignments       Assignment[]
+  assignmentBatches AssignmentBatch[]
+  sessions          Session[]
+  resources         Resource[]
+  feedback          FeedbackEntry[]
+  discussions       DiscussionThread[]
+
+  @@index([facilitatorId])
+  @@index([status])
+  @@map("batches")
+}
+
+model BatchTrainee {
+  batchId    String    @map("batch_id")
+  traineeId  String    @map("trainee_id")
+  enrolledAt DateTime  @default(now()) @map("enrolled_at")
+  removedAt  DateTime? @map("removed_at")
+
+  batch   Batch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  trainee User  @relation(fields: [traineeId], references: [id], onDelete: Cascade)
+
+  @@id([batchId, traineeId])
+  @@index([traineeId])
+  @@map("batch_trainees")
+}
+
+// ---------- Assignments & submissions ----------
+
+model Assignment {
+  id                         String           @id @default(uuid())
+  // Primary/first batch — kept for backward compatibility with existing single-batch reads.
+  // The authoritative set of assigned batches is the AssignmentBatch join table below.
+  batchId                    String           @map("batch_id")
+  facilitatorId              String           @map("facilitator_id")
+  title                      String
+  description                String           @default("")
+  status                     AssignmentStatus @default(Draft)
+  deadline                   DateTime
+  attachmentOriginalFilename String?          @map("attachment_original_filename")
+  attachmentStorageKey       String?          @unique @map("attachment_storage_key")
+  attachmentMimeType         String?          @map("attachment_mime_type")
+  attachmentSizeBytes        Int?             @map("attachment_size_bytes")
+  createdAt                  DateTime         @default(now()) @map("created_at")
+  updatedAt                  DateTime         @updatedAt @map("updated_at")
+  deletedAt                  DateTime?        @map("deleted_at")
+
+  batch       Batch             @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  facilitator User              @relation(fields: [facilitatorId], references: [id])
+  submissions Submission[]
+  batches     AssignmentBatch[]
+
+  @@index([batchId])
+  @@index([deadline])
+  @@map("assignments")
+}
+
+// Many-to-many Assignment↔Batch. Every assignment has at least one row here (including its
+// `batchId` primary batch), added at create time; additional rows represent extra batches the
+// same assignment was also assigned to.
+model AssignmentBatch {
+  assignmentId String   @map("assignment_id")
+  batchId      String   @map("batch_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  assignment Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  batch      Batch      @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@id([assignmentId, batchId])
+  @@index([batchId])
+  @@map("assignment_batches")
+}
+
+model Submission {
+  id           String           @id @default(uuid())
+  assignmentId String           @map("assignment_id")
+  traineeId    String           @map("trainee_id")
+  status       SubmissionStatus @default(NotStarted)
+  submittedAt  DateTime?        @map("submitted_at")
+  grade        Decimal?         @db.Decimal(5, 2)
+  feedback     String?
+  createdAt    DateTime         @default(now()) @map("created_at")
+  updatedAt    DateTime         @updatedAt @map("updated_at")
+
+  assignment  Assignment             @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  trainee     User                   @relation(fields: [traineeId], references: [id], onDelete: Cascade)
+  attachments SubmissionAttachment[]
+
+  @@unique([assignmentId, traineeId])
+  @@index([traineeId])
+  @@index([status])
+  @@map("submissions")
+}
+
+model SubmissionAttachment {
+  id               String   @id @default(uuid())
+  submissionId     String   @map("submission_id")
+  originalFilename String   @map("original_filename")
+  storageKey       String   @unique @map("storage_key")
+  mimeType         String   @map("mime_type")
+  sizeBytes        Int      @map("size_bytes")
+  // False once a newer attachment supersedes this one on resubmission — kept (not deleted) to
+  // preserve submission history; only the current row is served by the default download route.
+  isCurrent        Boolean  @default(true) @map("is_current")
+  uploadedAt       DateTime @default(now()) @map("uploaded_at")
+
+  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([submissionId])
+  @@index([submissionId, isCurrent])
+  @@map("submission_attachments")
+}
+
+// ---------- Sessions & attendance ----------
+
+model Session {
+  id            String          @id @default(uuid())
+  batchId       String          @map("batch_id")
+  facilitatorId String          @map("facilitator_id")
+  title         String
+  scheduledAt   DateTime        @map("scheduled_at")
+  platform      SessionPlatform @default(Other)
+  meetingLink   String?         @map("meeting_link")
+  status        SessionStatus   @default(Upcoming)
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
+  deletedAt     DateTime?       @map("deleted_at")
+
+  batch       Batch        @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  facilitator User         @relation(fields: [facilitatorId], references: [id])
+  attendance  Attendance[]
+
+  @@index([batchId])
+  @@index([scheduledAt])
+  @@map("sessions")
+}
+
+model Attendance {
+  id        String           @id @default(uuid())
+  sessionId String           @map("session_id")
+  traineeId String           @map("trainee_id")
+  status    AttendanceStatus
+  markedBy  String?          @map("marked_by")
+  markedAt  DateTime         @default(now()) @map("marked_at")
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  trainee User    @relation("AttendanceTrainee", fields: [traineeId], references: [id], onDelete: Cascade)
+  marker  User?   @relation("AttendanceMarkedBy", fields: [markedBy], references: [id], onDelete: SetNull)
+
+  @@unique([sessionId, traineeId])
+  @@index([traineeId])
+  @@map("attendance")
+}
+
+// ---------- Resources ----------
+
+model Resource {
+  id            String    @id @default(uuid())
+  batchId       String?   @map("batch_id")
+  title         String
+  category      String
+  version       String    @default("v1.0")
+  storageKey    String    @unique @map("storage_key")
+  mimeType      String    @map("mime_type")
+  sizeBytes     BigInt    @map("size_bytes")
+  downloadCount Int       @default(0) @map("download_count")
+  verified      Boolean   @default(false)
+  uploadedBy    String    @map("uploaded_by")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  deletedAt     DateTime? @map("deleted_at")
+
+  batch    Batch? @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  uploader User   @relation(fields: [uploadedBy], references: [id])
+
+  @@index([batchId])
+  @@index([category])
+  @@map("resources")
+}
+
+// ---------- Feedback ----------
+
+model FeedbackEntry {
+  id            String            @id @default(uuid())
+  batchId       String            @map("batch_id")
+  traineeId     String            @map("trainee_id")
+  facilitatorId String            @map("facilitator_id")
+  // Who authored the feedback — kept default FacilitatorToTrainee so every existing row
+  // (created before this field existed) is interpreted the same way it always behaved.
+  direction     FeedbackDirection @default(FacilitatorToTrainee)
+  category      String
+  rating        Int
+  comment       String?
+  createdAt     DateTime          @default(now()) @map("created_at")
+
+  batch       Batch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  trainee     User  @relation("FeedbackTrainee", fields: [traineeId], references: [id], onDelete: Cascade)
+  facilitator User  @relation("FeedbackFacilitator", fields: [facilitatorId], references: [id], onDelete: Cascade)
+
+  @@index([batchId])
+  @@index([traineeId])
+  @@index([facilitatorId])
+  @@index([direction])
+  @@map("feedback_entries")
+}
+
+// ---------- Announcements & discussions ----------
+
+model Announcement {
+  id           String               @id @default(uuid())
+  authorId     String               @map("author_id")
+  title        String
+  message      String
+  priority     AnnouncementPriority @default(Normal)
+  audience     String
+  pinned       Boolean              @default(false)
+  scheduledFor DateTime?            @map("scheduled_for")
+  expiresAt    DateTime?            @map("expires_at")
+  createdAt    DateTime             @default(now()) @map("created_at")
+  updatedAt    DateTime             @updatedAt @map("updated_at")
+  deletedAt    DateTime?            @map("deleted_at")
+
+  author User               @relation(fields: [authorId], references: [id])
+  reads  AnnouncementRead[]
+
+  @@index([pinned])
+  @@map("announcements")
+}
+
+model AnnouncementRead {
+  announcementId String   @map("announcement_id")
+  userId         String   @map("user_id")
+  readAt         DateTime @default(now()) @map("read_at")
+
+  announcement Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([announcementId, userId])
+  @@map("announcement_reads")
+}
+
+model DiscussionThread {
+  id        String    @id @default(uuid())
+  batchId   String    @map("batch_id")
+  authorId  String    @map("author_id")
+  title     String
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  batch    Batch               @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  author   User                @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  messages DiscussionMessage[]
+
+  @@index([batchId])
+  @@map("discussion_threads")
+}
+
+model DiscussionMessage {
+  id                 String         @id @default(uuid())
+  threadId           String         @map("thread_id")
+  authorId           String         @map("author_id")
+  authorRoleSnapshot DiscussionRole @map("author_role_snapshot")
+  body               String
+  createdAt          DateTime       @default(now()) @map("created_at")
+  deletedAt          DateTime?      @map("deleted_at")
+
+  thread DiscussionThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  author User             @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([threadId])
+  @@map("discussion_messages")
+}
+
+// ---------- Audit log & notifications ----------
+
+model AuditLog {
+  id            String   @id @default(uuid())
+  occurredAt    DateTime @default(now()) @map("occurred_at")
+  eventType     String   @map("event_type")
+  message       String
+  actorId       String?  @map("actor_id")
+  module        String
+  previousValue String?  @map("previous_value")
+  newValue      String?  @map("new_value")
+  ipAddress     String?  @map("ip_address")
+
+  actor User?              @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  reads NotificationRead[]
+
+  @@index([occurredAt(sort: Desc)])
+  @@index([actorId])
+  @@index([module])
+  @@map("audit_log")
+}
+
+model NotificationRead {
+  auditLogId String   @map("audit_log_id")
+  userId     String   @map("user_id")
+  readAt     DateTime @default(now()) @map("read_at")
+
+  auditLog AuditLog @relation(fields: [auditLogId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([auditLogId, userId])
+  @@map("notification_reads")
+}

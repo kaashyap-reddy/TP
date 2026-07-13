@@ -8,12 +8,14 @@ import { useFeedbackStore } from '../store/feedbackStore';
 import { useAuditLogStore } from '../store/auditLogStore';
 import { useToastStore } from '../store/toastStore';
 import { Announcement, useAnnouncementsStore } from '../store/announcementsStore';
-import { useDiscussionsStore } from '../store/discussionsStore';
 import ConfirmDialog from '../components/ConfirmDialog';
 import Modal from '../components/Modal';
 import { useAuthStore } from '../store/authStore';
-import { logout } from '../services/authService';
+import { logout } from '../services/api/authService';
+import { assignmentAttachmentUrl } from '../services/api/assignmentService';
+import { findUserEmailByName } from '../services/api/userService';
 import { dateStrToIso, formatTimeRange, isoToDateStr, minutesToLabel, parseTimeRange } from '../utils/sessionTime';
+import { formatDateTime } from '../utils/dateUtils';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useNotifications } from '../hooks/useNotifications';
@@ -32,11 +34,18 @@ import StatCard from '../components/StatCard';
 import PageHeader from '../components/PageHeader';
 import SearchInput from '../components/SearchInput';
 import Table from '../components/Table';
+import BatchMultiSelect from '../components/BatchMultiSelect';
+import AssignmentBatchesCell from '../components/AssignmentBatchesCell';
+import AssignmentTitleLink from '../components/AssignmentTitleLink';
+import FileViewButton from '../components/FileViewButton';
+import FeedbackCard from '../components/FeedbackCard';
+import SessionsCalendarView from '../components/SessionsCalendarView';
 import DashboardLayout from '../layouts/DashboardLayout';
 import type { FacilitatorTabId } from '../constants/navigation';
 import { FACILITATOR_HEADER_TITLES, FACILITATOR_BRAND_LABEL, FACILITATOR_NAV_ITEMS } from '../constants/navigation';
 import { PRIORITY_STYLES } from '../constants/announcements';
 import { ROUTES } from '../constants/routes';
+import { facilitatorTraineeProfileNavArgs } from '../utils/facilitatorProfileNav';
 
 type TabId = FacilitatorTabId;
 const HEADER_TITLES = FACILITATOR_HEADER_TITLES;
@@ -61,8 +70,18 @@ export default function FacilitatorDashboardPage() {
   const location = useLocation();
   const initialTab = (location.state as { tab?: TabId } | null)?.tab;
 
+  const { id: currentUserId, displayName, clearSession } = useAuthStore();
+
   const batches = useBatchesStore((s) => s.batches);
+  const fetchBatches = useBatchesStore((s) => s.fetchBatches);
+  useEffect(() => {
+    if (currentUserId) fetchBatches({ facilitatorId: currentUserId });
+  }, [fetchBatches, currentUserId]);
   const assignments = useAssignmentsStore((s) => s.assignments);
+  const fetchAssignments = useAssignmentsStore((s) => s.fetchAssignments);
+  useEffect(() => {
+    fetchAssignments();
+  }, [fetchAssignments]);
   const createAssignment = useAssignmentsStore((s) => s.createAssignment);
   const updateSubmission = useAssignmentsStore((s) => s.updateSubmission);
   const bulkDeleteAssignments = useAssignmentsStore((s) => s.bulkDelete);
@@ -70,12 +89,24 @@ export default function FacilitatorDashboardPage() {
   const bulkExtendAssignmentDeadline = useAssignmentsStore((s) => s.bulkExtendDeadline);
   const duplicateAssignment = useAssignmentsStore((s) => s.duplicateAssignment);
   const sessions = useSessionsStore((s) => s.sessions);
+  const fetchSessions = useSessionsStore((s) => s.fetchSessions);
+  useEffect(() => {
+    fetchSessions();
+  }, [fetchSessions]);
   const createSession = useSessionsStore((s) => s.createSession);
   const updateSession = useSessionsStore((s) => s.updateSession);
   const resources = useResourcesStore((s) => s.resources);
+  const fetchResources = useResourcesStore((s) => s.fetchResources);
+  useEffect(() => {
+    fetchResources();
+  }, [fetchResources]);
   const addResource = useResourcesStore((s) => s.addResource);
   const verifyResource = useResourcesStore((s) => s.verifyResource);
   const feedback = useFeedbackStore((s) => s.feedback);
+  const fetchFeedback = useFeedbackStore((s) => s.fetchFeedback);
+  useEffect(() => {
+    fetchFeedback();
+  }, [fetchFeedback]);
   const submitFeedback = useFeedbackStore((s) => s.submitFeedback);
   const auditEntries = useAuditLogStore((s) => s.entries);
   const logEvent = useAuditLogStore((s) => s.logEvent);
@@ -83,11 +114,6 @@ export default function FacilitatorDashboardPage() {
   const announcements = useAnnouncementsStore((s) => s.announcements);
   const markAnnouncementRead = useAnnouncementsStore((s) => s.markRead);
   const postAnnouncement = useAnnouncementsStore((s) => s.postAnnouncement);
-  const threads = useDiscussionsStore((s) => s.threads);
-  const createThread = useDiscussionsStore((s) => s.createThread);
-  const addMessage = useDiscussionsStore((s) => s.addMessage);
-  const deleteThread = useDiscussionsStore((s) => s.deleteThread);
-  const { displayName } = useAuthStore();
 
   const [activeTab, setActiveTab] = useState<TabId>(initialTab ?? 'dashboard');
   const markedAnnouncementsReadRef = useRef<Set<string>>(new Set());
@@ -119,26 +145,15 @@ export default function FacilitatorDashboardPage() {
   const [extendDeadlineDraft, setExtendDeadlineDraft] = useState('');
   const [resourceCategory, setResourceCategory] = useState('All Files');
   const [feedbackSearch, setFeedbackSearch] = useState('');
-
-  // Discussions tab state
-  const [threadSearch, setThreadSearch] = useState('');
-  const [selectedThreadId, setSelectedThreadId] = useState<string | null>(threads[0]?.id ?? null);
-  const [replyText, setReplyText] = useState('');
-  const [newThreadModalOpen, setNewThreadModalOpen] = useState(false);
-  const [newThreadTitle, setNewThreadTitle] = useState('');
-  const [newThreadMessage, setNewThreadMessage] = useState('');
-  const [deleteThreadConfirmOpen, setDeleteThreadConfirmOpen] = useState(false);
-  const [threadMenuOpenId, setThreadMenuOpenId] = useState<string | null>(null);
+  const [feedbackSelectedTrainee, setFeedbackSelectedTrainee] = useState<{ name: string; batchId: string } | null>(null);
 
   // Quick Action menu
   const [quickActionOpen, setQuickActionOpen] = useState(false);
   const notificationMenuRef = useRef<HTMLDivElement>(null);
   const quickActionMenuRef = useRef<HTMLDivElement>(null);
-  const threadMenuRef = useRef<HTMLDivElement>(null);
   const sessionEditPopoverRef = useRef<HTMLDivElement>(null);
   useClickOutside(notificationMenuRef, () => setNotificationOpen(false), notificationOpen);
   useClickOutside(quickActionMenuRef, () => setQuickActionOpen(false), quickActionOpen);
-  useClickOutside(threadMenuRef, () => setThreadMenuOpenId(null), threadMenuOpenId !== null);
   const [announcementTitle, setAnnouncementTitle] = useState('');
   const [announcementPriority, setAnnouncementPriority] = useState<Announcement['priority']>('Normal');
   const [announcementMessage, setAnnouncementMessage] = useState('');
@@ -162,11 +177,13 @@ export default function FacilitatorDashboardPage() {
   const [editEndMin, setEditEndMin] = useState(10 * 60);
   const [attendanceEditingId, setAttendanceEditingId] = useState<string | null>(null);
   const [attendanceDraft, setAttendanceDraft] = useState({ present: '0', absent: '0' });
+  const [sessionViewMode, setSessionViewMode] = useState<'list' | 'calendar'>('list');
 
   // Assignments tab state
   const [assignmentModalOpen, setAssignmentModalOpen] = useState(false);
   const [newAssignmentTitle, setNewAssignmentTitle] = useState('');
-  const [newAssignmentBatchId, setNewAssignmentBatchId] = useState('');
+  const [newAssignmentBatchIds, setNewAssignmentBatchIds] = useState<string[]>([]);
+  const [newAssignmentFile, setNewAssignmentFile] = useState<File | null>(null);
   const [newAssignmentDeadline, setNewAssignmentDeadline] = useState('');
   const [newAssignmentDescription, setNewAssignmentDescription] = useState('');
   const [assignmentFormError, setAssignmentFormError] = useState('');
@@ -180,13 +197,11 @@ export default function FacilitatorDashboardPage() {
   const [newResourceFile, setNewResourceFile] = useState<File | null>(null);
 
   // Feedback tab state
-  const [feedbackTrainee, setFeedbackTrainee] = useState('');
   const [feedbackCategory, setFeedbackCategory] = useState('Technical Skills');
   const [feedbackRating, setFeedbackRating] = useState('');
   const [feedbackComment, setFeedbackComment] = useState('');
 
   useEscapeKey(() => setQuickActionOpen(false), quickActionOpen);
-  useEscapeKey(() => setThreadMenuOpenId(null), threadMenuOpenId !== null);
   useEscapeKey(() => setNotificationOpen(false), notificationOpen);
 
   function hiddenUnless(tab: TabId) {
@@ -202,7 +217,8 @@ export default function FacilitatorDashboardPage() {
       }),
     [feedback, feedbackSearch]
   );
-  const aimlBatch = batches.find((b) => b.id === 'aiml-btech');
+  // Batches are already scoped to this facilitator by the fetchBatches({ facilitatorId }) call above.
+  const aimlBatch = batches[0];
   const filteredResources = useMemo(
     () =>
       resources.filter((r) => {
@@ -212,26 +228,16 @@ export default function FacilitatorDashboardPage() {
       }),
     [resources, resourceSearch, resourceCategory]
   );
-  const filteredThreads = useMemo(
-    () => threads.filter((t) => t.title.toLowerCase().includes(threadSearch.trim().toLowerCase())),
-    [threads, threadSearch]
-  );
-  const selectedThread = threads.find((t) => t.id === selectedThreadId) ?? null;
-
-  const sessionsByDate = useMemo(
-    () =>
-      sessions.reduce<Record<string, Session[]>>((acc, s) => {
-        acc[s.date] = acc[s.date] ? [...acc[s.date], s] : [s];
-        return acc;
-      }, {}),
-    [sessions]
-  );
-  const calendarDates = useMemo(
-    () => Object.keys(sessionsByDate).sort((a, b) => new Date(a).getTime() - new Date(b).getTime()),
-    [sessionsByDate]
-  );
-
-  const myBatches = useMemo(() => batches.filter((b) => b.poc === FACILITATOR_NAME), [batches]);
+  // `batches` is already scoped to this facilitator by the fetchBatches({ facilitatorId }) call
+  // above — re-filtering by name here would silently break for any facilitator but the one whose
+  // name happens to match FACILITATOR_NAME.
+  const myBatches = batches;
+  // `sessions` is fetched unfiltered (no batch param); scope the list view to this facilitator's
+  // own batches so they only see their own sessions, not every batch's.
+  const mySessions = useMemo(() => {
+    const myBatchIds = new Set(myBatches.map((b) => b.id));
+    return sessions.filter((s) => myBatchIds.has(s.batchId));
+  }, [sessions, myBatches]);
   const traineeContacts = useMemo(
     () =>
       Array.from(new Set(myBatches.flatMap((b) => b.members))).map((name) => {
@@ -240,7 +246,7 @@ export default function FacilitatorDashboardPage() {
           (sum, a) => sum + a.submissions.filter((s) => s.traineeName === name && s.status !== 'Completed').length,
           0
         );
-        return { name, batchName: batch?.name ?? 'Unassigned', pendingCount };
+        return { name, batchId: batch?.id ?? '', batchName: batch?.name ?? 'Unassigned', pendingCount };
       }),
     [myBatches, facilitatorAssignments]
   );
@@ -280,8 +286,7 @@ export default function FacilitatorDashboardPage() {
         const q = assignmentSearch.trim().toLowerCase();
         const matchesSearch = q === '' || a.title.toLowerCase().includes(q);
         const matchesStatus = assignmentStatusFilter === 'All Statuses' || effectiveStatus(a) === assignmentStatusFilter;
-        const batch = batches.find((b) => b.id === a.batchId);
-        const matchesBatch = assignmentBatchFilter === 'All Batches' || batch?.name === assignmentBatchFilter;
+        const matchesBatch = assignmentBatchFilter === 'All Batches' || a.batches.some((b) => b.name === assignmentBatchFilter);
         return matchesSearch && matchesStatus && matchesBatch;
       }),
     [facilitatorAssignments, assignmentSearch, assignmentStatusFilter, assignmentBatchFilter, batches]
@@ -305,39 +310,55 @@ export default function FacilitatorDashboardPage() {
     );
   }
 
-  function handleBulkDeleteAssignments() {
+  async function handleBulkDeleteAssignments() {
     const ids = Array.from(selectedAssignmentIds);
-    bulkDeleteAssignments(ids);
-    logEvent('Assignment', `${ids.length} assignment(s) deleted in bulk.`, { module: 'Assignments' });
-    showToast(`${ids.length} assignment(s) deleted`);
-    setSelectedAssignmentIds(new Set());
+    try {
+      await bulkDeleteAssignments(ids);
+      logEvent('Assignment', `${ids.length} assignment(s) deleted in bulk.`, { module: 'Assignments' });
+      showToast(`${ids.length} assignment(s) deleted`);
+      setSelectedAssignmentIds(new Set());
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Unable to delete assignments.', 'error');
+    }
   }
 
-  function handleBulkCloseAssignments() {
+  async function handleBulkCloseAssignments() {
     const ids = Array.from(selectedAssignmentIds);
-    bulkCloseAssignments(ids);
-    logEvent('Assignment', `${ids.length} assignment(s) closed in bulk.`, { module: 'Assignments' });
-    showToast(`${ids.length} assignment(s) closed`);
-    setSelectedAssignmentIds(new Set());
+    try {
+      await bulkCloseAssignments(ids);
+      logEvent('Assignment', `${ids.length} assignment(s) closed in bulk.`, { module: 'Assignments' });
+      showToast(`${ids.length} assignment(s) closed`);
+      setSelectedAssignmentIds(new Set());
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Unable to close assignments.', 'error');
+    }
   }
 
-  function handleBulkDuplicateAssignments() {
+  async function handleBulkDuplicateAssignments() {
     const ids = Array.from(selectedAssignmentIds);
-    ids.forEach((id) => duplicateAssignment(id));
-    logEvent('Assignment', `${ids.length} assignment(s) duplicated.`, { module: 'Assignments' });
-    showToast(`${ids.length} assignment(s) duplicated`);
-    setSelectedAssignmentIds(new Set());
+    try {
+      await Promise.all(ids.map((id) => duplicateAssignment(id)));
+      logEvent('Assignment', `${ids.length} assignment(s) duplicated.`, { module: 'Assignments' });
+      showToast(`${ids.length} assignment(s) duplicated`);
+      setSelectedAssignmentIds(new Set());
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Unable to duplicate assignments.', 'error');
+    }
   }
 
-  function confirmBulkExtendAssignmentDeadline() {
+  async function confirmBulkExtendAssignmentDeadline() {
     if (!extendDeadlineDraft) return;
     const ids = Array.from(selectedAssignmentIds);
     const formatted = isoToDateStr(extendDeadlineDraft);
-    bulkExtendAssignmentDeadline(ids, formatted);
-    logEvent('Assignment', `Deadline extended to ${formatted} for ${ids.length} assignment(s).`, { module: 'Assignments' });
-    showToast(`Deadline extended for ${ids.length} assignment(s)`);
-    setSelectedAssignmentIds(new Set());
-    setExtendDeadlineModalOpen(false);
+    try {
+      await bulkExtendAssignmentDeadline(ids, formatted);
+      logEvent('Assignment', `Deadline extended to ${formatted} for ${ids.length} assignment(s).`, { module: 'Assignments' });
+      showToast(`Deadline extended for ${ids.length} assignment(s)`);
+      setSelectedAssignmentIds(new Set());
+      setExtendDeadlineModalOpen(false);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Unable to extend deadlines.', 'error');
+    }
   }
 
   const facilitatorAvgScore = average(facilitatorAssignments.flatMap((a) => a.submissions.filter((s) => s.grade !== null).map((s) => s.grade as number)));
@@ -352,13 +373,17 @@ export default function FacilitatorDashboardPage() {
     setQuickGradeStatus(current.status === 'Not Started' ? 'Completed' : current.status);
   }
 
-  function saveQuickGrade() {
+  async function saveQuickGrade() {
     if (!quickGradeTarget) return;
     const grade = quickGradeScore.trim() === '' ? null : Number(quickGradeScore);
-    updateSubmission(quickGradeTarget.assignmentId, quickGradeTarget.traineeName, { grade, status: quickGradeStatus });
-    logEvent('Grading', `${quickGradeTarget.traineeName} was quick-graded ${grade ?? '—'}/100.`, { module: 'Assignments' });
-    showToast('Grade saved');
-    setQuickGradeTarget(null);
+    try {
+      await updateSubmission(quickGradeTarget.assignmentId, quickGradeTarget.traineeName, { grade, status: quickGradeStatus });
+      logEvent('Grading', `${quickGradeTarget.traineeName} was quick-graded ${grade ?? '—'}/100.`, { module: 'Assignments' });
+      showToast('Grade saved');
+      setQuickGradeTarget(null);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Unable to save grade.', 'error');
+    }
   }
 
   function handleDownloadSubmission(assignmentTitle: string, traineeName: string) {
@@ -385,54 +410,13 @@ export default function FacilitatorDashboardPage() {
     setSessionModalOpen(true);
   }
 
-  function handleContactTrainee(name: string) {
-    const batch = myBatches.find((b) => b.members.includes(name));
-    const thread = createThread({
-      title: `Note for ${name}`,
-      batchId: batch?.id ?? batches[0]?.id ?? '',
-      author: FACILITATOR_NAME,
-      role: 'facilitator',
-      message: `Hi ${name}, wanted to reach out regarding your progress.`
-    });
-    setSelectedThreadId(thread.id);
-    setActiveTab('discussions');
-    showToast(`Discussion started with ${name}`);
-  }
-
-  function handleCreateThread() {
-    if (!newThreadTitle.trim()) return;
-    const thread = createThread({
-      title: newThreadTitle.trim(),
-      batchId: aimlBatch?.id ?? batches[0]?.id ?? '',
-      author: FACILITATOR_NAME,
-      role: 'facilitator',
-      message: newThreadMessage
-    });
-    setSelectedThreadId(thread.id);
-    setNewThreadModalOpen(false);
-    setNewThreadTitle('');
-    setNewThreadMessage('');
-    showToast('Discussion created');
-  }
-
-  function handleSendReply() {
-    if (!selectedThread || !replyText.trim()) return;
-    addMessage(selectedThread.id, { author: FACILITATOR_NAME, role: 'facilitator', text: replyText.trim() });
-    setReplyText('');
-  }
-
-  function handleAttachFile(file: File | null) {
-    if (!file) return;
-    setReplyText((prev) => `${prev}${prev ? ' ' : ''}📎 ${file.name}`);
-  }
-
-  function confirmDeleteThread() {
-    if (!selectedThread) return;
-    deleteThread(selectedThread.id);
-    setDeleteThreadConfirmOpen(false);
-    setThreadMenuOpenId(null);
-    setSelectedThreadId(null);
-    showToast('Discussion deleted');
+  async function handleContactTrainee(name: string) {
+    const email = await findUserEmailByName(name, 'trainee');
+    if (!email) {
+      showToast(`No email on file for ${name}.`, 'error');
+      return;
+    }
+    window.location.href = `mailto:${email}`;
   }
 
   function handlePostAnnouncement() {
@@ -473,14 +457,18 @@ export default function FacilitatorDashboardPage() {
     setEditEndMin(end);
   }
 
-  function saveSessionEdit(sessionId: string) {
+  async function saveSessionEdit(sessionId: string) {
     const session = sessions.find((s) => s.id === sessionId);
     const date = isoToDateStr(editDateIso);
     const time = formatTimeRange(editStartMin, editEndMin);
-    updateSession(sessionId, { date, time });
-    showToast('Session updated');
-    logEvent('Session', `Updated schedule for "${session?.title ?? sessionId}".`);
-    setEditingSessionId(null);
+    try {
+      await updateSession(sessionId, { date, time });
+      showToast('Session updated');
+      logEvent('Session', `Updated schedule for "${session?.title ?? sessionId}".`);
+      setEditingSessionId(null);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Unable to update session.', 'error');
+    }
   }
 
   function startEditAttendance(session: Session) {
@@ -488,25 +476,25 @@ export default function FacilitatorDashboardPage() {
     setAttendanceDraft({ present: String(session.presentCount ?? 0), absent: String(session.absentCount ?? 0) });
   }
 
-  function saveAttendance(session: Session) {
+  async function saveAttendance(session: Session) {
     const presentCount = Number(attendanceDraft.present) || 0;
     const absentCount = Number(attendanceDraft.absent) || 0;
-    updateSession(session.id, { presentCount, absentCount });
+    await updateSession(session.id, { presentCount, absentCount });
     logEvent('Session', `Attendance recorded for "${session.title}": ${presentCount} present, ${absentCount} absent.`, { module: 'Sessions' });
     showToast('Attendance saved');
     setAttendanceEditingId(null);
   }
 
-  function handleCreateSession() {
+  async function handleCreateSession() {
     if (!newSessionTitle.trim() || !newSessionDate.trim() || !newSessionTime.trim()) {
       setSessionFormError('Please fill in the title, date, and time.');
       return;
     }
     setSessionFormError('');
     setSessionFormSaving(true);
-    setTimeout(() => {
+    try {
       const title = newSessionTitle.trim() || 'Untitled Session';
-      createSession({
+      await createSession({
         title,
         batchId: newSessionBatchId || batches[0]?.id || '',
         facilitator: FACILITATOR_NAME,
@@ -524,67 +512,88 @@ export default function FacilitatorDashboardPage() {
       setNewSessionLink('');
       showToast('Session scheduled');
       logEvent('Session', `Scheduled "${title}".`);
+    } catch (err) {
+      setSessionFormError(err instanceof Error ? err.message : 'Unable to schedule session.');
+    } finally {
       setSessionFormSaving(false);
-    }, 400);
+    }
   }
 
-  function handleCreateAssignment() {
-    if (!newAssignmentTitle.trim() || !newAssignmentDeadline.trim()) {
-      setAssignmentFormError('Please enter a title and a deadline.');
+  async function handleCreateAssignment() {
+    if (!newAssignmentTitle.trim() || !newAssignmentDeadline.trim() || newAssignmentBatchIds.length === 0) {
+      setAssignmentFormError('Please enter a title, a deadline, and select at least one batch.');
       return;
     }
     setAssignmentFormError('');
     setAssignmentFormSaving(true);
-    setTimeout(() => {
+    try {
       const title = newAssignmentTitle.trim() || 'Untitled Assignment';
-      createAssignment({
+      const assignment = await createAssignment({
         title,
-        batchId: newAssignmentBatchId || batches[0]?.id || '',
+        batchIds: newAssignmentBatchIds,
         facilitator: FACILITATOR_NAME,
         deadline: newAssignmentDeadline,
-        description: newAssignmentDescription
+        description: newAssignmentDescription,
+        file: newAssignmentFile
       });
       setAssignmentModalOpen(false);
       setNewAssignmentTitle('');
-      setNewAssignmentBatchId('');
+      setNewAssignmentBatchIds([]);
+      setNewAssignmentFile(null);
       setNewAssignmentDeadline('');
       setNewAssignmentDescription('');
       showToast('Assignment created');
-      logEvent('Assignment', `Created assignment "${title}".`);
+      logEvent('Assignment', `Created assignment "${title}" for ${assignment.batches.length} batch(es).`);
+    } catch (err) {
+      setAssignmentFormError(err instanceof Error ? err.message : 'Unable to create assignment.');
+    } finally {
       setAssignmentFormSaving(false);
-    }, 400);
+    }
   }
 
-  function handleUploadResource() {
-    const title = newResourceTitle.trim() || newResourceFile?.name || 'Untitled Resource';
-    addResource({
-      title,
-      category: newResourceCategory,
-      batchId: newResourceBatchId,
-      uploadedBy: FACILITATOR_NAME,
-      uploadedAt: new Date().toLocaleDateString()
-    });
-    setResourceModalOpen(false);
-    setNewResourceTitle('');
-    setNewResourceFile(null);
-    showToast('Resource uploaded — pending verification');
-    logEvent('Resource', `Uploaded "${title}".`);
+  async function handleUploadResource() {
+    if (!newResourceFile) {
+      showToast('Please choose a file to upload.', 'error');
+      return;
+    }
+    const title = newResourceTitle.trim() || newResourceFile.name;
+    try {
+      await addResource({
+        title,
+        category: newResourceCategory,
+        batchId: newResourceBatchId,
+        file: newResourceFile
+      });
+      setResourceModalOpen(false);
+      setNewResourceTitle('');
+      setNewResourceFile(null);
+      showToast('Resource uploaded — pending verification');
+      logEvent('Resource', `Uploaded "${title}".`);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Unable to upload resource.', 'error');
+    }
   }
 
-  function handleSaveFeedback() {
-    if (!feedbackTrainee) return;
-    submitFeedback({
-      trainee: feedbackTrainee,
-      facilitator: FACILITATOR_NAME,
-      batchId: 'aiml-btech',
-      category: feedbackCategory,
-      rating: Number(feedbackRating) || 0,
-      comment: feedbackComment,
-      date: new Date().toLocaleDateString()
-    });
+  async function handleSaveFeedback() {
+    // Use the selected trainee's actual batch — not just batches[0] — so this works correctly
+    // for a facilitator who manages more than one batch.
+    if (!feedbackSelectedTrainee || !feedbackSelectedTrainee.batchId) return;
+    try {
+      await submitFeedback({
+        trainee: feedbackSelectedTrainee.name,
+        facilitator: FACILITATOR_NAME,
+        batchId: feedbackSelectedTrainee.batchId,
+        category: feedbackCategory,
+        rating: Number(feedbackRating) || 0,
+        comment: feedbackComment,
+        date: new Date().toLocaleDateString()
+      });
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Unable to save feedback.', 'error');
+      return;
+    }
     showToast('Feedback saved');
-    logEvent('Feedback', `Submitted feedback for ${feedbackTrainee}.`);
-    setFeedbackTrainee('');
+    logEvent('Feedback', `Submitted feedback for ${feedbackSelectedTrainee.name}.`);
     setFeedbackCategory('Technical Skills');
     setFeedbackRating('');
     setFeedbackComment('');
@@ -711,7 +720,7 @@ export default function FacilitatorDashboardPage() {
                         <button onClick={() => handleSendReminder(t.name)} className="text-xs bg-white border border-gray-300 px-3 py-1 rounded hover:bg-gray-50 transition-colors">Send Reminder</button>
                         <button onClick={() => handleSchedule1on1(t.name)} className="text-xs bg-white border border-gray-300 px-3 py-1 rounded hover:bg-gray-50 transition-colors">Schedule 1:1</button>
                         <button
-                          onClick={() => navigate(ROUTES.FACILITATOR_TRAINEE_PROFILE(t.name))}
+                          onClick={() => navigate(...facilitatorTraineeProfileNavArgs(t.name))}
                           className="text-xs bg-white border border-gray-300 px-3 py-1 rounded hover:bg-gray-50 transition-colors"
                         >
                           View Profile
@@ -742,7 +751,7 @@ export default function FacilitatorDashboardPage() {
                               <div className="w-5 h-5 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs mr-2">
                                 {submission.traineeName.split(' ').map((p) => p.charAt(0)).join('').slice(0, 2).toUpperCase()}
                               </div>
-                              {submission.traineeName} • {submission.submittedOn}
+                              {submission.traineeName} • {submission.submittedOn ? formatDateTime(submission.submittedOn) : '—'}
                               {submission.status === 'Late' && <span className="text-red-500 ml-1">• Late Submission</span>}
                             </div>
                           </div>
@@ -760,8 +769,9 @@ export default function FacilitatorDashboardPage() {
                         {isQuickGrading && (
                           <div className="mt-3 flex items-end gap-3 bg-blue-50/40 border border-blue-100 rounded-lg p-3">
                             <div>
-                              <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Score (0-100)</label>
+                              <label htmlFor="facilitator-quick-grade-score" className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Score (0-100)</label>
                               <input
+                                id="facilitator-quick-grade-score"
                                 type="number"
                                 min={0}
                                 max={100}
@@ -771,8 +781,8 @@ export default function FacilitatorDashboardPage() {
                               />
                             </div>
                             <div>
-                              <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Status</label>
-                              <select value={quickGradeStatus} onChange={(e) => setQuickGradeStatus(e.target.value as SubmissionStatus)} className="px-2 py-1.5 border border-gray-300 rounded-lg text-sm outline-none bg-white">
+                              <label htmlFor="facilitator-quick-grade-status" className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Status</label>
+                              <select id="facilitator-quick-grade-status" value={quickGradeStatus} onChange={(e) => setQuickGradeStatus(e.target.value as SubmissionStatus)} className="px-2 py-1.5 border border-gray-300 rounded-lg text-sm outline-none bg-white">
                                 <option>Under Review</option>
                                 <option>Completed</option>
                                 <option>Late</option>
@@ -786,108 +796,6 @@ export default function FacilitatorDashboardPage() {
                   })}
                 </div>
               </div>
-            </div>
-          </div>
-
-          {/* Threaded Discussions Tab */}
-          <div className={`${hiddenUnless('discussions')} flex h-full border border-gray-200 rounded-xl shadow-sm bg-white overflow-hidden`}>
-            <div className="w-1/3 border-r border-gray-200 flex flex-col">
-              <div className="p-4 border-b border-gray-200 bg-gray-50">
-                <button onClick={() => setNewThreadModalOpen(true)} className="w-full py-2 bg-blue-600 text-white rounded-lg font-medium shadow-sm hover:bg-blue-700">+ New Discussion</button>
-                <input
-                  type="text"
-                  value={threadSearch}
-                  onChange={(e) => setThreadSearch(e.target.value)}
-                  placeholder="Search threads..."
-                  className="w-full mt-3 px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                />
-              </div>
-              <div className="flex-1 overflow-y-auto divide-y divide-gray-100">
-                {filteredThreads.length === 0 && (
-                  <EmptyState title="No discussions found" message="Try a different search term." icon="search" />
-                )}
-                {filteredThreads.map((t) => (
-                  <div
-                    key={t.id}
-                    onClick={() => setSelectedThreadId(t.id)}
-                    className={`p-4 cursor-pointer ${t.id === selectedThreadId ? 'bg-blue-50 border-l-4 border-blue-600' : 'hover:bg-gray-50'}`}
-                  >
-                    <h4 className="font-bold text-gray-800 text-sm">{t.title}</h4>
-                    <p className="text-xs text-gray-500 mt-1 line-clamp-2">{t.messages[0]?.text ?? 'No messages yet.'}</p>
-                    <div className="mt-2 flex items-center justify-between text-xs text-gray-400">
-                      <span>{t.author}</span>
-                      <span>{t.messages.length} {t.messages.length === 1 ? 'reply' : 'replies'}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="w-2/3 flex flex-col bg-white">
-              {!selectedThread ? (
-                <div className="flex-1 flex items-center justify-center text-gray-400 text-sm">Select a discussion to view the conversation.</div>
-              ) : (
-                <>
-                  <div className="p-6 border-b border-gray-200 shadow-sm z-10 flex justify-between items-center relative" ref={threadMenuRef}>
-                    <div>
-                      <h3 className="text-xl font-bold">{selectedThread.title}</h3>
-                      <div className="text-sm text-gray-500 mt-1">Started by {selectedThread.author} • {selectedThread.createdAt}</div>
-                    </div>
-                    <button
-                      onClick={() => setThreadMenuOpenId(threadMenuOpenId === selectedThread.id ? null : selectedThread.id)}
-                      className="text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
-                      aria-label="Thread options"
-                      aria-haspopup="true"
-                      aria-expanded={threadMenuOpenId === selectedThread.id}
-                    >
-                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" /></svg>
-                    </button>
-                    {threadMenuOpenId === selectedThread.id && (
-                      <div className="absolute right-6 top-full mt-1 w-44 bg-white rounded-lg shadow-xl border border-gray-200 z-50 py-1">
-                        <button
-                          onClick={() => { setThreadMenuOpenId(null); setDeleteThreadConfirmOpen(true); }}
-                          className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
-                        >
-                          Delete discussion
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-gray-50/50">
-                    {selectedThread.messages.map((m) => (
-                      <div className="flex space-x-4" key={m.id}>
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold flex-shrink-0 ${m.role === 'facilitator' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
-                          {m.author.charAt(0).toUpperCase()}
-                        </div>
-                        <div className={`p-4 rounded-xl border shadow-sm flex-1 ${m.role === 'facilitator' ? 'bg-blue-50 border-blue-100' : 'bg-white border-gray-200'}`}>
-                          <div className="font-medium text-sm text-gray-800 mb-2">
-                            {m.author}{m.role === 'facilitator' ? ' (Facilitator)' : ''} <span className="text-xs text-gray-400 font-normal ml-2">{m.at}</span>
-                          </div>
-                          <p className="text-sm text-gray-700 leading-relaxed">{m.text}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="p-4 border-t border-gray-200 bg-white">
-                    <div className="flex items-center space-x-2">
-                      <label className="p-2 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 cursor-pointer">
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
-                        <input type="file" className="hidden" onChange={(e) => handleAttachFile(e.target.files?.[0] ?? null)} />
-                      </label>
-                      <input
-                        type="text"
-                        value={replyText}
-                        onChange={(e) => setReplyText(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && handleSendReply()}
-                        placeholder="Type your reply... use @ to mention"
-                        className="flex-1 px-4 py-2 bg-gray-100 border-transparent rounded-full focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
-                      />
-                      <button onClick={handleSendReply} className="p-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 shadow-sm">
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>
-                      </button>
-                    </div>
-                  </div>
-                </>
-              )}
             </div>
           </div>
 
@@ -943,7 +851,7 @@ export default function FacilitatorDashboardPage() {
                         <span className="text-xs bg-green-100 text-green-700 font-bold px-2 py-1 rounded-full">Verified</span>
                       ) : (
                         <button
-                          onClick={() => { verifyResource(resource.id); showToast('Resource verified'); }}
+                          onClick={() => { verifyResource(resource.id).then(() => showToast('Resource verified')); }}
                           className="text-blue-600 hover:text-blue-800 text-sm font-medium"
                         >
                           Verify
@@ -982,21 +890,27 @@ export default function FacilitatorDashboardPage() {
                 <Table
                   columns={[
                     { key: 'batch', label: 'Batch' },
-                    { key: 'program', label: 'Program' },
+                    { key: 'dates', label: 'Start / End' },
                     { key: 'trainees', label: 'Trainees' },
-                    { key: 'avgScore', label: 'Avg Score' },
-                    { key: 'completion', label: 'Completion' },
+                    { key: 'avgScore', label: 'Avg Performance' },
+                    { key: 'completion', label: 'Assignment Completion' },
                     { key: 'attendance', label: 'Attendance' },
                     { key: 'status', label: 'Status' }
                   ]}
                 >
                   {myBatches.map((b) => (
-                    <tr key={b.id} className="hover:bg-gray-50 transition-colors cursor-pointer" onClick={() => setActiveTab('trainees')}>
+                    <tr
+                      key={b.id}
+                      className="hover:bg-gray-50 transition-colors cursor-pointer"
+                      onClick={() => navigate(ROUTES.FACILITATOR_BATCH_DETAIL(b.id))}
+                    >
                       <td className="px-6 py-4">
                         <div className="font-bold text-gray-800">{b.name}</div>
-                        <div className="text-xs text-gray-500 mt-1">Started {b.startMonth}</div>
+                        <div className="text-xs text-gray-500 mt-1">{b.code} • {b.program} • {b.track}</div>
                       </td>
-                      <td className="px-6 py-4 text-gray-600 font-medium">{b.program} • {b.track}</td>
+                      <td className="px-6 py-4 text-gray-600 font-medium">
+                        {b.startMonth || '—'} – {b.endDate ? formatDateTime(b.endDate) : '—'}
+                      </td>
                       <td className="px-6 py-4 text-gray-600 font-medium">{b.traineeCount}</td>
                       <td className="px-6 py-4 text-gray-600 font-medium">{b.avgScore !== null ? `${b.avgScore}/100` : '—'}</td>
                       <td className="px-6 py-4 w-40"><ProgressBar value={b.completion} /></td>
@@ -1070,14 +984,14 @@ export default function FacilitatorDashboardPage() {
                   { key: 'batch', label: 'Batch' },
                   { key: 'deadline', label: 'Deadline' },
                   { key: 'status', label: 'Status' },
-                  { key: 'grading', label: 'Grading Progress' }
+                  { key: 'grading', label: 'Grading Progress' },
+                  { key: 'file', label: 'Assignment File' }
                 ]}
               >
                 {pagedFacilitatorAssignments.length === 0 && (
-                  <tr><td colSpan={6}><EmptyState title="No assignments match these filters" icon="search" /></td></tr>
+                  <tr><td colSpan={7}><EmptyState title="No assignments match these filters" icon="search" /></td></tr>
                 )}
                 {pagedFacilitatorAssignments.map((a) => {
-                  const batch = batches.find((b) => b.id === a.batchId);
                   const gradedCount = a.submissions.filter((s) => s.status === 'Completed').length;
                   const gradedPercent = a.submissions.length > 0 ? Math.round((gradedCount / a.submissions.length) * 100) : 0;
                   return (
@@ -1086,19 +1000,17 @@ export default function FacilitatorDashboardPage() {
                         <input type="checkbox" checked={selectedAssignmentIds.has(a.id)} onChange={() => toggleAssignmentSelected(a.id)} aria-label={`Select ${a.title}`} />
                       </td>
                       <td className="px-6 py-4 font-medium">
-                        <Link
-                          to={`/assignments/${a.id}`}
-                          className="inline-block text-blue-600 font-medium px-2 py-1 -mx-2 rounded-full border border-blue-100 bg-blue-50/50 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 transition-colors duration-150"
-                        >
-                          {a.title}
-                        </Link>
+                        <AssignmentTitleLink id={a.id} title={a.title} />
                       </td>
-                      <td className="px-6 py-4 text-gray-500">{batch?.name ?? a.batchId}</td>
-                      <td className="px-6 py-4 text-gray-500">{a.deadline}</td>
+                      <td className="px-6 py-4 text-gray-500"><AssignmentBatchesCell batches={a.batches} /></td>
+                      <td className="px-6 py-4 text-gray-500">{formatDateTime(a.deadline)}</td>
                       <td className="px-6 py-4"><StatusBadge status={effectiveStatus(a)} /></td>
                       <td className="px-6 py-4 w-48">
                         <div className="text-[11px] text-gray-500 font-bold mb-1">{gradedCount}/{a.submissions.length} graded</div>
                         <ProgressBar value={gradedPercent} color="bg-blue-500" size="sm" />
+                      </td>
+                      <td className="px-6 py-4">
+                        <FileViewButton url={a.attachmentFilename ? assignmentAttachmentUrl(a.id) : null} fileName={a.attachmentFilename ?? undefined} label="View Assignment File" />
                       </td>
                     </tr>
                   );
@@ -1108,14 +1020,23 @@ export default function FacilitatorDashboardPage() {
             </div>
           </div>
 
-          {/* Sessions Tab */}
+          {/* Sessions & Calendar Tab */}
           <div className={hiddenUnless('sessions')}>
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-bold">Sessions</h2>
-              <button onClick={() => setSessionModalOpen(true)} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700">+ Schedule Session</button>
+              <h2 className="text-2xl font-bold">Sessions & Calendar</h2>
+              <div className="flex items-center gap-3">
+                <div className="flex rounded-lg border border-gray-300 overflow-hidden text-sm font-medium">
+                  <button onClick={() => setSessionViewMode('list')} className={`px-3 py-2 transition-colors ${sessionViewMode === 'list' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>List</button>
+                  <button onClick={() => setSessionViewMode('calendar')} className={`px-3 py-2 transition-colors ${sessionViewMode === 'calendar' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>Calendar</button>
+                </div>
+                <button onClick={() => setSessionModalOpen(true)} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700">+ Schedule Session</button>
+              </div>
             </div>
+            {sessionViewMode === 'calendar' ? (
+              <SessionsCalendarView />
+            ) : (
             <div className="bg-white border border-gray-200 rounded-xl shadow-sm divide-y divide-gray-100">
-              {sessions.map((session) => {
+              {mySessions.map((session) => {
                 const batch = batches.find((b) => b.id === session.batchId);
                 const isEditing = editingSessionId === session.id;
                 return (
@@ -1144,8 +1065,9 @@ export default function FacilitatorDashboardPage() {
                             {isEditingAttendance && (
                               <div className="mt-2 flex items-end gap-3 bg-gray-50 border border-gray-200 rounded-lg p-3">
                                 <div>
-                                  <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Present</label>
+                                  <label htmlFor="facilitator-attendance-present" className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Present</label>
                                   <input
+                                    id="facilitator-attendance-present"
                                     type="number"
                                     min={0}
                                     value={attendanceDraft.present}
@@ -1154,8 +1076,9 @@ export default function FacilitatorDashboardPage() {
                                   />
                                 </div>
                                 <div>
-                                  <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Absent</label>
+                                  <label htmlFor="facilitator-attendance-absent" className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Absent</label>
                                   <input
+                                    id="facilitator-attendance-absent"
                                     type="number"
                                     min={0}
                                     value={attendanceDraft.absent}
@@ -1195,8 +1118,9 @@ export default function FacilitatorDashboardPage() {
                           <div className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">Reschedule Session</div>
                           <div className="space-y-4">
                             <div>
-                              <label className="block text-[11px] font-bold text-gray-500 mb-1 uppercase">Date</label>
+                              <label htmlFor="facilitator-session-edit-date" className="block text-[11px] font-bold text-gray-500 mb-1 uppercase">Date</label>
                               <input
+                                id="facilitator-session-edit-date"
                                 type="date"
                                 value={editDateIso}
                                 onChange={(e) => setEditDateIso(e.target.value)}
@@ -1247,38 +1171,7 @@ export default function FacilitatorDashboardPage() {
                 );
               })}
             </div>
-          </div>
-
-          {/* Calendar Tab */}
-          <div className={hiddenUnless('calendar')}>
-            <h2 className="text-2xl font-bold mb-6">Session Calendar</h2>
-            <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-              {calendarDates.length === 0 ? (
-                <EmptyState title="No scheduled sessions yet" message="Sessions you schedule will show up here." icon="calendar" />
-              ) : (
-                <div className="divide-y divide-gray-100">
-                  {calendarDates.map((date) => (
-                    <div key={date} className="p-5 flex gap-6">
-                      <div className="w-28 flex-shrink-0 text-sm font-bold text-gray-500">{date}</div>
-                      <div className="flex-1 space-y-2">
-                        {sessionsByDate[date].map((s) => {
-                          const batch = batches.find((b) => b.id === s.batchId);
-                          return (
-                            <div key={s.id} className="flex items-center justify-between bg-gray-50 border border-gray-100 rounded-lg px-4 py-2 hover:bg-gray-100 transition-colors">
-                              <div>
-                                <div className="font-medium text-gray-800 text-sm">{s.title} — {batch?.name ?? s.batchId}</div>
-                                <div className="text-xs text-gray-500">{s.time} • {s.facilitator}</div>
-                              </div>
-                              <StatusBadge status={s.status} />
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            )}
           </div>
 
           {/* Announcements Tab */}
@@ -1307,38 +1200,72 @@ export default function FacilitatorDashboardPage() {
           {/* Feedback Tab */}
           <div className={hiddenUnless('feedback')}>
             <h2 className="text-2xl font-bold mb-6">Feedback Management</h2>
-            <div className="grid grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="col-span-1 bg-white border border-gray-200 p-6 rounded-xl shadow-sm h-fit">
-                <h3 className="font-bold text-lg mb-4">Create Feedback Form</h3>
-                <div className="space-y-4">
-                  <select value={feedbackTrainee} onChange={(e) => setFeedbackTrainee(e.target.value)} className="w-full px-3 py-2 border rounded-lg outline-none">
-                    <option value="">Select Trainee</option>
-                    {(aimlBatch?.members ?? []).map((name) => (
-                      <option key={name} value={name}>{name}</option>
-                    ))}
-                  </select>
-                  <select value={feedbackCategory} onChange={(e) => setFeedbackCategory(e.target.value)} className="w-full px-3 py-2 border rounded-lg outline-none">
-                    <option value="Technical Skills">Category: Technical Skills</option>
-                    <option value="Communication">Category: Communication</option>
-                    <option value="Overall Performance">Category: Overall Performance</option>
-                  </select>
-                  <input
-                    type="number"
-                    min={1}
-                    max={5}
-                    value={feedbackRating}
-                    onChange={(e) => setFeedbackRating(e.target.value)}
-                    placeholder="Rating 1-5"
-                    className="w-full px-3 py-2 border rounded-lg outline-none"
-                  />
-                  <textarea
-                    value={feedbackComment}
-                    onChange={(e) => setFeedbackComment(e.target.value)}
-                    className="w-full px-3 py-2 border rounded-lg outline-none h-24"
-                    placeholder="Detailed feedback..."
-                  ></textarea>
-                  <button onClick={handleSaveFeedback} className="w-full py-2 bg-blue-600 text-white rounded-lg font-bold">Save Permanently</button>
-                </div>
+                <h3 className="font-bold text-lg mb-4">Give Feedback to a Trainee</h3>
+                {myBatches.length === 0 ? (
+                  <EmptyState title="No batches assigned yet" message="You'll be able to give feedback once you manage a batch." icon="inbox" />
+                ) : traineeContacts.length === 0 ? (
+                  <EmptyState title="No trainees in your batches yet" icon="inbox" />
+                ) : (
+                  <div className="space-y-4">
+                    <select
+                      value={feedbackSelectedTrainee ? `${feedbackSelectedTrainee.name}|${feedbackSelectedTrainee.batchId}` : ''}
+                      onChange={(e) => {
+                        const [name, batchId] = e.target.value.split('|');
+                        setFeedbackSelectedTrainee(name ? { name, batchId } : null);
+                      }}
+                      className="w-full px-3 py-2 border rounded-lg outline-none"
+                    >
+                      <option value="">Select Trainee</option>
+                      {myBatches.map((b) => (
+                        <optgroup key={b.id} label={b.name}>
+                          {b.members.map((name) => (
+                            <option key={`${b.id}-${name}`} value={`${name}|${b.id}`}>{name}</option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
+                    <select value={feedbackCategory} onChange={(e) => setFeedbackCategory(e.target.value)} className="w-full px-3 py-2 border rounded-lg outline-none">
+                      <option value="Technical Skills">Category: Technical Skills</option>
+                      <option value="Communication">Category: Communication</option>
+                      <option value="Overall Performance">Category: Overall Performance</option>
+                    </select>
+                    <input
+                      type="number"
+                      min={1}
+                      max={5}
+                      value={feedbackRating}
+                      onChange={(e) => setFeedbackRating(e.target.value)}
+                      placeholder="Rating 1-5"
+                      className="w-full px-3 py-2 border rounded-lg outline-none"
+                    />
+                    <textarea
+                      value={feedbackComment}
+                      onChange={(e) => setFeedbackComment(e.target.value)}
+                      className="w-full px-3 py-2 border rounded-lg outline-none h-24"
+                      placeholder="Detailed feedback..."
+                    ></textarea>
+                    <button onClick={handleSaveFeedback} disabled={!feedbackSelectedTrainee} className="w-full py-2 bg-blue-600 text-white rounded-lg font-bold disabled:opacity-50 disabled:cursor-not-allowed">
+                      Save Permanently
+                    </button>
+
+                    {feedbackSelectedTrainee && (
+                      <div className="pt-2 border-t border-gray-100">
+                        <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2 mt-2">Recent Feedback for {feedbackSelectedTrainee.name}</h4>
+                        {facilitatorFeedback.filter((f) => f.trainee === feedbackSelectedTrainee.name).length === 0 ? (
+                          <p className="text-sm text-gray-400">No previous feedback for this trainee.</p>
+                        ) : (
+                          <div className="space-y-2 max-h-60 overflow-y-auto">
+                            {facilitatorFeedback.filter((f) => f.trainee === feedbackSelectedTrainee.name).map((f) => (
+                              <FeedbackCard key={f.id} entry={f} />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="col-span-2 bg-white border border-gray-200 p-6 rounded-xl shadow-sm">
                 <div className="flex justify-between items-center mb-4">
@@ -1351,21 +1278,12 @@ export default function FacilitatorDashboardPage() {
                     className="px-3 py-2 border rounded-lg outline-none text-sm w-64"
                   />
                 </div>
-                <div className="space-y-4 divide-y">
+                <div className="space-y-3">
                   {facilitatorFeedback.length === 0 && (
                     <EmptyState title="No feedback found" message="Try a different search term." icon="search" />
                   )}
                   {facilitatorFeedback.map((f) => (
-                    <div key={f.id} className="pt-4">
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="font-bold text-gray-800">{f.trainee}</span>
-                        <span className="text-sm text-gray-500">{f.date} • {f.category}</span>
-                      </div>
-                      <div className="flex items-center mb-2">
-                        <span className="text-yellow-400">{'★'.repeat(Math.round(f.rating))}{'☆'.repeat(Math.max(0, 5 - Math.round(f.rating)))}</span>
-                      </div>
-                      <p className="text-sm text-gray-600">{f.comment}</p>
-                    </div>
+                    <FeedbackCard key={f.id} entry={f} />
                   ))}
                 </div>
               </div>
@@ -1393,7 +1311,7 @@ export default function FacilitatorDashboardPage() {
                   <p className="text-xs text-gray-400 mt-2 mb-4">{t.pendingCount > 0 ? `${t.pendingCount} pending submission(s)` : 'All caught up'}</p>
                   <div className="mt-auto space-y-2">
                     <button
-                      onClick={() => navigate(ROUTES.FACILITATOR_TRAINEE_PROFILE(t.name))}
+                      onClick={() => navigate(...facilitatorTraineeProfileNavArgs(t.name, { type: 'trainees' }))}
                       className="w-full py-2 bg-blue-50 text-blue-700 font-bold rounded-lg hover:bg-blue-100 text-sm"
                     >
                       View Profile
@@ -1425,20 +1343,20 @@ export default function FacilitatorDashboardPage() {
               <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{announcementFormError}</div>
             )}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
-              <input type="text" value={announcementTitle} onChange={(e) => setAnnouncementTitle(e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
+              <label htmlFor="facilitator-announcement-title" className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+              <input id="facilitator-announcement-title" type="text" value={announcementTitle} onChange={(e) => setAnnouncementTitle(e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
-              <select value={announcementPriority} onChange={(e) => setAnnouncementPriority(e.target.value as Announcement['priority'])} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
+              <label htmlFor="facilitator-announcement-priority" className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
+              <select id="facilitator-announcement-priority" value={announcementPriority} onChange={(e) => setAnnouncementPriority(e.target.value as Announcement['priority'])} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none">
                 <option>Normal</option>
                 <option>Important</option>
                 <option>Critical</option>
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-              <textarea value={announcementMessage} onChange={(e) => setAnnouncementMessage(e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none h-24"></textarea>
+              <label htmlFor="facilitator-announcement-message" className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+              <textarea id="facilitator-announcement-message" value={announcementMessage} onChange={(e) => setAnnouncementMessage(e.target.value)} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none h-24"></textarea>
             </div>
           </div>
           <div className="flex justify-end space-x-3 mt-6">
@@ -1459,12 +1377,13 @@ export default function FacilitatorDashboardPage() {
               <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{sessionFormError}</div>
             )}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
-              <input type="text" value={newSessionTitle} onChange={(e) => setNewSessionTitle(e.target.value)} className="w-full px-3 py-2 border rounded-lg outline-none" />
+              <label htmlFor="facilitator-session-title" className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+              <input id="facilitator-session-title" type="text" value={newSessionTitle} onChange={(e) => setNewSessionTitle(e.target.value)} className="w-full px-3 py-2 border rounded-lg outline-none" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Target Batch</label>
+              <label htmlFor="facilitator-session-batch" className="block text-sm font-medium text-gray-700 mb-1">Target Batch</label>
               <select
+                id="facilitator-session-batch"
                 value={newSessionBatchId || batches[0]?.id || ''}
                 onChange={(e) => setNewSessionBatchId(e.target.value)}
                 className="w-full px-3 py-2 border rounded-lg outline-none bg-white"
@@ -1474,19 +1393,20 @@ export default function FacilitatorDashboardPage() {
                 ))}
               </select>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
-                <input type="date" value={newSessionDate} onChange={(e) => setNewSessionDate(e.target.value)} className="w-full px-3 py-2 border rounded-lg outline-none" />
+                <label htmlFor="facilitator-session-date" className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                <input id="facilitator-session-date" type="date" value={newSessionDate} onChange={(e) => setNewSessionDate(e.target.value)} className="w-full px-3 py-2 border rounded-lg outline-none" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Time</label>
-                <input type="time" value={newSessionTime} onChange={(e) => setNewSessionTime(e.target.value)} className="w-full px-3 py-2 border rounded-lg outline-none" />
+                <label htmlFor="facilitator-session-time" className="block text-sm font-medium text-gray-700 mb-1">Time</label>
+                <input id="facilitator-session-time" type="time" value={newSessionTime} onChange={(e) => setNewSessionTime(e.target.value)} className="w-full px-3 py-2 border rounded-lg outline-none" />
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Meeting Link (optional)</label>
+              <label htmlFor="facilitator-session-link" className="block text-sm font-medium text-gray-700 mb-1">Meeting Link (optional)</label>
               <input
+                id="facilitator-session-link"
                 type="url"
                 value={newSessionLink}
                 onChange={(e) => setNewSessionLink(e.target.value)}
@@ -1513,24 +1433,14 @@ export default function FacilitatorDashboardPage() {
               <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{assignmentFormError}</div>
             )}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
-              <input type="text" value={newAssignmentTitle} onChange={(e) => setNewAssignmentTitle(e.target.value)} className="w-full px-3 py-2 border rounded-lg outline-none" />
+              <label htmlFor="facilitator-assignment-title" className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+              <input id="facilitator-assignment-title" type="text" value={newAssignmentTitle} onChange={(e) => setNewAssignmentTitle(e.target.value)} className="w-full px-3 py-2 border rounded-lg outline-none" />
             </div>
+            <BatchMultiSelect batches={batches} selectedIds={newAssignmentBatchIds} onChange={setNewAssignmentBatchIds} />
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Target Batch</label>
-              <select
-                value={newAssignmentBatchId || batches[0]?.id || ''}
-                onChange={(e) => setNewAssignmentBatchId(e.target.value)}
-                className="w-full px-3 py-2 border rounded-lg outline-none bg-white"
-              >
-                {batches.map((b) => (
-                  <option key={b.id} value={b.id}>{b.name}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Deadline</label>
+              <label htmlFor="facilitator-assignment-deadline" className="block text-sm font-medium text-gray-700 mb-1">Deadline</label>
               <input
+                id="facilitator-assignment-deadline"
                 type="text"
                 value={newAssignmentDeadline}
                 onChange={(e) => setNewAssignmentDeadline(e.target.value)}
@@ -1539,12 +1449,23 @@ export default function FacilitatorDashboardPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+              <label htmlFor="facilitator-assignment-description" className="block text-sm font-medium text-gray-700 mb-1">Description</label>
               <textarea
+                id="facilitator-assignment-description"
                 value={newAssignmentDescription}
                 onChange={(e) => setNewAssignmentDescription(e.target.value)}
                 className="w-full px-3 py-2 border rounded-lg outline-none h-24"
               ></textarea>
+            </div>
+            <div>
+              <label htmlFor="facilitator-assignment-file" className="block text-sm font-medium text-gray-700 mb-1">Instructions File (optional)</label>
+              <input
+                id="facilitator-assignment-file"
+                type="file"
+                onChange={(e) => setNewAssignmentFile(e.target.files?.[0] ?? null)}
+                className="w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-blue-50 file:text-blue-700 file:font-medium hover:file:bg-blue-100"
+              />
+              {newAssignmentFile && <p className="text-xs text-gray-500 mt-1">{newAssignmentFile.name}</p>}
             </div>
           </div>
           <div className="flex justify-end space-x-3 mt-6">
@@ -1557,8 +1478,9 @@ export default function FacilitatorDashboardPage() {
       <Modal open={resourceModalOpen} onClose={() => setResourceModalOpen(false)} title="Upload Resource" maxWidth="md">
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+              <label htmlFor="facilitator-resource-title" className="block text-sm font-medium text-gray-700 mb-1">Title</label>
               <input
+                id="facilitator-resource-title"
                 type="text"
                 value={newResourceTitle}
                 onChange={(e) => setNewResourceTitle(e.target.value)}
@@ -1567,8 +1489,9 @@ export default function FacilitatorDashboardPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+              <label htmlFor="facilitator-resource-category" className="block text-sm font-medium text-gray-700 mb-1">Category</label>
               <select
+                id="facilitator-resource-category"
                 value={newResourceCategory}
                 onChange={(e) => setNewResourceCategory(e.target.value)}
                 className="w-full px-3 py-2 border rounded-lg outline-none bg-white"
@@ -1579,8 +1502,9 @@ export default function FacilitatorDashboardPage() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Target Batch</label>
+              <label htmlFor="facilitator-resource-batch" className="block text-sm font-medium text-gray-700 mb-1">Target Batch</label>
               <select
+                id="facilitator-resource-batch"
                 value={newResourceBatchId}
                 onChange={(e) => setNewResourceBatchId(e.target.value)}
                 className="w-full px-3 py-2 border rounded-lg outline-none bg-white"
@@ -1592,8 +1516,9 @@ export default function FacilitatorDashboardPage() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">File</label>
+              <label htmlFor="facilitator-resource-file" className="block text-sm font-medium text-gray-700 mb-1">File</label>
               <input
+                id="facilitator-resource-file"
                 type="file"
                 onChange={(e) => setNewResourceFile(e.target.files?.[0] ?? null)}
                 className="w-full text-sm text-gray-600"
@@ -1603,24 +1528,6 @@ export default function FacilitatorDashboardPage() {
           <div className="flex justify-end space-x-3 mt-6">
             <button onClick={() => setResourceModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium">Cancel</button>
             <button onClick={handleUploadResource} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">Upload</button>
-          </div>
-      </Modal>
-
-      {/* New Discussion Modal */}
-      <Modal open={newThreadModalOpen} onClose={() => setNewThreadModalOpen(false)} title="New Discussion" maxWidth="md">
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
-              <input type="text" value={newThreadTitle} onChange={(e) => setNewThreadTitle(e.target.value)} className="w-full px-3 py-2 border rounded-lg outline-none" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Message</label>
-              <textarea value={newThreadMessage} onChange={(e) => setNewThreadMessage(e.target.value)} className="w-full px-3 py-2 border rounded-lg outline-none h-24"></textarea>
-            </div>
-          </div>
-          <div className="flex justify-end space-x-3 mt-6">
-            <button onClick={() => setNewThreadModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium">Cancel</button>
-            <button onClick={handleCreateThread} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium">Create</button>
           </div>
       </Modal>
 
@@ -1645,24 +1552,16 @@ export default function FacilitatorDashboardPage() {
       </Modal>
 
       <ConfirmDialog
-        open={deleteThreadConfirmOpen}
-        title="Delete discussion?"
-        message={`This will permanently remove "${selectedThread?.title ?? 'this discussion'}". This cannot be undone.`}
-        confirmLabel="Delete"
-        danger
-        onConfirm={confirmDeleteThread}
-        onCancel={() => setDeleteThreadConfirmOpen(false)}
-      />
-
-      <ConfirmDialog
         open={logoutConfirmOpen}
         title="Log out?"
         message="Are you sure you want to log out?"
         confirmLabel="Log Out"
         danger
         onConfirm={() => {
-          logout();
-          navigate(ROUTES.LOGIN);
+          logout().finally(() => {
+            clearSession();
+            navigate(ROUTES.LOGIN);
+          });
         }}
         onCancel={() => setLogoutConfirmOpen(false)}
       />

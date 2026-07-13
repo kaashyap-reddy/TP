@@ -1,0 +1,51 @@
+# Local full-stack dev: Postgres + the backend container image.
+# The frontend is intentionally not containerized here — keep running it with `npm run dev`
+# in frontend/ for fast HMR; it talks to the backend via VITE_API_URL / the Vite proxy.
+#
+# Usage:
+#   docker compose up --build
+#   docker compose exec backend npx prisma migrate deploy
+#   docker compose exec backend npx prisma db seed
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: trainee_portal
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    ports:
+      - '4000:4000'
+    environment:
+      NODE_ENV: development
+      PORT: 4000
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/trainee_portal?schema=public
+      DIRECT_URL: postgresql://postgres:postgres@postgres:5432/trainee_portal?schema=public
+      JWT_ACCESS_SECRET: dev-access-secret-change-me
+      JWT_REFRESH_SECRET: dev-refresh-secret-change-me
+      COOKIE_SECRET: dev-cookie-secret-change-me
+      CORS_ORIGIN: http://localhost:5173
+      STORAGE_PROVIDER: local
+    volumes:
+      - backend_uploads:/app/src/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  backend_uploads:

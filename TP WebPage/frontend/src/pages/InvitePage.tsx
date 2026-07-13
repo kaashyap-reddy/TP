@@ -1,8 +1,7 @@
 import { FormEvent, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { acceptInvite } from '../api/auth';
+import { acceptInvite, login } from '../services/api/authService';
 import { useAuthStore } from '../store/authStore';
-import { writeSession } from '../utils/authSession';
 import { ROUTES } from '../constants/routes';
 
 const pageBackground = { background: 'linear-gradient(135deg, #f0f4f8 0%, #e0eaf5 100%)' };
@@ -16,6 +15,7 @@ const glassCard = {
 export default function InvitePage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const inviteToken = searchParams.get('token') ?? '';
   const inviteEmail = searchParams.get('email') ?? '';
   const setSession = useAuthStore((s) => s.setSession);
   const [password, setPassword] = useState('');
@@ -32,17 +32,16 @@ export default function InvitePage() {
     }
 
     try {
-      const { role } = await acceptInvite(inviteEmail, password);
-      const displayName = inviteEmail.split('@')[0].replace(/\b\w/g, (c) => c.toUpperCase());
-      setSession({ email: inviteEmail, role, displayName });
-      writeSession({ email: inviteEmail, role, displayName }, true);
-      navigate(ROUTES.TRAINEE);
+      await acceptInvite(inviteToken, password);
+      const user = await login(inviteEmail, password);
+      setSession({ id: user.id, email: user.email, role: user.role, displayName: user.name, permissions: user.permissions });
+      navigate(ROUTES.DASHBOARD_FOR_ROLE(user.role));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to activate account.');
     }
   }
 
-  if (!inviteEmail) {
+  if (!inviteToken) {
     return (
       <div className="min-h-screen flex items-center justify-center p-4" style={pageBackground}>
         <div className="glass-card w-full max-w-md rounded-2xl p-8 text-center relative overflow-hidden" style={glassCard}>
@@ -75,8 +74,9 @@ export default function InvitePage() {
             <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-2">{error}</div>
           )}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Company Email (Read Only)</label>
+            <label htmlFor="invite-email" className="block text-sm font-medium text-gray-700 mb-2">Company Email (Read Only)</label>
             <input
+              id="invite-email"
               type="email"
               value={inviteEmail}
               className="w-full px-4 py-3 rounded-lg border border-gray-200 bg-gray-50 text-gray-500 outline-none"
@@ -85,8 +85,9 @@ export default function InvitePage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Create Password</label>
+            <label htmlFor="invite-password" className="block text-sm font-medium text-gray-700 mb-2">Create Password</label>
             <input
+              id="invite-password"
               type="password"
               placeholder="••••••••"
               className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
@@ -97,8 +98,9 @@ export default function InvitePage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Confirm Password</label>
+            <label htmlFor="invite-confirm-password" className="block text-sm font-medium text-gray-700 mb-2">Confirm Password</label>
             <input
+              id="invite-confirm-password"
               type="password"
               placeholder="••••••••"
               className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"

@@ -3,6 +3,7 @@ import { Session } from '../../store/sessionsStore';
 import { Batch } from '../../store/batchesStore';
 import EmptyState from '../EmptyState';
 import StatusBadge from '../StatusBadge';
+import { formatDateTime } from '../../utils/dateUtils';
 
 interface DeadlineItem {
   kind: 'Assignment' | 'Session';
@@ -44,7 +45,7 @@ export default function UpcomingDeadlinesWidget({ assignments, sessions, batches
         kind: 'Assignment' as const,
         title: a.title,
         batchName: batchName(a.batchId),
-        when: a.deadline,
+        when: formatDateTime(a.deadline),
         sortKey: new Date(a.deadline).getTime() || Infinity,
         daysUntil: daysUntil(a.deadline)
       })),

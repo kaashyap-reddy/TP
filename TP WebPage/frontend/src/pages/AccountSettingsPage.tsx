@@ -1,13 +1,14 @@
-import { ChangeEvent, ReactNode, useState } from 'react';
+import { ChangeEvent, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Role } from '../api/auth';
-import { resetPassword } from '../services/authService';
+import { forgotPassword } from '../services/api/authService';
+import { updateMe } from '../services/api/userService';
 import { useAuthStore } from '../store/authStore';
 import { useProfileStore } from '../store/profileStore';
 import { useToastStore } from '../store/toastStore';
-import { updateStoredSession } from '../utils/authSession';
+import { Role } from '../types/role';
 import SavingButton from '../components/SavingButton';
 import Breadcrumbs from '../components/Breadcrumbs';
+import { Field, ReadOnlyField, inputClass } from '../components/FormField';
 import { ROUTES } from '../constants/routes';
 
 const ROLE_META: Record<Role, { dashboardLabel: string; dashboardPath: string; roleLabel: string; accentBtn: string; ring: string; idLabel: string }> = {
@@ -46,29 +47,6 @@ interface FormState {
   location: string;
   newPassword: string;
   confirmPassword: string;
-}
-
-function inputClass(hasError: boolean, ring: string) {
-  return `w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 ${ring} transition-colors ${hasError ? 'border-red-400' : 'border-gray-300'}`;
-}
-
-function Field({ label, error, children }: { label: string; error?: string; children: ReactNode }) {
-  return (
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
-      {children}
-      {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
-    </div>
-  );
-}
-
-function ReadOnlyField({ label, value }: { label: string; value?: string }) {
-  return (
-    <div>
-      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
-      <input type="text" value={value ?? '—'} readOnly className="w-full px-3 py-2 border rounded-lg outline-none bg-gray-50 text-gray-500" />
-    </div>
-  );
 }
 
 export default function AccountSettingsPage() {
@@ -124,7 +102,7 @@ export default function AccountSettingsPage() {
     if (!/^[0-9+()\-\s]{7,15}$/.test(form.phone.trim())) errs.phone = 'Enter a valid phone number.';
     if (!form.location.trim()) errs.location = 'Location is required.';
     if (form.newPassword || form.confirmPassword) {
-      if (form.newPassword.length < 6) errs.newPassword = 'Password must be at least 6 characters.';
+      if (form.newPassword.length < 8) errs.newPassword = 'Password must be at least 8 characters.';
       else if (form.newPassword !== form.confirmPassword) errs.confirmPassword = 'Passwords do not match.';
     }
     setErrors(errs);
@@ -139,12 +117,12 @@ export default function AccountSettingsPage() {
     setSaving(true);
     try {
       if (form.newPassword) {
-        await resetPassword(form.email.trim(), form.newPassword);
+        await forgotPassword(form.email.trim(), form.newPassword);
       }
+      await updateMe({ name: form.name.trim(), email: form.email.trim() });
+      await updateProfile(role, { phone: form.phone.trim(), location: form.location.trim(), avatarDataUrl: avatarPreview });
       updateDisplayName(form.name.trim());
       updateEmail(form.email.trim());
-      updateProfile(role, { phone: form.phone.trim(), location: form.location.trim(), avatarDataUrl: avatarPreview });
-      updateStoredSession({ displayName: form.name.trim(), email: form.email.trim() });
       setForm((f) => ({ ...f, newPassword: '', confirmPassword: '' }));
       showToast('Account settings updated');
     } catch (err) {

@@ -5,7 +5,6 @@ import InvitePage from './pages/InvitePage';
 import RequireAuth from './components/RequireAuth';
 import Toast from './components/Toast';
 import { useAuthStore } from './store/authStore';
-import { readSession } from './utils/authSession';
 import { ROUTES, ROUTE_PATTERNS } from './constants/routes';
 
 const AdminDashboardPage = lazy(() => import('./pages/AdminDashboardPage'));
@@ -14,6 +13,7 @@ const TraineeDashboardPage = lazy(() => import('./pages/TraineeDashboardPage'));
 const AssignmentDetailPage = lazy(() => import('./pages/AssignmentDetailPage'));
 const AccountSettingsPage = lazy(() => import('./pages/AccountSettingsPage'));
 const TraineeProfilePage = lazy(() => import('./pages/TraineeProfilePage'));
+const FacilitatorBatchDetailPage = lazy(() => import('./pages/FacilitatorBatchDetailPage'));
 
 function RouteLoadingFallback() {
   return (
@@ -24,17 +24,11 @@ function RouteLoadingFallback() {
 }
 
 export default function App() {
-  const setSession = useAuthStore((s) => s.setSession);
-  const markHydrated = useAuthStore((s) => s.markHydrated);
+  const bootstrap = useAuthStore((s) => s.bootstrap);
 
   useEffect(() => {
-    const session = readSession();
-    if (session) {
-      setSession(session);
-    } else {
-      markHydrated();
-    }
-  }, [setSession, markHydrated]);
+    bootstrap();
+  }, [bootstrap]);
 
   return (
     <>
@@ -72,6 +66,14 @@ export default function App() {
             element={
               <RequireAuth role="facilitator">
                 <TraineeProfilePage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path={ROUTE_PATTERNS.FACILITATOR_BATCH_DETAIL}
+            element={
+              <RequireAuth role="facilitator">
+                <FacilitatorBatchDetailPage />
               </RequireAuth>
             }
           />

@@ -20,17 +20,19 @@ export default function Table({
   tbodyClassName = 'divide-y divide-gray-200 text-sm'
 }: TableProps) {
   return (
-    <table className="w-full text-left border-collapse">
-      <thead className="sticky top-0 z-10">
-        <tr className={theadRowClassName}>
-          {columns.map((col) => (
-            <th key={col.key} className={`px-6 py-3 font-medium${col.className ? ` ${col.className}` : ''}`}>
-              {col.label}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody className={tbodyClassName}>{children}</tbody>
-    </table>
+    <div className="overflow-x-auto">
+      <table className="w-full text-left border-collapse">
+        <thead className="sticky top-0 z-10">
+          <tr className={theadRowClassName}>
+            {columns.map((col) => (
+              <th key={col.key} className={`px-6 py-3 font-medium${col.className ? ` ${col.className}` : ''}`}>
+                {col.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className={tbodyClassName}>{children}</tbody>
+      </table>
+    </div>
   );
 }

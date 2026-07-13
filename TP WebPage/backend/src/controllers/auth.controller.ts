@@ -1,70 +1,71 @@
 import { Request, Response } from 'express';
 import * as authService from '../services/auth.service';
+import { recordAuditEvent } from '../services/audit';
+import { config } from '../config';
+import { ApiError } from '../utils/ApiError';
+import { asyncHandler } from '../utils/asyncHandler';
+import { REFRESH_COOKIE_NAME, refreshCookieOptions } from '../utils/cookies';
 
-export function loginHandler(req: Request, res: Response): void {
-  const { email, password } = req.body ?? {};
+export const loginHandler = asyncHandler(async (req: Request, res: Response) => {
+  const { email, password, rememberMe } = req.body;
+  const { user, accessToken, refreshToken, refreshTokenMaxAgeMs } = await authService.login(email, password, rememberMe);
 
-  if (typeof email !== 'string' || typeof password !== 'string') {
-    res.status(400).json({ message: 'Email and password are required.' });
-    return;
-  }
+  res.cookie(REFRESH_COOKIE_NAME, refreshToken, refreshCookieOptions(refreshTokenMaxAgeMs));
+  res.status(200).json({ user, accessToken });
+});
 
-  const result = authService.login(email, password);
-  if (!result) {
-    res.status(401).json({ message: 'Invalid credentials.' });
-    return;
-  }
+export const logoutHandler = asyncHandler(async (req: Request, res: Response) => {
+  const raw = req.signedCookies?.[REFRESH_COOKIE_NAME] as string | undefined;
+  await authService.logout(raw);
+  res.clearCookie(REFRESH_COOKIE_NAME, { path: '/api/auth' });
+  res.status(204).send();
+});
 
-  res.json(result);
-}
+export const refreshHandler = asyncHandler(async (req: Request, res: Response) => {
+  const raw = req.signedCookies?.[REFRESH_COOKIE_NAME] as string | undefined;
+  const { user, accessToken, refreshToken, refreshTokenMaxAgeMs } = await authService.refresh(raw);
 
-export function acceptInviteHandler(req: Request, res: Response): void {
-  const { email, password } = req.body ?? {};
+  res.cookie(REFRESH_COOKIE_NAME, refreshToken, refreshCookieOptions(refreshTokenMaxAgeMs));
+  res.status(200).json({ user, accessToken });
+});
 
-  if (typeof email !== 'string' || typeof password !== 'string') {
-    res.status(400).json({ message: 'Email and password are required.' });
-    return;
-  }
+export const meHandler = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.user) throw ApiError.unauthorized();
+  const user = await authService.getCurrentUser(req.user.id);
+  res.status(200).json({ user });
+});
 
-  const result = authService.acceptInvite(email, password);
-  if (!result) {
-    res.status(404).json({ message: 'Invite not found.' });
-    return;
-  }
+export const createInviteHandler = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.user) throw ApiError.unauthorized();
+  const { email, role } = req.body;
+  const { token, ...safeResult } = await authService.createInvite(email, role, req.user.id);
+  // No email provider is connected yet (see services/email/), so this is the only way to hand
+  // the invite link to whoever's testing — but it must never leak in a real deployment, where
+  // the (still-unconnected) email delivery is the only intended channel for it.
+  res.status(201).json(config.exposeAuthTokens ? { ...safeResult, token } : safeResult);
+});
 
-  res.json(result);
-}
+export const acceptInviteHandler = asyncHandler(async (req: Request, res: Response) => {
+  const { token, password } = req.body;
+  const result = await authService.acceptInvite(token, password);
+  await recordAuditEvent({
+    eventType: 'UserCreated',
+    message: `A new ${result.role} account was created via invite.`,
+    actorId: result.userId,
+    module: 'Users'
+  });
+  res.status(200).json({ role: result.role });
+});
 
-export function forgotPasswordHandler(req: Request, res: Response): void {
-  const { email, newPassword } = req.body ?? {};
+export const forgotPasswordHandler = asyncHandler(async (req: Request, res: Response) => {
+  const { email, newPassword } = req.body;
+  await authService.forgotPassword(email, newPassword);
+  res.status(200).json({ success: true });
+});
 
-  if (typeof email !== 'string' || typeof newPassword !== 'string') {
-    res.status(400).json({ message: 'Email and new password are required.' });
-    return;
-  }
-
-  const result = authService.resetPassword(email, newPassword);
-  if (!result) {
-    res.status(404).json({ message: 'No active account found for that email.' });
-    return;
-  }
-
-  res.json({ success: true });
-}
-
-export function createInviteHandler(req: Request, res: Response): void {
-  const { email } = req.body ?? {};
-
-  if (typeof email !== 'string') {
-    res.status(400).json({ message: 'Email is required.' });
-    return;
-  }
-
-  const result = authService.createInvite(email);
-  if (!result) {
-    res.status(409).json({ message: 'That email belongs to a non-trainee account.' });
-    return;
-  }
-
-  res.json(result);
-}
+export const changePasswordHandler = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.user) throw ApiError.unauthorized();
+  const { currentPassword, newPassword } = req.body;
+  await authService.changePassword(req.user.id, currentPassword, newPassword);
+  res.status(204).send();
+});

@@ -1,0 +1,204 @@
+import { Prisma } from '@prisma/client';
+import { z } from 'zod';
+import { prisma } from '../prisma/client';
+import { getStorageProvider } from './storage';
+import { AuthenticatedUser } from '../types/auth';
+import { ApiError } from '../utils/ApiError';
+import { buildPaginatedResponse, getPagination } from '../utils/pagination';
+import { createAssignmentSchema, listAssignmentsQuerySchema, updateAssignmentSchema } from '../validators/assignments.validator';
+
+// Submissions are embedded directly (not just a count) because every consumer of the list
+// endpoint (Admin/Facilitator/Trainee dashboards) needs per-submission status/grade/trainee to
+// compute their own breakdowns — see frontend/src/services/api/assignmentService.ts. Prisma
+// batches this nested include into one extra query across the whole page of results, not one
+// query per assignment, which is what previously made the frontend do N extra HTTP round-trips
+// (GET /assignments/:id/submissions for every assignment) after listing.
+const include = {
+  facilitator: { select: { id: true, name: true, email: true } },
+  batch: { select: { id: true, name: true, code: true } },
+  batches: { include: { batch: { select: { id: true, name: true, code: true } } } },
+  submissions: { include: { trainee: { select: { id: true, name: true, email: true } } } }
+} satisfies Prisma.AssignmentInclude;
+
+type AssignmentWithIncludes = Prisma.AssignmentGetPayload<{ include: typeof include }>;
+
+function assertOwnerOrAdmin(actor: AuthenticatedUser, facilitatorId: string) {
+  if (actor.role === 'admin') return;
+  if (actor.role === 'facilitator' && actor.id === facilitatorId) return;
+  throw ApiError.forbidden('You do not own this assignment.');
+}
+
+// Every assignment always has at least one AssignmentBatch row (its primary `batch`, added at
+// create time — see create() below), so `batches` here is the authoritative multi-batch list;
+// the single `batch`/`batchId` fields are kept only for older frontend code paths that haven't
+// been updated to read the array.
+function serialize(assignment: AssignmentWithIncludes) {
+  const { batches = [], attachmentStorageKey, attachmentOriginalFilename, attachmentMimeType, attachmentSizeBytes, ...rest } = assignment;
+  return {
+    ...rest,
+    batches: batches.map((b) => b.batch),
+    attachment: attachmentStorageKey
+      ? { originalFilename: attachmentOriginalFilename, mimeType: attachmentMimeType, sizeBytes: attachmentSizeBytes }
+      : null
+  };
+}
+
+async function assertBatchesExist(batchIds: string[]): Promise<void> {
+  const batches = await prisma.batch.findMany({ where: { id: { in: batchIds }, deletedAt: null } });
+  if (batches.length !== batchIds.length) throw ApiError.badRequest('One or more selected batches do not exist.');
+}
+
+export async function list(query: z.infer<typeof listAssignmentsQuerySchema>) {
+  const { skip, take, page, pageSize } = getPagination(query);
+
+  const where: Prisma.AssignmentWhereInput = {
+    deletedAt: null,
+    ...(query.batchId ? { batches: { some: { batchId: query.batchId } } } : {}),
+    ...(query.status ? { status: query.status } : {}),
+    ...(query.search ? { title: { contains: query.search, mode: 'insensitive' } } : {})
+  };
+
+  const [assignments, total] = await prisma.$transaction([
+    prisma.assignment.findMany({ where, include, skip, take, orderBy: { [query.sortBy]: query.sortOrder } }),
+    prisma.assignment.count({ where })
+  ]);
+
+  return buildPaginatedResponse(assignments.map(serialize), total, page, pageSize);
+}
+
+export async function getById(id: string) {
+  const assignment = await prisma.assignment.findFirst({ where: { id, deletedAt: null }, include });
+  if (!assignment) throw ApiError.notFound('Assignment not found.');
+  return serialize(assignment);
+}
+
+export async function create(
+  actor: AuthenticatedUser,
+  input: z.infer<typeof createAssignmentSchema>,
+  file?: Express.Multer.File
+) {
+  const batchIds = [...new Set(input.batchIds)];
+  await assertBatchesExist(batchIds);
+
+  let storageKey: string | undefined;
+  if (file) storageKey = await getStorageProvider().save(file, 'assignments');
+
+  try {
+    const assignment = await prisma.assignment.create({
+      data: {
+        title: input.title,
+        description: input.description,
+        deadline: input.deadline,
+        status: input.status,
+        facilitatorId: actor.id,
+        // Primary/first batch — see the schema comment on Assignment.batchId.
+        batchId: batchIds[0],
+        batches: { create: batchIds.map((batchId) => ({ batchId })) },
+        ...(storageKey
+          ? {
+              attachmentOriginalFilename: file!.originalname,
+              attachmentStorageKey: storageKey,
+              attachmentMimeType: file!.mimetype,
+              attachmentSizeBytes: file!.size
+            }
+          : {})
+      },
+      include
+    });
+    return serialize(assignment);
+  } catch (err) {
+    // The file already landed in storage before the DB write failed — don't leave it orphaned.
+    if (storageKey) await getStorageProvider().remove(storageKey);
+    throw err;
+  }
+}
+
+export async function update(
+  actor: AuthenticatedUser,
+  id: string,
+  input: z.infer<typeof updateAssignmentSchema>,
+  file?: Express.Multer.File
+) {
+  const existing = await prisma.assignment.findFirst({ where: { id, deletedAt: null } });
+  if (!existing) throw ApiError.notFound('Assignment not found.');
+  assertOwnerOrAdmin(actor, existing.facilitatorId);
+
+  let batchIds: string[] | undefined;
+  if (input.batchIds) {
+    batchIds = [...new Set(input.batchIds)];
+    await assertBatchesExist(batchIds);
+  }
+
+  let newStorageKey: string | undefined;
+  if (file) newStorageKey = await getStorageProvider().save(file, 'assignments');
+
+  const data: Prisma.AssignmentUpdateInput = {
+    ...(input.title !== undefined ? { title: input.title } : {}),
+    ...(input.description !== undefined ? { description: input.description } : {}),
+    ...(input.deadline !== undefined ? { deadline: input.deadline } : {}),
+    ...(input.status !== undefined ? { status: input.status } : {}),
+    ...(batchIds ? { batchId: batchIds[0] } : {}),
+    ...(newStorageKey
+      ? {
+          attachmentOriginalFilename: file!.originalname,
+          attachmentStorageKey: newStorageKey,
+          attachmentMimeType: file!.mimetype,
+          attachmentSizeBytes: file!.size
+        }
+      : {})
+  };
+
+  try {
+    const assignment = await prisma.$transaction(async (tx) => {
+      if (batchIds) {
+        await tx.assignmentBatch.deleteMany({ where: { assignmentId: id } });
+        await tx.assignmentBatch.createMany({ data: batchIds.map((batchId) => ({ assignmentId: id, batchId })) });
+      }
+      return tx.assignment.update({ where: { id }, data, include });
+    });
+
+    // Only remove the old file once the new one is safely committed.
+    if (newStorageKey && existing.attachmentStorageKey) {
+      await getStorageProvider().remove(existing.attachmentStorageKey);
+    }
+    return serialize(assignment);
+  } catch (err) {
+    if (newStorageKey) await getStorageProvider().remove(newStorageKey);
+    throw err;
+  }
+}
+
+export async function softDelete(actor: AuthenticatedUser, id: string): Promise<void> {
+  const existing = await prisma.assignment.findFirst({ where: { id, deletedAt: null } });
+  if (!existing) throw ApiError.notFound('Assignment not found.');
+  assertOwnerOrAdmin(actor, existing.facilitatorId);
+
+  await prisma.assignment.update({ where: { id }, data: { deletedAt: new Date() } });
+}
+
+/** Authorizes and resolves an assignment's instructions-file attachment for viewing/downloading. */
+export async function getAttachmentForView(actor: AuthenticatedUser, id: string) {
+  const assignment = await prisma.assignment.findFirst({
+    where: { id, deletedAt: null },
+    include: { batches: { select: { batchId: true } } }
+  });
+  if (!assignment) throw ApiError.notFound('Assignment not found.');
+  if (!assignment.attachmentStorageKey) throw ApiError.notFound('No file uploaded for this assignment.');
+
+  if (actor.role === 'admin') return assignment;
+
+  const batchIds = assignment.batches.map((b) => b.batchId);
+
+  if (actor.role === 'facilitator') {
+    if (actor.id === assignment.facilitatorId) return assignment;
+    const managesAssignedBatch = await prisma.batch.findFirst({ where: { id: { in: batchIds }, facilitatorId: actor.id } });
+    if (managesAssignedBatch) return assignment;
+    throw ApiError.forbidden('You do not have access to this assignment.');
+  }
+
+  const enrolled = await prisma.batchTrainee.findFirst({
+    where: { traineeId: actor.id, removedAt: null, batchId: { in: batchIds } }
+  });
+  if (!enrolled) throw ApiError.forbidden('You do not have access to this assignment.');
+  return assignment;
+}

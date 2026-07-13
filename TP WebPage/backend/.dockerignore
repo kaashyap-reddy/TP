@@ -1,0 +1,9 @@
+node_modules
+dist
+src/uploads/*
+!src/uploads/.gitkeep
+.env
+.env.*
+!.env.example
+npm-debug.log*
+*.tsbuildinfo

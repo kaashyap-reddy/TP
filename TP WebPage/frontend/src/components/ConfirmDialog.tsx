@@ -25,7 +25,7 @@ export default function ConfirmDialog({
 
   return (
     <div
-      className={`fixed inset-0 bg-gray-900 bg-opacity-50 ${open ? 'flex' : 'hidden'} items-center justify-center z-[90]`}
+      className={`fixed inset-0 bg-gray-900 bg-opacity-50 ${open ? 'flex' : 'hidden'} items-center justify-center z-[90] p-4`}
       role="dialog"
       aria-modal="true"
       aria-label={title}

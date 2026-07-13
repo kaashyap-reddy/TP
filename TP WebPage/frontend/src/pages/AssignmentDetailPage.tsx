@@ -1,4 +1,4 @@
-import { Fragment, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Submission, SubmissionStatus, useAssignmentsStore } from '../store/assignmentsStore';
 import { useBatchesStore } from '../store/batchesStore';
@@ -6,6 +6,10 @@ import { useToastStore } from '../store/toastStore';
 import { useAuditLogStore } from '../store/auditLogStore';
 import { useAuthStore } from '../store/authStore';
 import { ROUTES } from '../constants/routes';
+import { assignmentAttachmentUrl } from '../services/api/assignmentService';
+import { submissionAttachmentUrl } from '../services/api/submissionService';
+import FileViewButton from '../components/FileViewButton';
+import { formatDateTime } from '../utils/dateUtils';
 
 const STATUS_BADGE: Record<SubmissionStatus, string> = {
   'Not Started': 'bg-gray-100 text-gray-500',
@@ -19,7 +23,19 @@ export default function AssignmentDetailPage() {
   const navigate = useNavigate();
   const assignment = useAssignmentsStore((s) => s.assignments.find((a) => a.id === assignmentId));
   const updateSubmission = useAssignmentsStore((s) => s.updateSubmission);
+  const fetchAssignments = useAssignmentsStore((s) => s.fetchAssignments);
+  const fetchSubmissionsForAssignment = useAssignmentsStore((s) => s.fetchSubmissionsForAssignment);
+  useEffect(() => {
+    fetchAssignments();
+  }, [fetchAssignments]);
+  useEffect(() => {
+    if (assignmentId) fetchSubmissionsForAssignment(assignmentId);
+  }, [assignmentId, fetchSubmissionsForAssignment]);
   const batch = useBatchesStore((s) => s.batches.find((b) => b.id === assignment?.batchId));
+  const fetchBatches = useBatchesStore((s) => s.fetchBatches);
+  useEffect(() => {
+    fetchBatches();
+  }, [fetchBatches]);
   const showToast = useToastStore((s) => s.showToast);
   const logEvent = useAuditLogStore((s) => s.logEvent);
   const role = useAuthStore((s) => s.role);
@@ -51,15 +67,20 @@ export default function AssignmentDetailPage() {
     setStatusInput(current.status === 'Not Started' ? 'Completed' : current.status);
   }
 
-  function saveGrade(traineeName: string) {
+  async function saveGrade(traineeName: string) {
     const grade = scoreInput.trim() === '' ? null : Number(scoreInput);
-    updateSubmission(assignment!.id, traineeName, { grade, feedback: feedbackInput, status: statusInput });
-    logEvent('Grading', `${traineeName} was graded ${grade ?? '—'}/100 on "${assignment!.title}".`);
-    showToast('Grade saved');
-    setGradingTrainee(null);
+    try {
+      await updateSubmission(assignment!.id, traineeName, { grade, feedback: feedbackInput, status: statusInput });
+      logEvent('Grading', `${traineeName} was graded ${grade ?? '—'}/100 on "${assignment!.title}".`);
+      showToast('Grade saved');
+      setGradingTrainee(null);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Unable to save grade.', 'error');
+    }
   }
 
   const completedCount = assignment.submissions.filter((s) => s.status === 'Completed').length;
+  const batchNames = assignment.batches.length > 0 ? assignment.batches.map((b) => b.name).join(', ') : batch?.name ?? assignment.batchId;
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -67,16 +88,23 @@ export default function AssignmentDetailPage() {
         <button onClick={goBackToAssignments} className="text-sm text-blue-600 hover:underline font-medium mb-3">
           ‹ Back to Assignments
         </button>
-        <div className="flex items-start justify-between">
+        <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">{assignment.title}</h1>
             <p className="text-sm text-gray-500 mt-1">
-              {batch?.name ?? assignment.batchId} • Facilitator: {assignment.facilitator} • Deadline: {assignment.deadline}
+              {batchNames} • Facilitator: {assignment.facilitator} • Deadline: {formatDateTime(assignment.deadline)}
             </p>
           </div>
-          <span className="text-sm bg-blue-50 text-blue-700 font-bold px-3 py-1.5 rounded-full">
-            {completedCount} / {assignment.submissions.length} graded
-          </span>
+          <div className="flex items-center gap-3 flex-shrink-0">
+            <FileViewButton
+              url={assignment.attachmentFilename ? assignmentAttachmentUrl(assignment.id) : null}
+              fileName={assignment.attachmentFilename ?? undefined}
+              label="View Assignment File"
+            />
+            <span className="text-sm bg-blue-50 text-blue-700 font-bold px-3 py-1.5 rounded-full whitespace-nowrap">
+              {completedCount} / {assignment.submissions.length} graded
+            </span>
+          </div>
         </div>
         {assignment.description && <p className="text-sm text-gray-600 mt-3 max-w-2xl">{assignment.description}</p>}
       </header>
@@ -90,10 +118,12 @@ export default function AssignmentDetailPage() {
             <thead>
               <tr className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
                 <th className="px-6 py-3 font-medium">Trainee</th>
+                <th className="px-6 py-3 font-medium">Batch</th>
                 <th className="px-6 py-3 font-medium">Status</th>
                 <th className="px-6 py-3 font-medium">Submitted On</th>
                 <th className="px-6 py-3 font-medium">Grade</th>
-                <th className="px-6 py-3 font-medium">Action</th>
+                <th className="px-6 py-3 font-medium">Submission</th>
+                <th className="px-6 py-3 font-medium">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200 text-sm">
@@ -101,15 +131,27 @@ export default function AssignmentDetailPage() {
                 <Fragment key={s.traineeName}>
                   <tr className="hover:bg-gray-50">
                     <td className="px-6 py-4 font-medium text-gray-800">{s.traineeName}</td>
+                    <td className="px-6 py-4 text-gray-500">{s.batchName ?? '—'}</td>
                     <td className="px-6 py-4">
-                      <span className={`px-2 py-1 rounded-full font-bold text-xs ${STATUS_BADGE[s.status]}`}>{s.status}</span>
+                      <span className={`px-2 py-1 rounded-full font-bold text-xs ${STATUS_BADGE[s.status]}`}>
+                        {s.id ? s.status : 'Not submitted'}
+                      </span>
                     </td>
-                    <td className="px-6 py-4 text-gray-500">{s.submittedOn}</td>
+                    <td className="px-6 py-4 text-gray-500">{s.submittedOn ? formatDateTime(s.submittedOn) : '—'}</td>
                     <td className="px-6 py-4 font-bold text-gray-800">{s.grade !== null ? `${s.grade}/100` : '-'}</td>
                     <td className="px-6 py-4">
+                      <FileViewButton
+                        url={s.id && s.attachmentId ? submissionAttachmentUrl(s.id, s.attachmentId) : null}
+                        fileName={s.attachmentFilename}
+                        label="View Submission"
+                        disabledLabel="Not submitted"
+                      />
+                    </td>
+                    <td className="px-6 py-4">
                       <button
+                        disabled={!s.id}
                         onClick={() => (gradingTrainee === s.traineeName ? setGradingTrainee(null) : startGrading(s.traineeName, s))}
-                        className={`text-xs font-bold rounded-full px-3 py-1.5 border transition-all duration-150 hover:scale-105 active:scale-95 ${
+                        className={`text-xs font-bold rounded-full px-3 py-1.5 border transition-all duration-150 hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 ${
                           gradingTrainee === s.traineeName
                             ? 'text-gray-600 border-gray-200 bg-gray-50 hover:bg-gray-100'
                             : 'text-blue-600 border-blue-200 bg-blue-50 hover:bg-blue-100'
@@ -121,11 +163,12 @@ export default function AssignmentDetailPage() {
                   </tr>
                   {gradingTrainee === s.traineeName && (
                     <tr>
-                      <td colSpan={5} className="px-6 py-5 bg-blue-50/40 border-t border-blue-100">
+                      <td colSpan={7} className="px-6 py-5 bg-blue-50/40 border-t border-blue-100">
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                           <div>
-                            <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Score (0-100)</label>
+                            <label htmlFor="assignment-grade-score" className="block text-xs font-bold text-gray-700 mb-1 uppercase">Score (0-100)</label>
                             <input
+                              id="assignment-grade-score"
                               type="number"
                               min={0}
                               max={100}
@@ -135,8 +178,9 @@ export default function AssignmentDetailPage() {
                             />
                           </div>
                           <div className="md:col-span-1">
-                            <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Status</label>
+                            <label htmlFor="assignment-grade-status" className="block text-xs font-bold text-gray-700 mb-1 uppercase">Status</label>
                             <select
+                              id="assignment-grade-status"
                               value={statusInput}
                               onChange={(e) => setStatusInput(e.target.value as SubmissionStatus)}
                               className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg outline-none"
@@ -156,8 +200,9 @@ export default function AssignmentDetailPage() {
                             </button>
                           </div>
                           <div className="md:col-span-3">
-                            <label className="block text-xs font-bold text-gray-700 mb-1 uppercase">Feedback</label>
+                            <label htmlFor="assignment-grade-feedback" className="block text-xs font-bold text-gray-700 mb-1 uppercase">Feedback</label>
                             <textarea
+                              id="assignment-grade-feedback"
                               value={feedbackInput}
                               onChange={(e) => setFeedbackInput(e.target.value)}
                               className="w-full px-3 py-2 bg-white border border-gray-300 rounded-lg outline-none h-20"

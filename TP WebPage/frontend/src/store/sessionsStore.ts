@@ -1,28 +1,43 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 import type { SessionStatus, MeetingPlatform, Session } from '../types/session';
-import * as sessionsService from '../services/sessions.service';
+import * as sessionService from '../services/api/sessionService';
 
 export type { SessionStatus, MeetingPlatform, Session } from '../types/session';
 
 interface SessionsState {
   sessions: Session[];
-  createSession: (input: Omit<Session, 'id' | 'presentCount' | 'absentCount'>) => Session;
-  updateSession: (id: string, changes: Partial<Session>) => void;
+  isLoading: boolean;
+  error: string | null;
+  fetchSessions: (filters?: { batchId?: string }) => Promise<void>;
+  createSession: (input: sessionService.CreateSessionInput) => Promise<Session>;
+  updateSession: (id: string, changes: Partial<Session>) => Promise<void>;
+  deleteSession: (id: string) => Promise<void>;
 }
 
-export const useSessionsStore = create<SessionsState>()(
-  persist(
-    (set) => ({
-      sessions: sessionsService.getSessions(),
-      createSession: (input) => {
-        const session = sessionsService.createSession(input);
-        set((state) => ({ sessions: [session, ...state.sessions] }));
-        return session;
-      },
-      updateSession: (id, changes) =>
-        set((state) => ({ sessions: sessionsService.updateSession(state.sessions, id, changes) }))
-    }),
-    { name: 'tp-sessions' }
-  )
-);
+export const useSessionsStore = create<SessionsState>()((set, get) => ({
+  sessions: [],
+  isLoading: false,
+  error: null,
+  fetchSessions: async (filters) => {
+    set({ isLoading: true, error: null });
+    try {
+      const sessions = await sessionService.listSessions(filters);
+      set({ sessions, isLoading: false });
+    } catch (err) {
+      set({ isLoading: false, error: err instanceof Error ? err.message : 'Unable to load sessions.' });
+    }
+  },
+  createSession: async (input) => {
+    const session = await sessionService.createSession(input);
+    set({ sessions: [session, ...get().sessions] });
+    return session;
+  },
+  updateSession: async (id, changes) => {
+    const updated = await sessionService.updateSession(id, changes);
+    set({ sessions: get().sessions.map((s) => (s.id === id ? { ...s, ...updated } : s)) });
+  },
+  deleteSession: async (id) => {
+    await sessionService.deleteSession(id);
+    set({ sessions: get().sessions.filter((s) => s.id !== id) });
+  }
+}));

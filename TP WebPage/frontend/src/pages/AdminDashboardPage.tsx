@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Batch, useBatchesStore } from '../store/batchesStore';
 import { effectiveStatus, useAssignmentsStore } from '../store/assignmentsStore';
+import { assignmentAttachmentUrl } from '../services/api/assignmentService';
 import { MeetingPlatform, Session, SessionStatus, useSessionsStore } from '../store/sessionsStore';
 import { RESOURCE_CATEGORIES, useResourcesStore } from '../store/resourcesStore';
 import { useFeedbackStore } from '../store/feedbackStore';
@@ -10,17 +11,23 @@ import { useToastStore } from '../store/toastStore';
 import { Announcement, useAnnouncementsStore } from '../store/announcementsStore';
 import ConfirmDialog from '../components/ConfirmDialog';
 import Modal from '../components/Modal';
-import { logout } from '../services/authService';
-import { createInvite } from '../api/auth';
+import { logout } from '../services/api/authService';
+import { useAuthStore } from '../store/authStore';
+import { createInvite } from '../services/api/authService';
 import { dateStrToIso, formatTimeRange, isoToDateStr, minutesToLabel, parseTimeRange } from '../utils/sessionTime';
 import QuickActionsBar from '../components/admin/QuickActionsBar';
 import RecentActivityWidget from '../components/admin/RecentActivityWidget';
 import UpcomingDeadlinesWidget from '../components/admin/UpcomingDeadlinesWidget';
-import SessionsCalendarView from '../components/admin/SessionsCalendarView';
+import SessionsCalendarView from '../components/SessionsCalendarView';
+import BatchMultiSelect from '../components/BatchMultiSelect';
+import AssignmentBatchesCell from '../components/AssignmentBatchesCell';
+import AssignmentTitleLink from '../components/AssignmentTitleLink';
+import FileViewButton from '../components/FileViewButton';
+import FeedbackCard from '../components/FeedbackCard';
 import NotificationPanel, { categorize } from '../components/NotificationPanel';
 import ProfileDropdown from '../components/ProfileDropdown';
 import BatchRow from '../components/admin/BatchRow';
-import { isRecentlyUpdated } from '../utils/dateUtils';
+import { formatDateTime, isRecentlyUpdated } from '../utils/dateUtils';
 import { downloadTextFile } from '../utils/downloadFile';
 import { average } from '../utils/mathUtils';
 import GlobalSearch, { SearchItem } from '../components/GlobalSearch';
@@ -98,11 +105,28 @@ export default function AdminDashboardPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const initialTab = (location.state as { tab?: TabId } | null)?.tab;
-  const { batches, updateBatch, deleteBatch, createBatch } = useBatchesStore();
-  const { assignments, createAssignment, bulkDelete, bulkClose, bulkExtendDeadline, duplicateAssignment } = useAssignmentsStore();
-  const { sessions, createSession, updateSession } = useSessionsStore();
-  const { resources, addResource, verifyResource, deleteResource } = useResourcesStore();
-  const { feedback, submitFeedback } = useFeedbackStore();
+  const clearSession = useAuthStore((s) => s.clearSession);
+  const { batches, fetchBatches, updateBatch, deleteBatch, createBatch } = useBatchesStore();
+
+  useEffect(() => {
+    fetchBatches();
+  }, [fetchBatches]);
+  const { assignments, fetchAssignments, createAssignment, bulkDelete, bulkClose, bulkExtendDeadline, duplicateAssignment } = useAssignmentsStore();
+  useEffect(() => {
+    fetchAssignments();
+  }, [fetchAssignments]);
+  const { sessions, fetchSessions, createSession, updateSession } = useSessionsStore();
+  useEffect(() => {
+    fetchSessions();
+  }, [fetchSessions]);
+  const { resources, fetchResources, addResource, verifyResource, deleteResource } = useResourcesStore();
+  useEffect(() => {
+    fetchResources();
+  }, [fetchResources]);
+  const { feedback, fetchFeedback, submitFeedback } = useFeedbackStore();
+  useEffect(() => {
+    fetchFeedback();
+  }, [fetchFeedback]);
   const { entries: auditEntries, logEvent } = useAuditLogStore();
   const { showToast } = useToastStore();
   const { announcements, postAnnouncement } = useAnnouncementsStore();
@@ -135,6 +159,9 @@ export default function AdminDashboardPage() {
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
   const [inviteForm, setInviteForm] = useState({ name: '', email: '', batchId: '' });
   const [inviteLink, setInviteLink] = useState<string | null>(null);
+  // Set instead of inviteLink when the backend didn't return a raw token (production — see
+  // authService.createInvite) — there's no link to show, just confirmation an email will go out.
+  const [inviteSentTo, setInviteSentTo] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState('');
 
   // Search filters
@@ -206,7 +233,8 @@ export default function AdminDashboardPage() {
 
   // Assignments
   const [createAssignmentModalOpen, setCreateAssignmentModalOpen] = useState(false);
-  const [assignmentForm, setAssignmentForm] = useState({ title: '', batchId: batches[0]?.id ?? '', facilitator: 'Srikar Kulkarni', deadline: '', description: '' });
+  const [assignmentForm, setAssignmentForm] = useState({ title: '', batchIds: [] as string[], facilitator: 'Srikar Kulkarni', deadline: '', description: '' });
+  const [assignmentFile, setAssignmentFile] = useState<File | null>(null);
   const [assignmentFormError, setAssignmentFormError] = useState('');
   const [assignmentFormSaving, setAssignmentFormSaving] = useState(false);
   const [assignmentSearch, setAssignmentSearch] = useState('');
@@ -305,26 +333,30 @@ export default function AdminDashboardPage() {
     setRescheduleModalOpen(true);
   }
 
-  function saveReschedule() {
+  async function saveReschedule() {
     if (!selectedBatch) return;
     const existing = sessions.find((s) => s.batchId === selectedBatch.id);
-    if (existing) {
-      updateSession(existing.id, { date: rescheduleForm.date, time: rescheduleForm.time });
-    } else {
-      createSession({
-        title: `${selectedBatch.name} Sync`,
-        batchId: selectedBatch.id,
-        facilitator: selectedBatch.poc,
-        date: rescheduleForm.date,
-        time: rescheduleForm.time,
-        link: '',
-        platform: 'Google Meet',
-        status: 'Upcoming'
-      });
+    try {
+      if (existing) {
+        await updateSession(existing.id, { date: rescheduleForm.date, time: rescheduleForm.time });
+      } else {
+        await createSession({
+          title: `${selectedBatch.name} Sync`,
+          batchId: selectedBatch.id,
+          facilitator: selectedBatch.poc,
+          date: rescheduleForm.date,
+          time: rescheduleForm.time,
+          link: '',
+          platform: 'Google Meet',
+          status: 'Upcoming'
+        });
+      }
+      logEvent('Batch', `${selectedBatch.name} session rescheduled to ${rescheduleForm.date} ${rescheduleForm.time}.`);
+      showToast('Session rescheduled');
+      setRescheduleModalOpen(false);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Unable to reschedule session.', 'error');
     }
-    logEvent('Batch', `${selectedBatch.name} session rescheduled to ${rescheduleForm.date} ${rescheduleForm.time}.`);
-    showToast('Session rescheduled');
-    setRescheduleModalOpen(false);
   }
 
   function openEditBatch() {
@@ -339,17 +371,21 @@ export default function AdminDashboardPage() {
     setEditBatchModalOpen(true);
   }
 
-  function saveEditBatch() {
+  async function saveEditBatch() {
     if (!selectedBatch) return;
-    updateBatch(selectedBatch.id, {
-      poc: editBatchForm.poc,
-      status: editBatchForm.status,
-      avgScore: editBatchForm.avgScore.trim() === '' ? null : Number(editBatchForm.avgScore),
-      completion: editBatchForm.completion.trim() === '' ? null : Number(editBatchForm.completion)
-    });
-    logEvent('Batch', `${selectedBatch.name} details were updated.`);
-    showToast('Batch details updated');
-    setEditBatchModalOpen(false);
+    try {
+      await updateBatch(selectedBatch.id, {
+        poc: editBatchForm.poc,
+        status: editBatchForm.status,
+        avgScore: editBatchForm.avgScore.trim() === '' ? null : Number(editBatchForm.avgScore),
+        completion: editBatchForm.completion.trim() === '' ? null : Number(editBatchForm.completion)
+      });
+      logEvent('Batch', `${selectedBatch.name} details were updated.`);
+      showToast('Batch details updated');
+      setEditBatchModalOpen(false);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Unable to update batch.', 'error');
+    }
   }
 
   function openDeleteBatch() {
@@ -357,12 +393,16 @@ export default function AdminDashboardPage() {
     setDeleteBatchConfirmOpen(true);
   }
 
-  function confirmDeleteBatch() {
+  async function confirmDeleteBatch() {
     if (!selectedBatch) return;
-    deleteBatch(selectedBatch.id);
-    logEvent('Batch', `${selectedBatch.name} was deleted.`);
-    showToast('Batch deleted');
-    setDeleteBatchConfirmOpen(false);
+    try {
+      await deleteBatch(selectedBatch.id);
+      logEvent('Batch', `${selectedBatch.name} was deleted.`);
+      showToast('Batch deleted');
+      setDeleteBatchConfirmOpen(false);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Unable to delete batch.', 'error');
+    }
   }
 
   async function sendInvite() {
@@ -372,15 +412,18 @@ export default function AdminDashboardPage() {
     }
     setInviteError('');
     try {
-      const { email } = await createInvite(inviteForm.email.trim());
+      const { email, token } = await createInvite(inviteForm.email.trim());
       if (inviteForm.batchId) {
         const batch = batches.find((b) => b.id === inviteForm.batchId);
         if (batch) {
-          updateBatch(batch.id, { members: [...batch.members, inviteForm.name.trim()] });
+          await updateBatch(batch.id, { members: [...batch.members, inviteForm.name.trim()] });
         }
       }
-      const link = `${window.location.origin}/invite?email=${encodeURIComponent(email)}`;
-      setInviteLink(link);
+      if (token) {
+        setInviteLink(`${window.location.origin}/invite?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}`);
+      } else {
+        setInviteSentTo(email);
+      }
       logEvent('Invite', `Invite created for ${inviteForm.name} (${email}).`);
       showToast('Invite created');
     } catch (err) {
@@ -392,6 +435,7 @@ export default function AdminDashboardPage() {
     setInviteModalOpen(false);
     setInviteForm({ name: '', email: '', batchId: '' });
     setInviteLink(null);
+    setInviteSentTo(null);
     setInviteError('');
   }
 
@@ -407,9 +451,9 @@ export default function AdminDashboardPage() {
     reader.readAsText(file);
   }
 
-  function executeOnboarding() {
+  async function executeOnboarding() {
     const rowCount = csvRowCount ?? 0;
-    const batch = createBatch({
+    const batch = await createBatch({
       name: newBatchName.trim() || `${newBatchProgram} New Batch`,
       program: newBatchProgram,
       track: 'BTech',
@@ -426,34 +470,38 @@ export default function AdminDashboardPage() {
   }
 
   // ---- Assignments ----
-  function createNewAssignment() {
-    if (!assignmentForm.title.trim() || !assignmentForm.batchId) {
-      setAssignmentFormError('Please enter a title and select a target batch.');
+  async function createNewAssignment() {
+    if (!assignmentForm.title.trim() || assignmentForm.batchIds.length === 0) {
+      setAssignmentFormError('Please enter a title and select at least one batch.');
       return;
     }
     setAssignmentFormError('');
     setAssignmentFormSaving(true);
-    setTimeout(() => {
-      const assignment = createAssignment({ ...assignmentForm });
-      logEvent('Assignment', `"${assignment.title}" was created.`);
+    try {
+      const assignment = await createAssignment({ ...assignmentForm, file: assignmentFile });
+      logEvent('Assignment', `"${assignment.title}" was created for ${assignment.batches.length} batch(es).`);
       showToast('Assignment created');
       setCreateAssignmentModalOpen(false);
-      setAssignmentForm({ title: '', batchId: batches[0]?.id ?? '', facilitator: 'Srikar Kulkarni', deadline: '', description: '' });
+      setAssignmentForm({ title: '', batchIds: [], facilitator: 'Srikar Kulkarni', deadline: '', description: '' });
+      setAssignmentFile(null);
+    } catch (err) {
+      setAssignmentFormError(err instanceof Error ? err.message : 'Unable to create assignment.');
+    } finally {
       setAssignmentFormSaving(false);
-    }, 400);
+    }
   }
 
   // ---- Sessions ----
-  function createNewSession() {
+  async function createNewSession() {
     if (!sessionForm.title.trim() || !sessionForm.batchId || !sessionForm.date.trim() || !sessionForm.time.trim()) {
       setSessionFormError('Please fill in the title, date, and time.');
       return;
     }
     setSessionFormError('');
     setSessionFormSaving(true);
-    setTimeout(() => {
+    try {
       const batch = batches.find((b) => b.id === sessionForm.batchId);
-      createSession({
+      await createSession({
         title: sessionForm.title,
         batchId: sessionForm.batchId,
         facilitator: batch?.poc ?? '',
@@ -467,8 +515,11 @@ export default function AdminDashboardPage() {
       showToast('Session scheduled');
       setCreateSessionModalOpen(false);
       setSessionForm({ title: '', batchId: batches[0]?.id ?? '', date: '', time: '', platform: 'Google Meet' });
+    } catch (err) {
+      setSessionFormError(err instanceof Error ? err.message : 'Unable to schedule session.');
+    } finally {
       setSessionFormSaving(false);
-    }, 400);
+    }
   }
 
   function startEditSession(session: Session) {
@@ -477,13 +528,17 @@ export default function AdminDashboardPage() {
     setSessionEditDraft({ dateIso: dateStrToIso(session.date), startMin: start, endMin: end });
   }
 
-  function saveSessionEdit(session: Session) {
+  async function saveSessionEdit(session: Session) {
     const date = isoToDateStr(sessionEditDraft.dateIso);
     const time = formatTimeRange(sessionEditDraft.startMin, sessionEditDraft.endMin);
-    updateSession(session.id, { date, time });
-    logEvent('Session', `"${session.title}" timing updated to ${date} ${time}.`);
-    showToast('Session timing updated');
-    setSessionEditingId(null);
+    try {
+      await updateSession(session.id, { date, time });
+      logEvent('Session', `"${session.title}" timing updated to ${date} ${time}.`);
+      showToast('Session timing updated');
+      setSessionEditingId(null);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Unable to update session.', 'error');
+    }
   }
 
   function startEditAttendance(session: Session) {
@@ -491,10 +546,10 @@ export default function AdminDashboardPage() {
     setAttendanceDraft({ present: String(session.presentCount ?? 0), absent: String(session.absentCount ?? 0) });
   }
 
-  function saveAttendance(session: Session) {
+  async function saveAttendance(session: Session) {
     const presentCount = Number(attendanceDraft.present) || 0;
     const absentCount = Number(attendanceDraft.absent) || 0;
-    updateSession(session.id, { presentCount, absentCount });
+    await updateSession(session.id, { presentCount, absentCount });
     logEvent('Session', `Attendance recorded for "${session.title}": ${presentCount} present, ${absentCount} absent.`, { module: 'Sessions' });
     showToast('Attendance saved');
     setAttendanceEditingId(null);
@@ -507,20 +562,24 @@ export default function AdminDashboardPage() {
     setFeedbackModalOpen(true);
   }
 
-  function saveSubmitFeedback() {
+  async function saveSubmitFeedback() {
     if (!feedbackTarget) return;
-    submitFeedback({
-      trainee: feedbackForm.trainee.trim() || 'Anonymous',
-      facilitator: feedbackTarget.facilitator,
-      batchId: feedbackTarget.batchId,
-      category: 'Trainer Feedback',
-      rating: Number(feedbackForm.rating),
-      comment: feedbackForm.comment,
-      date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-    });
-    logEvent('Feedback', `New feedback submitted for ${feedbackTarget.facilitator}.`);
-    showToast('Feedback submitted');
-    setFeedbackModalOpen(false);
+    try {
+      await submitFeedback({
+        trainee: feedbackForm.trainee.trim(),
+        facilitator: feedbackTarget.facilitator,
+        batchId: feedbackTarget.batchId,
+        category: 'Trainer Feedback',
+        rating: Number(feedbackForm.rating),
+        comment: feedbackForm.comment,
+        date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      });
+      logEvent('Feedback', `New feedback submitted for ${feedbackTarget.facilitator}.`);
+      showToast('Feedback submitted');
+      setFeedbackModalOpen(false);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Unable to submit feedback.', 'error');
+    }
   }
 
   // ---- Announcements ----
@@ -598,7 +657,7 @@ export default function AdminDashboardPage() {
           const submitted = a.submissions.filter((s) => s.status === 'Completed').length;
           const late = a.submissions.filter((s) => s.status === 'Late').length;
           const pending = a.submissions.length - submitted - late;
-          return [a.title, batch?.name ?? a.batchId, a.facilitator, a.deadline, effectiveStatus(a), submitted, pending, late];
+          return [a.title, batch?.name ?? a.batchId, a.facilitator, formatDateTime(a.deadline), effectiveStatus(a), submitted, pending, late];
         });
         const chart = assignments.filter((a) => inRange(a.deadline)).slice(0, 8).map((a) => {
           const pct = a.submissions.length > 0 ? Math.round((a.submissions.filter((s) => s.status === 'Completed').length / a.submissions.length) * 100) : 0;
@@ -707,32 +766,34 @@ export default function AdminDashboardPage() {
   }
 
   // ---- Global Resources ----
-  function uploadResource(file: File | null) {
-    if (!resourceForm.title.trim() && !file) {
-      setResourceFormError('Please enter a title or choose a file.');
+  async function uploadResource(file: File | null) {
+    if (!file) {
+      setResourceFormError('Please choose a file to upload.');
       return;
     }
     setResourceFormError('');
     setResourceFormSaving(true);
-    setTimeout(() => {
-      const title = resourceForm.title.trim() || file?.name || 'Untitled Resource';
-      const resource = addResource({
+    try {
+      const title = resourceForm.title.trim() || file.name;
+      const resource = await addResource({
         title,
         category: resourceForm.category,
         batchId: resourceForm.batchId,
-        uploadedBy: 'Arjun Mehta',
-        uploadedAt: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        file
       });
       logEvent('Resource', `"${resource.title}" was uploaded and is pending verification.`);
       showToast('Resource uploaded — pending verification');
       setResourceUploadModalOpen(false);
       setResourceForm({ title: '', category: 'PDF Guides', batchId: 'All' });
+    } catch (err) {
+      setResourceFormError(err instanceof Error ? err.message : 'Unable to upload resource.');
+    } finally {
       setResourceFormSaving(false);
-    }, 400);
+    }
   }
 
-  function handleVerifyResource(id: string, title: string) {
-    verifyResource(id);
+  async function handleVerifyResource(id: string, title: string) {
+    await verifyResource(id);
     logEvent('Resource', `"${title}" was verified and is now visible to trainees.`);
     showToast('Resource verified');
   }
@@ -746,15 +807,15 @@ export default function AdminDashboardPage() {
     });
   }
 
-  function bulkVerifyResources() {
-    selectedResourceIds.forEach((id) => verifyResource(id));
+  async function bulkVerifyResources() {
+    await Promise.all(Array.from(selectedResourceIds).map((id) => verifyResource(id)));
     logEvent('Resource', `${selectedResourceIds.size} resource(s) verified.`, { module: 'Global Resources' });
     showToast(`${selectedResourceIds.size} resource(s) verified`);
     setSelectedResourceIds(new Set());
   }
 
-  function bulkDeleteResources() {
-    selectedResourceIds.forEach((id) => deleteResource(id));
+  async function bulkDeleteResources() {
+    await Promise.all(Array.from(selectedResourceIds).map((id) => deleteResource(id)));
     logEvent('Resource', `${selectedResourceIds.size} resource(s) deleted.`, { module: 'Global Resources' });
     showToast(`${selectedResourceIds.size} resource(s) deleted`);
     setSelectedResourceIds(new Set());
@@ -816,8 +877,8 @@ export default function AdminDashboardPage() {
     showToast(`${selected.length} batch(es) exported`);
   }
 
-  function bulkSetBatchStatus(status: Batch['status']) {
-    selectedBatchIds.forEach((id) => updateBatch(id, { status }));
+  async function bulkSetBatchStatus(status: Batch['status']) {
+    await Promise.all(Array.from(selectedBatchIds).map((id) => updateBatch(id, { status })));
     logEvent('Batch', `${selectedBatchIds.size} batch(es) marked ${status}.`, { module: 'Batch Management', newValue: status });
     showToast(`${selectedBatchIds.size} batch(es) updated`);
     setSelectedBatchIds(new Set());
@@ -841,6 +902,8 @@ export default function AdminDashboardPage() {
     .slice()
     .sort((a, b) => (feedbackSort === 'rating' ? b.rating - a.rating : new Date(b.date).getTime() - new Date(a.date).getTime() || 0));
 
+  const traineeToFacilitatorFeedback = filteredFeedback.filter((f) => f.direction === 'TraineeToFacilitator');
+  const facilitatorToTraineeFeedback = filteredFeedback.filter((f) => f.direction !== 'TraineeToFacilitator');
   const feedbackAvgRating = feedback.length > 0 ? Math.round((feedback.reduce((sum, f) => sum + f.rating, 0) / feedback.length) * 10) / 10 : null;
   const feedbackByFacilitator = Array.from(new Set(feedback.map((f) => f.facilitator))).map((name) => {
     const entries = feedback.filter((f) => f.facilitator === name);
@@ -889,7 +952,7 @@ export default function AdminDashboardPage() {
   const globalSearchItems: SearchItem[] = useMemo(
     () => [
       ...batches.map((b): SearchItem => ({ id: b.id, category: 'Batch', title: b.name, subtitle: `${b.poc} • ${b.status}` })),
-      ...assignments.map((a): SearchItem => ({ id: a.id, category: 'Assignment', title: a.title, subtitle: `Due ${a.deadline}` })),
+      ...assignments.map((a): SearchItem => ({ id: a.id, category: 'Assignment', title: a.title, subtitle: `Due ${formatDateTime(a.deadline)}` })),
       ...resources.map((r): SearchItem => ({ id: r.id, category: 'Resource', title: r.title, subtitle: r.category })),
       ...announcements.map((a): SearchItem => ({ id: a.id, category: 'Announcement', title: a.title, subtitle: a.audience })),
       ...sessions.map((s): SearchItem => ({ id: s.id, category: 'Session', title: s.title, subtitle: `${s.date} • ${s.time}` }))
@@ -937,8 +1000,7 @@ export default function AdminDashboardPage() {
         const matchesSearch = q === '' || a.title.toLowerCase().includes(q);
         const matchesStatus = assignmentStatusFilter === 'All Statuses' || effectiveStatus(a) === assignmentStatusFilter;
         const matchesFacilitator = assignmentFacilitatorFilter === 'All Facilitators' || a.facilitator === assignmentFacilitatorFilter;
-        const batch = batches.find((b) => b.id === a.batchId);
-        const matchesBatch = assignmentBatchFilter === 'All Batches' || batch?.name === assignmentBatchFilter;
+        const matchesBatch = assignmentBatchFilter === 'All Batches' || a.batches.some((b) => b.name === assignmentBatchFilter);
         return matchesSearch && matchesStatus && matchesFacilitator && matchesBatch;
       }),
     [assignments, assignmentSearch, assignmentStatusFilter, assignmentFacilitatorFilter, assignmentBatchFilter, batches]
@@ -962,20 +1024,28 @@ export default function AdminDashboardPage() {
     );
   }
 
-  function handleBulkDelete() {
+  async function handleBulkDelete() {
     const ids = Array.from(selectedAssignmentIds);
-    bulkDelete(ids);
-    logEvent('Assignment', `${ids.length} assignment(s) deleted in bulk.`, { module: 'Assignments' });
-    showToast(`${ids.length} assignment(s) deleted`);
-    setSelectedAssignmentIds(new Set());
+    try {
+      await bulkDelete(ids);
+      logEvent('Assignment', `${ids.length} assignment(s) deleted in bulk.`, { module: 'Assignments' });
+      showToast(`${ids.length} assignment(s) deleted`);
+      setSelectedAssignmentIds(new Set());
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Unable to delete assignments.', 'error');
+    }
   }
 
-  function handleBulkClose() {
+  async function handleBulkClose() {
     const ids = Array.from(selectedAssignmentIds);
-    bulkClose(ids);
-    logEvent('Assignment', `${ids.length} assignment(s) closed in bulk.`, { module: 'Assignments', newValue: 'Closed' });
-    showToast(`${ids.length} assignment(s) closed`);
-    setSelectedAssignmentIds(new Set());
+    try {
+      await bulkClose(ids);
+      logEvent('Assignment', `${ids.length} assignment(s) closed in bulk.`, { module: 'Assignments', newValue: 'Closed' });
+      showToast(`${ids.length} assignment(s) closed`);
+      setSelectedAssignmentIds(new Set());
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Unable to close assignments.', 'error');
+    }
   }
 
   function handleBulkReminder() {
@@ -988,12 +1058,16 @@ export default function AdminDashboardPage() {
     setSelectedAssignmentIds(new Set());
   }
 
-  function handleBulkDuplicate() {
+  async function handleBulkDuplicate() {
     const ids = Array.from(selectedAssignmentIds);
-    ids.forEach((id) => duplicateAssignment(id));
-    logEvent('Assignment', `${ids.length} assignment(s) duplicated.`, { module: 'Assignments' });
-    showToast(`${ids.length} assignment(s) duplicated`);
-    setSelectedAssignmentIds(new Set());
+    try {
+      await Promise.all(ids.map((id) => duplicateAssignment(id)));
+      logEvent('Assignment', `${ids.length} assignment(s) duplicated.`, { module: 'Assignments' });
+      showToast(`${ids.length} assignment(s) duplicated`);
+      setSelectedAssignmentIds(new Set());
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Unable to duplicate assignments.', 'error');
+    }
   }
 
   function openExtendDeadlineModal() {
@@ -1001,15 +1075,19 @@ export default function AdminDashboardPage() {
     setExtendDeadlineModalOpen(true);
   }
 
-  function confirmBulkExtendDeadline() {
+  async function confirmBulkExtendDeadline() {
     if (!extendDeadlineDraft) return;
     const ids = Array.from(selectedAssignmentIds);
     const formatted = isoToDateStr(extendDeadlineDraft);
-    bulkExtendDeadline(ids, formatted);
-    logEvent('Assignment', `Deadline extended to ${formatted} for ${ids.length} assignment(s).`, { module: 'Assignments', newValue: formatted });
-    showToast(`Deadline extended for ${ids.length} assignment(s)`);
-    setSelectedAssignmentIds(new Set());
-    setExtendDeadlineModalOpen(false);
+    try {
+      await bulkExtendDeadline(ids, formatted);
+      logEvent('Assignment', `Deadline extended to ${formatted} for ${ids.length} assignment(s).`, { module: 'Assignments', newValue: formatted });
+      showToast(`Deadline extended for ${ids.length} assignment(s)`);
+      setSelectedAssignmentIds(new Set());
+      setExtendDeadlineModalOpen(false);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Unable to extend deadlines.', 'error');
+    }
   }
 
   return (
@@ -1256,7 +1334,7 @@ export default function AdminDashboardPage() {
                   + Invite Trainee
                 </button>
                 <button onClick={() => setBulkUploadModalOpen(true)} className="bg-slate-900 hover:bg-slate-800 text-white px-5 py-2.5 rounded-lg font-bold transition-colors shadow-md hover:-translate-y-0.5">
-                  + Automated Onboarding Setup
+                  + Create Batch
                 </button>
               </div>
             </div>
@@ -1376,12 +1454,12 @@ export default function AdminDashboardPage() {
 
             <div className="flex flex-wrap items-end gap-4 bg-white border border-gray-200 rounded-xl p-4 shadow-sm mb-6">
               <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">From</label>
-                <input type="date" value={reportDateFrom} onChange={(e) => setReportDateFrom(e.target.value)} className="px-3 py-2 border rounded-lg text-sm outline-none" />
+                <label htmlFor="admin-report-date-from" className="block text-xs font-bold text-gray-500 uppercase mb-1">From</label>
+                <input id="admin-report-date-from" type="date" value={reportDateFrom} onChange={(e) => setReportDateFrom(e.target.value)} className="px-3 py-2 border rounded-lg text-sm outline-none" />
               </div>
               <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">To</label>
-                <input type="date" value={reportDateTo} onChange={(e) => setReportDateTo(e.target.value)} className="px-3 py-2 border rounded-lg text-sm outline-none" />
+                <label htmlFor="admin-report-date-to" className="block text-xs font-bold text-gray-500 uppercase mb-1">To</label>
+                <input id="admin-report-date-to" type="date" value={reportDateTo} onChange={(e) => setReportDateTo(e.target.value)} className="px-3 py-2 border rounded-lg text-sm outline-none" />
               </div>
               {(reportDateFrom || reportDateTo) && (
                 <button onClick={() => { setReportDateFrom(''); setReportDateTo(''); }} className="text-xs text-gray-500 hover:text-gray-700 font-medium px-2 py-2">Clear range</button>
@@ -1642,14 +1720,14 @@ export default function AdminDashboardPage() {
                   { key: 'facilitator', label: 'Facilitator' },
                   { key: 'deadline', label: 'Deadline' },
                   { key: 'status', label: 'Status' },
-                  { key: 'progress', label: 'Submitted / Pending / Late' }
+                  { key: 'progress', label: 'Submitted / Pending / Late' },
+                  { key: 'file', label: 'Assignment File' }
                 ]}
               >
                 {pagedAssignments.length === 0 && (
-                  <tr><td colSpan={7}><EmptyState title="No assignments match these filters" icon="search" /></td></tr>
+                  <tr><td colSpan={8}><EmptyState title="No assignments match these filters" icon="search" /></td></tr>
                 )}
                 {pagedAssignments.map((a) => {
-                    const batch = batches.find((b) => b.id === a.batchId);
                     const submitted = a.submissions.filter((s) => s.status === 'Completed').length;
                     const late = a.submissions.filter((s) => s.status === 'Late').length;
                     const pending = a.submissions.length - submitted - late;
@@ -1660,16 +1738,11 @@ export default function AdminDashboardPage() {
                           <input type="checkbox" checked={selectedAssignmentIds.has(a.id)} onChange={() => toggleAssignmentSelected(a.id)} />
                         </td>
                         <td className="px-6 py-4 font-medium">
-                          <Link
-                            to={`/assignments/${a.id}`}
-                            className="inline-block text-blue-600 font-medium px-2 py-1 -mx-2 rounded-full border border-blue-100 bg-blue-50/50 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 transition-colors duration-150"
-                          >
-                            {a.title}
-                          </Link>
+                          <AssignmentTitleLink id={a.id} title={a.title} />
                         </td>
-                        <td className="px-6 py-4 text-gray-600">{batch?.name ?? a.batchId}</td>
+                        <td className="px-6 py-4 text-gray-600"><AssignmentBatchesCell batches={a.batches} /></td>
                         <td className="px-6 py-4 text-gray-600">{a.facilitator}</td>
-                        <td className="px-6 py-4 text-gray-600">{a.deadline}</td>
+                        <td className="px-6 py-4 text-gray-600">{formatDateTime(a.deadline)}</td>
                         <td className="px-6 py-4"><StatusBadge status={effectiveStatus(a)} /></td>
                         <td className="px-6 py-4 w-56">
                           <div className="flex items-center justify-between text-[11px] text-gray-500 font-bold mb-1">
@@ -1678,6 +1751,9 @@ export default function AdminDashboardPage() {
                             {late > 0 && <span className="text-red-500">{late} late</span>}
                           </div>
                           <ProgressBar value={submittedPercent} color="bg-green-500" size="sm" />
+                        </td>
+                        <td className="px-6 py-4">
+                          <FileViewButton url={a.attachmentFilename ? assignmentAttachmentUrl(a.id) : null} fileName={a.attachmentFilename ?? undefined} label="View Assignment File" />
                         </td>
                       </tr>
                     );
@@ -1757,7 +1833,7 @@ export default function AdminDashboardPage() {
           <div className={hiddenUnless('sessions')}>
             <Breadcrumbs trail={['Admin', 'Sessions']} />
             <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-bold">Sessions — All Batches</h2>
+              <h2 className="text-2xl font-bold">Sessions & Calendar — All Batches</h2>
               <div className="flex items-center gap-3">
                 <div className="flex rounded-lg border border-gray-300 overflow-hidden text-sm font-medium">
                   <button onClick={() => setSessionViewMode('list')} className={`px-3 py-2 transition-colors ${sessionViewMode === 'list' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>List</button>
@@ -1768,7 +1844,7 @@ export default function AdminDashboardPage() {
             </div>
 
             {sessionViewMode === 'calendar' ? (
-              <SessionsCalendarView sessions={filteredSessions} batches={batches} />
+              <SessionsCalendarView />
             ) : (
               <div className="bg-white border border-gray-200 rounded-xl shadow-sm">
                 <div className="p-4 border-b border-gray-200 bg-gray-50 rounded-t-xl flex flex-wrap gap-4">
@@ -1833,8 +1909,9 @@ export default function AdminDashboardPage() {
                           {isEditingAttendance && (
                             <div className="mt-2 flex items-end gap-3 bg-gray-50 border border-gray-200 rounded-lg p-3">
                               <div>
-                                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Present</label>
+                                <label htmlFor="admin-attendance-present" className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Present</label>
                                 <input
+                                  id="admin-attendance-present"
                                   type="number"
                                   min={0}
                                   value={attendanceDraft.present}
@@ -1843,8 +1920,9 @@ export default function AdminDashboardPage() {
                                 />
                               </div>
                               <div>
-                                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Absent</label>
+                                <label htmlFor="admin-attendance-absent" className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Absent</label>
                                 <input
+                                  id="admin-attendance-absent"
                                   type="number"
                                   min={0}
                                   value={attendanceDraft.absent}
@@ -1881,8 +1959,9 @@ export default function AdminDashboardPage() {
                               <div className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">Reschedule Session</div>
                               <div className="space-y-4">
                                 <div>
-                                  <label className="block text-[11px] font-bold text-gray-500 mb-1 uppercase">Date</label>
+                                  <label htmlFor="admin-session-edit-date" className="block text-[11px] font-bold text-gray-500 mb-1 uppercase">Date</label>
                                   <input
+                                    id="admin-session-edit-date"
                                     type="date"
                                     value={sessionEditDraft.dateIso}
                                     onChange={(e) => setSessionEditDraft({ ...sessionEditDraft, dateIso: e.target.value })}
@@ -1963,69 +2042,64 @@ export default function AdminDashboardPage() {
               <BarChartComponent data={ratingDistribution} labelWidth="w-14" />
             </div>
 
-            <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-              <div className="p-4 border-b border-gray-200 bg-gray-50 flex flex-wrap gap-4">
-                <input
-                  type="text"
-                  value={feedbackSearch}
-                  onChange={(e) => setFeedbackSearch(e.target.value)}
-                  placeholder="Search by trainee or facilitator..."
-                  className="px-3 py-2 border rounded-lg text-sm outline-none w-64"
-                />
-                <select value={feedbackCategory} onChange={(e) => setFeedbackCategory(e.target.value)} className="px-3 py-2 border rounded-lg text-sm outline-none bg-white">
-                  <option>All Categories</option>
-                  <option>BA</option>
-                  <option>Data Engineering</option>
-                  <option>AI ML</option>
-                  <option>UI/UX</option>
-                  <option>Trainer Feedback</option>
-                </select>
-                <select value={feedbackSort} onChange={(e) => setFeedbackSort(e.target.value as 'rating' | 'date')} className="px-3 py-2 border rounded-lg text-sm outline-none bg-white">
-                  <option value="date">Sort: Newest First</option>
-                  <option value="rating">Sort: Highest Rating</option>
-                </select>
-              </div>
-              <Table
-                theadRowClassName="bg-white text-gray-500 text-xs uppercase tracking-wider border-b border-gray-200"
-                tbodyClassName="divide-y divide-gray-100 text-sm"
-                columns={[
-                  { key: 'trainee', label: 'Trainee' },
-                  { key: 'facilitator', label: 'Facilitator' },
-                  { key: 'batch', label: 'Batch' },
-                  { key: 'category', label: 'Category' },
-                  { key: 'rating', label: 'Rating' },
-                  { key: 'date', label: 'Date' },
-                  { key: 'submit', label: 'Submit Feedback' }
-                ]}
-              >
-                {filteredFeedback.length === 0 && (
-                  <tr><td colSpan={7}><EmptyState title="No feedback matches these filters" icon="search" /></td></tr>
+            <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 mb-6 flex flex-wrap gap-4">
+              <input
+                type="text"
+                value={feedbackSearch}
+                onChange={(e) => setFeedbackSearch(e.target.value)}
+                placeholder="Search by trainee or facilitator..."
+                className="px-3 py-2 border rounded-lg text-sm outline-none w-64"
+              />
+              <select value={feedbackCategory} onChange={(e) => setFeedbackCategory(e.target.value)} className="px-3 py-2 border rounded-lg text-sm outline-none bg-white">
+                <option>All Categories</option>
+                <option>BA</option>
+                <option>Data Engineering</option>
+                <option>AI ML</option>
+                <option>UI/UX</option>
+                <option>Trainer Feedback</option>
+              </select>
+              <select value={feedbackSort} onChange={(e) => setFeedbackSort(e.target.value as 'rating' | 'date')} className="px-3 py-2 border rounded-lg text-sm outline-none bg-white">
+                <option value="date">Sort: Newest First</option>
+                <option value="rating">Sort: Highest Rating</option>
+              </select>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5">
+                <h3 className="font-bold text-gray-800 mb-4">Trainee Feedback on Facilitators</h3>
+                {traineeToFacilitatorFeedback.length === 0 ? (
+                  <EmptyState title="No trainee feedback yet" icon="inbox" />
+                ) : (
+                  <div className="space-y-3">
+                    {traineeToFacilitatorFeedback.map((f) => (
+                      <FeedbackCard key={f.id} entry={f} isNew={isNewFeedback(f.date)} batchName={batches.find((b) => b.id === f.batchId)?.name} />
+                    ))}
+                  </div>
                 )}
-                {filteredFeedback.map((f) => {
-                    const batch = batches.find((b) => b.id === f.batchId);
-                    return (
-                      <tr key={f.id} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 font-medium text-gray-800">
-                          {f.trainee}
-                          {isNewFeedback(f.date) && <span className="ml-2 px-1.5 py-0.5 bg-blue-600 text-white text-[9px] font-bold rounded uppercase">New</span>}
-                        </td>
-                        <td className="px-6 py-4 text-gray-600">{f.facilitator}</td>
-                        <td className="px-6 py-4 text-gray-600">{batch?.name ?? f.batchId}</td>
-                        <td className="px-6 py-4"><span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded font-bold">{f.category}</span></td>
-                        <td className="px-6 py-4 text-green-600 font-bold">{f.rating} / 5</td>
-                        <td className="px-6 py-4 text-gray-400">{f.date}</td>
-                        <td className="px-6 py-4">
-                          <button
-                            onClick={() => openSubmitFeedback(f.facilitator, f.batchId)}
-                            className="text-xs font-bold text-blue-600 border border-blue-200 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors"
-                          >
-                            Submit Feedback
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-              </Table>
+              </div>
+
+              <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-bold text-gray-800">Facilitator Feedback on Trainees</h3>
+                </div>
+                {facilitatorToTraineeFeedback.length === 0 ? (
+                  <EmptyState title="No facilitator feedback yet" icon="inbox" />
+                ) : (
+                  <div className="space-y-3">
+                    {facilitatorToTraineeFeedback.map((f) => (
+                      <div key={f.id}>
+                        <FeedbackCard entry={f} isNew={isNewFeedback(f.date)} batchName={batches.find((b) => b.id === f.batchId)?.name} />
+                        <button
+                          onClick={() => openSubmitFeedback(f.facilitator, f.batchId)}
+                          className="mt-1.5 text-xs font-bold text-blue-600 border border-blue-200 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded-lg transition-colors"
+                        >
+                          Submit Feedback
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -2033,18 +2107,19 @@ export default function AdminDashboardPage() {
 
       {/* Modals */}
 
-      {/* Automated Onboarding Setup (CSV Upload) */}
+      {/* Create Batch (with optional CSV roster upload / auto-invitations) */}
       <div className={`fixed inset-0 bg-gray-900/60 backdrop-blur-sm ${bulkUploadModalOpen ? 'flex' : 'hidden'} items-center justify-center z-50`} role="dialog" aria-modal="true" onClick={() => setBulkUploadModalOpen(false)}>
         <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-8 relative" onClick={(e) => e.stopPropagation()}>
           <button onClick={() => setBulkUploadModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded" aria-label="Close"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
 
-          <h2 className="text-2xl font-black text-gray-900 mb-2">Automated Batch Setup</h2>
-          <p className="text-gray-500 text-sm mb-6">Upload a CSV file containing trainee details to automatically generate the batch and dispatch secure email invitations.</p>
+          <h2 className="text-2xl font-black text-gray-900 mb-2">Create Batch</h2>
+          <p className="text-gray-500 text-sm mb-6">Optionally upload a CSV file containing trainee details to automatically enroll them and dispatch secure email invitations.</p>
 
           <div className="space-y-5">
             <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">Batch Name</label>
+              <label htmlFor="admin-new-batch-name" className="block text-sm font-bold text-gray-700 mb-1">Batch Name</label>
               <input
+                id="admin-new-batch-name"
                 type="text"
                 value={newBatchName}
                 onChange={(e) => setNewBatchName(e.target.value)}
@@ -2052,10 +2127,11 @@ export default function AdminDashboardPage() {
                 placeholder="e.g. Enterprise Fullstack 2026"
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-bold text-gray-700 mb-1">Branch</label>
+                <label htmlFor="admin-new-batch-program" className="block text-sm font-bold text-gray-700 mb-1">Branch</label>
                 <select
+                  id="admin-new-batch-program"
                   value={newBatchProgram}
                   onChange={(e) => setNewBatchProgram(e.target.value as Batch['program'])}
                   className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 font-medium"
@@ -2067,8 +2143,9 @@ export default function AdminDashboardPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-bold text-gray-700 mb-1">Assign POC</label>
+                <label htmlFor="admin-new-batch-poc" className="block text-sm font-bold text-gray-700 mb-1">Assign POC</label>
                 <select
+                  id="admin-new-batch-poc"
                   value={newBatchPoc}
                   onChange={(e) => setNewBatchPoc(e.target.value)}
                   className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 font-medium"
@@ -2094,7 +2171,7 @@ export default function AdminDashboardPage() {
               onClick={executeOnboarding}
               className="w-full py-3.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg transition-colors flex justify-center items-center"
             >
-              Execute Automated Onboarding
+              Create Batch
             </button>
           </div>
         </div>
@@ -2112,29 +2189,38 @@ export default function AdminDashboardPage() {
               <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{assignmentFormError}</div>
             )}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
-              <input type="text" value={assignmentForm.title} onChange={(e) => setAssignmentForm({ ...assignmentForm, title: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500" />
+              <label htmlFor="admin-assignment-title" className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+              <input id="admin-assignment-title" type="text" value={assignmentForm.title} onChange={(e) => setAssignmentForm({ ...assignmentForm, title: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
+            <BatchMultiSelect
+              batches={batches}
+              selectedIds={assignmentForm.batchIds}
+              onChange={(batchIds) => setAssignmentForm({ ...assignmentForm, batchIds })}
+            />
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Target Batch</label>
-              <select value={assignmentForm.batchId} onChange={(e) => setAssignmentForm({ ...assignmentForm, batchId: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none bg-white">
-                {batches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Session Facilitator</label>
-              <select value={assignmentForm.facilitator} onChange={(e) => setAssignmentForm({ ...assignmentForm, facilitator: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none bg-white">
+              <label htmlFor="admin-assignment-facilitator" className="block text-sm font-medium text-gray-700 mb-1">Session Facilitator</label>
+              <select id="admin-assignment-facilitator" value={assignmentForm.facilitator} onChange={(e) => setAssignmentForm({ ...assignmentForm, facilitator: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none bg-white">
                 {pocOptions.map((poc) => <option key={poc}>{poc}</option>)}
                 <option>External Guest Facilitator</option>
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Deadline</label>
-              <input type="text" value={assignmentForm.deadline} onChange={(e) => setAssignmentForm({ ...assignmentForm, deadline: e.target.value })} placeholder="e.g. 20 Jul 2026" className="w-full px-3 py-2 border rounded-lg outline-none" />
+              <label htmlFor="admin-assignment-deadline" className="block text-sm font-medium text-gray-700 mb-1">Deadline</label>
+              <input id="admin-assignment-deadline" type="text" value={assignmentForm.deadline} onChange={(e) => setAssignmentForm({ ...assignmentForm, deadline: e.target.value })} placeholder="e.g. 20 Jul 2026" className="w-full px-3 py-2 border rounded-lg outline-none" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-              <textarea value={assignmentForm.description} onChange={(e) => setAssignmentForm({ ...assignmentForm, description: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none h-20"></textarea>
+              <label htmlFor="admin-assignment-description" className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+              <textarea id="admin-assignment-description" value={assignmentForm.description} onChange={(e) => setAssignmentForm({ ...assignmentForm, description: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none h-20"></textarea>
+            </div>
+            <div>
+              <label htmlFor="admin-assignment-file" className="block text-sm font-medium text-gray-700 mb-1">Instructions File (optional)</label>
+              <input
+                id="admin-assignment-file"
+                type="file"
+                onChange={(e) => setAssignmentFile(e.target.files?.[0] ?? null)}
+                className="w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-blue-50 file:text-blue-700 file:font-medium hover:file:bg-blue-100"
+              />
+              {assignmentFile && <p className="text-xs text-gray-500 mt-1">{assignmentFile.name}</p>}
             </div>
           </div>
           <div className="flex justify-end space-x-3 mt-6">
@@ -2175,20 +2261,20 @@ export default function AdminDashboardPage() {
               <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{announcementFormError}</div>
             )}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
-              <input type="text" value={announcementForm.title} onChange={(e) => setAnnouncementForm({ ...announcementForm, title: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none" />
+              <label htmlFor="admin-announcement-title" className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+              <input id="admin-announcement-title" type="text" value={announcementForm.title} onChange={(e) => setAnnouncementForm({ ...announcementForm, title: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
-              <select value={announcementForm.priority} onChange={(e) => setAnnouncementForm({ ...announcementForm, priority: e.target.value as Announcement['priority'] })} className="w-full px-3 py-2 border rounded-lg outline-none bg-white">
+              <label htmlFor="admin-announcement-priority" className="block text-sm font-medium text-gray-700 mb-1">Priority</label>
+              <select id="admin-announcement-priority" value={announcementForm.priority} onChange={(e) => setAnnouncementForm({ ...announcementForm, priority: e.target.value as Announcement['priority'] })} className="w-full px-3 py-2 border rounded-lg outline-none bg-white">
                 <option>Normal</option>
                 <option>Important</option>
                 <option>Critical</option>
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Target Audience</label>
-              <select value={announcementForm.audience} onChange={(e) => setAnnouncementForm({ ...announcementForm, audience: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none bg-white">
+              <label htmlFor="admin-announcement-audience" className="block text-sm font-medium text-gray-700 mb-1">Target Audience</label>
+              <select id="admin-announcement-audience" value={announcementForm.audience} onChange={(e) => setAnnouncementForm({ ...announcementForm, audience: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none bg-white">
                 <option>All Users</option>
                 <option>All Active Batches</option>
                 {batches.map((b) => <option key={b.id}>{b.name}</option>)}
@@ -2197,17 +2283,17 @@ export default function AdminDashboardPage() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Message</label>
-              <textarea value={announcementForm.message} onChange={(e) => setAnnouncementForm({ ...announcementForm, message: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none h-24"></textarea>
+              <label htmlFor="admin-announcement-message" className="block text-sm font-medium text-gray-700 mb-1">Message</label>
+              <textarea id="admin-announcement-message" value={announcementForm.message} onChange={(e) => setAnnouncementForm({ ...announcementForm, message: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none h-24"></textarea>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Schedule For (optional)</label>
-                <input type="date" value={announcementForm.scheduledFor} onChange={(e) => setAnnouncementForm({ ...announcementForm, scheduledFor: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none" />
+                <label htmlFor="admin-announcement-scheduled-for" className="block text-sm font-medium text-gray-700 mb-1">Schedule For (optional)</label>
+                <input id="admin-announcement-scheduled-for" type="date" value={announcementForm.scheduledFor} onChange={(e) => setAnnouncementForm({ ...announcementForm, scheduledFor: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Expires On (optional)</label>
-                <input type="date" value={announcementForm.expiresAt} onChange={(e) => setAnnouncementForm({ ...announcementForm, expiresAt: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none" />
+                <label htmlFor="admin-announcement-expires-at" className="block text-sm font-medium text-gray-700 mb-1">Expires On (optional)</label>
+                <input id="admin-announcement-expires-at" type="date" value={announcementForm.expiresAt} onChange={(e) => setAnnouncementForm({ ...announcementForm, expiresAt: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none" />
               </div>
             </div>
             <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
@@ -2233,28 +2319,28 @@ export default function AdminDashboardPage() {
               <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{sessionFormError}</div>
             )}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
-              <input type="text" value={sessionForm.title} onChange={(e) => setSessionForm({ ...sessionForm, title: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none" />
+              <label htmlFor="admin-session-title" className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+              <input id="admin-session-title" type="text" value={sessionForm.title} onChange={(e) => setSessionForm({ ...sessionForm, title: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Target Batch</label>
-              <select value={sessionForm.batchId} onChange={(e) => setSessionForm({ ...sessionForm, batchId: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none bg-white">
+              <label htmlFor="admin-session-batch" className="block text-sm font-medium text-gray-700 mb-1">Target Batch</label>
+              <select id="admin-session-batch" value={sessionForm.batchId} onChange={(e) => setSessionForm({ ...sessionForm, batchId: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none bg-white">
                 {batches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
               </select>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
-                <input type="text" value={sessionForm.date} onChange={(e) => setSessionForm({ ...sessionForm, date: e.target.value })} placeholder="e.g. Jul 20, 2026" className="w-full px-3 py-2 border rounded-lg outline-none" />
+                <label htmlFor="admin-session-date" className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                <input id="admin-session-date" type="text" value={sessionForm.date} onChange={(e) => setSessionForm({ ...sessionForm, date: e.target.value })} placeholder="e.g. Jul 20, 2026" className="w-full px-3 py-2 border rounded-lg outline-none" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Time</label>
-                <input type="text" value={sessionForm.time} onChange={(e) => setSessionForm({ ...sessionForm, time: e.target.value })} placeholder="e.g. 10:00 AM - 11:00 AM" className="w-full px-3 py-2 border rounded-lg outline-none" />
+                <label htmlFor="admin-session-time" className="block text-sm font-medium text-gray-700 mb-1">Time</label>
+                <input id="admin-session-time" type="text" value={sessionForm.time} onChange={(e) => setSessionForm({ ...sessionForm, time: e.target.value })} placeholder="e.g. 10:00 AM - 11:00 AM" className="w-full px-3 py-2 border rounded-lg outline-none" />
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Meeting Platform</label>
-              <select value={sessionForm.platform} onChange={(e) => setSessionForm({ ...sessionForm, platform: e.target.value as MeetingPlatform })} className="w-full px-3 py-2 border rounded-lg outline-none bg-white">
+              <label htmlFor="admin-session-platform" className="block text-sm font-medium text-gray-700 mb-1">Meeting Platform</label>
+              <select id="admin-session-platform" value={sessionForm.platform} onChange={(e) => setSessionForm({ ...sessionForm, platform: e.target.value as MeetingPlatform })} className="w-full px-3 py-2 border rounded-lg outline-none bg-white">
                 <option>Google Meet</option>
                 <option>Microsoft Teams</option>
                 <option>Zoom</option>
@@ -2292,12 +2378,12 @@ export default function AdminDashboardPage() {
       <Modal open={rescheduleModalOpen} onClose={() => setRescheduleModalOpen(false)} title="Reschedule Batch Session" maxWidth="sm">
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
-              <input type="text" value={rescheduleForm.date} onChange={(e) => setRescheduleForm({ ...rescheduleForm, date: e.target.value })} placeholder="e.g. Jul 20, 2026" className="w-full px-3 py-2 border rounded-lg outline-none" />
+              <label htmlFor="admin-reschedule-date" className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+              <input id="admin-reschedule-date" type="text" value={rescheduleForm.date} onChange={(e) => setRescheduleForm({ ...rescheduleForm, date: e.target.value })} placeholder="e.g. Jul 20, 2026" className="w-full px-3 py-2 border rounded-lg outline-none" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Time</label>
-              <input type="text" value={rescheduleForm.time} onChange={(e) => setRescheduleForm({ ...rescheduleForm, time: e.target.value })} placeholder="e.g. 10:00 AM - 11:00 AM" className="w-full px-3 py-2 border rounded-lg outline-none" />
+              <label htmlFor="admin-reschedule-time" className="block text-sm font-medium text-gray-700 mb-1">Time</label>
+              <input id="admin-reschedule-time" type="text" value={rescheduleForm.time} onChange={(e) => setRescheduleForm({ ...rescheduleForm, time: e.target.value })} placeholder="e.g. 10:00 AM - 11:00 AM" className="w-full px-3 py-2 border rounded-lg outline-none" />
             </div>
           </div>
           <div className="flex justify-end space-x-3 mt-6">
@@ -2310,24 +2396,24 @@ export default function AdminDashboardPage() {
       <Modal open={editBatchModalOpen} onClose={() => setEditBatchModalOpen(false)} title="Edit Batch Details" maxWidth="sm">
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">POC</label>
-              <input type="text" value={editBatchForm.poc} onChange={(e) => setEditBatchForm({ ...editBatchForm, poc: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none" />
+              <label htmlFor="admin-edit-batch-poc" className="block text-sm font-medium text-gray-700 mb-1">POC</label>
+              <input id="admin-edit-batch-poc" type="text" value={editBatchForm.poc} onChange={(e) => setEditBatchForm({ ...editBatchForm, poc: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-              <select value={editBatchForm.status} onChange={(e) => setEditBatchForm({ ...editBatchForm, status: e.target.value as Batch['status'] })} className="w-full px-3 py-2 border rounded-lg outline-none bg-white">
+              <label htmlFor="admin-edit-batch-status" className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+              <select id="admin-edit-batch-status" value={editBatchForm.status} onChange={(e) => setEditBatchForm({ ...editBatchForm, status: e.target.value as Batch['status'] })} className="w-full px-3 py-2 border rounded-lg outline-none bg-white">
                 <option>Active</option>
                 <option>Upcoming</option>
               </select>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Avg Score (%)</label>
-                <input type="number" value={editBatchForm.avgScore} onChange={(e) => setEditBatchForm({ ...editBatchForm, avgScore: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none" />
+                <label htmlFor="admin-edit-batch-avg-score" className="block text-sm font-medium text-gray-700 mb-1">Avg Score (%)</label>
+                <input id="admin-edit-batch-avg-score" type="number" value={editBatchForm.avgScore} onChange={(e) => setEditBatchForm({ ...editBatchForm, avgScore: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Completion (%)</label>
-                <input type="number" value={editBatchForm.completion} onChange={(e) => setEditBatchForm({ ...editBatchForm, completion: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none" />
+                <label htmlFor="admin-edit-batch-completion" className="block text-sm font-medium text-gray-700 mb-1">Completion (%)</label>
+                <input id="admin-edit-batch-completion" type="number" value={editBatchForm.completion} onChange={(e) => setEditBatchForm({ ...editBatchForm, completion: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none" />
               </div>
             </div>
           </div>
@@ -2347,16 +2433,16 @@ export default function AdminDashboardPage() {
       >
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Your Name</label>
-              <input type="text" value={feedbackForm.trainee} onChange={(e) => setFeedbackForm({ ...feedbackForm, trainee: e.target.value })} placeholder="Optional" className="w-full px-3 py-2 border rounded-lg outline-none" />
+              <label htmlFor="admin-feedback-trainee" className="block text-sm font-medium text-gray-700 mb-1">Your Name</label>
+              <input id="admin-feedback-trainee" type="text" value={feedbackForm.trainee} onChange={(e) => setFeedbackForm({ ...feedbackForm, trainee: e.target.value })} placeholder="Optional" className="w-full px-3 py-2 border rounded-lg outline-none" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Rating (1-5)</label>
-              <input type="number" min={1} max={5} value={feedbackForm.rating} onChange={(e) => setFeedbackForm({ ...feedbackForm, rating: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none" />
+              <label htmlFor="admin-feedback-rating" className="block text-sm font-medium text-gray-700 mb-1">Rating (1-5)</label>
+              <input id="admin-feedback-rating" type="number" min={1} max={5} value={feedbackForm.rating} onChange={(e) => setFeedbackForm({ ...feedbackForm, rating: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Comment</label>
-              <textarea value={feedbackForm.comment} onChange={(e) => setFeedbackForm({ ...feedbackForm, comment: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none h-20"></textarea>
+              <label htmlFor="admin-feedback-comment" className="block text-sm font-medium text-gray-700 mb-1">Comment</label>
+              <textarea id="admin-feedback-comment" value={feedbackForm.comment} onChange={(e) => setFeedbackForm({ ...feedbackForm, comment: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none h-20"></textarea>
             </div>
           </div>
           <div className="flex justify-end space-x-3 mt-6">
@@ -2377,28 +2463,29 @@ export default function AdminDashboardPage() {
               <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{resourceFormError}</div>
             )}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
-              <input type="text" value={resourceForm.title} onChange={(e) => setResourceForm({ ...resourceForm, title: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none" placeholder="Leave blank to use file name" />
+              <label htmlFor="admin-resource-title" className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+              <input id="admin-resource-title" type="text" value={resourceForm.title} onChange={(e) => setResourceForm({ ...resourceForm, title: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none" placeholder="Leave blank to use file name" />
               <p className="text-xs text-gray-400 mt-1">Leave blank to use the uploaded file's name.</p>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
-              <select value={resourceForm.category} onChange={(e) => setResourceForm({ ...resourceForm, category: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none bg-white">
+              <label htmlFor="admin-resource-category" className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+              <select id="admin-resource-category" value={resourceForm.category} onChange={(e) => setResourceForm({ ...resourceForm, category: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none bg-white">
                 <option>PDF Guides</option>
                 <option>Presentations</option>
                 <option>Video Recordings</option>
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Target Batch</label>
-              <select value={resourceForm.batchId} onChange={(e) => setResourceForm({ ...resourceForm, batchId: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none bg-white">
+              <label htmlFor="admin-resource-batch" className="block text-sm font-medium text-gray-700 mb-1">Target Batch</label>
+              <select id="admin-resource-batch" value={resourceForm.batchId} onChange={(e) => setResourceForm({ ...resourceForm, batchId: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none bg-white">
                 <option value="All">All Batches</option>
                 {batches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">File</label>
+              <label htmlFor="admin-resource-file" className="block text-sm font-medium text-gray-700 mb-1">File</label>
               <input
+                id="admin-resource-file"
                 type="file"
                 onChange={(e) => uploadResource(e.target.files?.[0] ?? null)}
                 className="w-full px-3 py-2 border rounded-lg outline-none file:mr-4 file:py-1.5 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
@@ -2438,31 +2525,33 @@ export default function AdminDashboardPage() {
         confirmLabel="Log Out"
         danger
         onConfirm={() => {
-          logout();
-          navigate(ROUTES.LOGIN);
+          logout().finally(() => {
+            clearSession();
+            navigate(ROUTES.LOGIN);
+          });
         }}
         onCancel={() => setLogoutConfirmOpen(false)}
       />
 
       {/* Invite Trainee Modal */}
       <Modal open={inviteModalOpen} onClose={closeInviteModal} title="Invite Trainee" maxWidth="sm">
-          {!inviteLink ? (
+          {!inviteLink && !inviteSentTo ? (
             <>
               <div className="space-y-4">
                 {inviteError && (
                   <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{inviteError}</div>
                 )}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
-                  <input type="text" value={inviteForm.name} onChange={(e) => setInviteForm({ ...inviteForm, name: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none" />
+                  <label htmlFor="admin-invite-name" className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                  <input id="admin-invite-name" type="text" value={inviteForm.name} onChange={(e) => setInviteForm({ ...inviteForm, name: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                  <input type="email" value={inviteForm.email} onChange={(e) => setInviteForm({ ...inviteForm, email: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none" placeholder="trainee@company.com" />
+                  <label htmlFor="admin-invite-email" className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                  <input id="admin-invite-email" type="email" value={inviteForm.email} onChange={(e) => setInviteForm({ ...inviteForm, email: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none" placeholder="trainee@company.com" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Add to Batch (optional)</label>
-                  <select value={inviteForm.batchId} onChange={(e) => setInviteForm({ ...inviteForm, batchId: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none bg-white">
+                  <label htmlFor="admin-invite-batch" className="block text-sm font-medium text-gray-700 mb-1">Add to Batch (optional)</label>
+                  <select id="admin-invite-batch" value={inviteForm.batchId} onChange={(e) => setInviteForm({ ...inviteForm, batchId: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none bg-white">
                     <option value="">No batch</option>
                     {batches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
                   </select>
@@ -2473,6 +2562,13 @@ export default function AdminDashboardPage() {
                 <button onClick={sendInvite} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium">Create Invite</button>
               </div>
             </>
+          ) : inviteSentTo ? (
+            <>
+              <p className="text-sm text-gray-600 mb-4">An invite email will be sent to <span className="font-medium text-gray-800">{inviteSentTo}</span> to activate their account.</p>
+              <div className="flex justify-end">
+                <button onClick={closeInviteModal} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium">Done</button>
+              </div>
+            </>
           ) : (
             <>
               <p className="text-sm text-gray-600 mb-3">Share this link with the trainee to activate their account:</p>
@@ -2480,7 +2576,7 @@ export default function AdminDashboardPage() {
               <div className="flex justify-end space-x-3">
                 <button
                   onClick={() => {
-                    navigator.clipboard?.writeText(inviteLink);
+                    navigator.clipboard?.writeText(inviteLink!);
                     showToast('Invite link copied');
                   }}
                   className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50"

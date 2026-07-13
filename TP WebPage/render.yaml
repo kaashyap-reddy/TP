@@ -1,0 +1,32 @@
+# Render Blueprint — alternative to Railway for the backend.
+# https://render.com/docs/blueprint-spec
+#
+# Deploy: connect this repo in the Render dashboard ("New > Blueprint"), then fill in the
+# `sync: false` env vars (secrets aren't stored in git). See backend/README.md for the full list.
+services:
+  - type: web
+    name: trainee-portal-backend
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 4000
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: JWT_ACCESS_SECRET
+        sync: false
+      - key: JWT_REFRESH_SECRET
+        sync: false
+      - key: COOKIE_SECRET
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false
+      - key: STORAGE_PROVIDER
+        value: local

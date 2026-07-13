@@ -7,15 +7,34 @@ export interface Submission {
   submittedOn: string;
   grade: number | null;
   feedback: string;
+  /** Real backend submission/trainee ids, needed to route grade updates — optional so nothing that only reads display fields is affected. */
+  id?: string;
+  traineeId?: string;
+  /** The trainee's enrolled batch for this row — present on roster rows from an assignment's submissions list. */
+  batchId?: string;
+  batchName?: string;
+  /** The trainee's current submitted file, if any — absent means "Not submitted". */
+  attachmentId?: string;
+  attachmentFilename?: string;
+  attachmentMimeType?: string;
+}
+
+export interface AssignmentBatchRef {
+  id: string;
+  name: string;
+  code: string;
 }
 
 export interface Assignment {
   id: string;
   title: string;
+  /** Primary/first batch — kept for callers that only need one; see `batches` for the full set. */
   batchId: string;
+  batches: AssignmentBatchRef[];
   facilitator: string;
   deadline: string;
   description: string;
   status: AssignmentStatus;
   submissions: Submission[];
+  attachmentFilename: string | null;
 }

@@ -8,6 +8,7 @@ export const ROUTES = {
   FACILITATOR: '/facilitator',
   FACILITATOR_ACCOUNT_SETTINGS: '/facilitator/account-settings',
   FACILITATOR_TRAINEE_PROFILE: (traineeName: string) => `/facilitator/trainees/${encodeURIComponent(traineeName)}`,
+  FACILITATOR_BATCH_DETAIL: (batchId: string) => `/facilitator/batches/${encodeURIComponent(batchId)}`,
   TRAINEE: '/trainee',
   TRAINEE_ACCOUNT_SETTINGS: '/trainee/account-settings',
   ASSIGNMENT_DETAIL: (assignmentId: string) => `/assignments/${assignmentId}`,
@@ -18,5 +19,6 @@ export const ROUTES = {
 // Use ROUTES above to build concrete URLs for navigate()/Link.
 export const ROUTE_PATTERNS = {
   ASSIGNMENT_DETAIL: '/assignments/:assignmentId',
-  FACILITATOR_TRAINEE_PROFILE: '/facilitator/trainees/:traineeName'
+  FACILITATOR_TRAINEE_PROFILE: '/facilitator/trainees/:traineeName',
+  FACILITATOR_BATCH_DETAIL: '/facilitator/batches/:batchId'
 } as const;

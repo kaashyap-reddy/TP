@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import { useToastStore } from '../store/toastStore';
-import { Role } from '../api/auth';
+import { Role } from '../types/role';
 import { ROUTES } from '../constants/routes';
 
 export default function RequireAuth({ role, children }: { role: Role; children: JSX.Element }) {

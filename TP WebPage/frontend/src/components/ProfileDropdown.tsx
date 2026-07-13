@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Role } from '../api/auth';
+import { Role } from '../types/role';
 import { useAuthStore } from '../store/authStore';
 import { useProfileStore } from '../store/profileStore';
 import { useClickOutside } from '../hooks/useClickOutside';
@@ -73,8 +73,13 @@ export default function ProfileDropdown({ role, onSignOut, forceClose, onOpenCha
   const email = useAuthStore((s) => s.email);
   const displayName = useAuthStore((s) => s.displayName);
   const profile = useProfileStore((s) => s.profiles[role]);
+  const fetchMyProfile = useProfileStore((s) => s.fetchMyProfile);
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    fetchMyProfile(role);
+  }, [role, fetchMyProfile]);
 
   useClickOutside(menuRef, () => setOpen(false), open);
   useEscapeKey(() => setOpen(false), open);

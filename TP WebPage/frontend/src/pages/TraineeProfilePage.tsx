@@ -1,17 +1,18 @@
-import { useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useBatchesStore } from '../store/batchesStore';
 import { useAssignmentsStore } from '../store/assignmentsStore';
 import { useFeedbackStore } from '../store/feedbackStore';
-import { useDiscussionsStore } from '../store/discussionsStore';
 import { MeetingPlatform, useSessionsStore } from '../store/sessionsStore';
 import { useAuditLogStore } from '../store/auditLogStore';
 import { useToastStore } from '../store/toastStore';
+import { findUserEmailByName } from '../services/api/userService';
 import { average } from '../utils/mathUtils';
+import { formatDateTime } from '../utils/dateUtils';
 import Breadcrumbs from '../components/Breadcrumbs';
 import StatusBadge from '../components/StatusBadge';
 import SavingButton from '../components/SavingButton';
-import { ROUTES } from '../constants/routes';
+import { resolveFacilitatorProfileBack } from '../utils/facilitatorProfileNav';
 
 const FACILITATOR_NAME = 'Junaid Mohammed';
 
@@ -19,11 +20,16 @@ export default function TraineeProfilePage() {
   const { traineeName: encodedName } = useParams();
   const traineeName = decodeURIComponent(encodedName ?? '');
   const navigate = useNavigate();
+  const location = useLocation();
+  const backTarget = resolveFacilitatorProfileBack(location.state);
 
   const batches = useBatchesStore((s) => s.batches);
+  const fetchBatches = useBatchesStore((s) => s.fetchBatches);
+  useEffect(() => {
+    fetchBatches();
+  }, [fetchBatches]);
   const assignments = useAssignmentsStore((s) => s.assignments);
   const feedback = useFeedbackStore((s) => s.feedback);
-  const createThread = useDiscussionsStore((s) => s.createThread);
   const createSession = useSessionsStore((s) => s.createSession);
   const logEvent = useAuditLogStore((s) => s.logEvent);
   const showToast = useToastStore((s) => s.showToast);
@@ -56,7 +62,7 @@ export default function TraineeProfilePage() {
   const [saving, setSaving] = useState(false);
 
   function goBack() {
-    navigate(ROUTES.FACILITATOR, { state: { tab: 'trainees' } });
+    navigate(backTarget.path, backTarget.state ? { state: backTarget.state } : undefined);
   }
 
   if (!traineeName || !batch) {
@@ -64,7 +70,7 @@ export default function TraineeProfilePage() {
       <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 text-gray-600">
         <p className="mb-4">Trainee not found.</p>
         <button onClick={goBack} className="text-blue-600 font-medium hover:underline">
-          ‹ Back to Trainee Directory
+          {backTarget.label}
         </button>
       </div>
     );
@@ -81,15 +87,15 @@ export default function TraineeProfilePage() {
     setScheduleOpen(true);
   }
 
-  function handleCreateSession() {
+  async function handleCreateSession() {
     if (!title.trim() || !date.trim() || !time.trim()) {
       setFormError('Please fill in the title, date, and time.');
       return;
     }
     setFormError('');
     setSaving(true);
-    setTimeout(() => {
-      createSession({
+    try {
+      await createSession({
         title: title.trim(),
         batchId: batchId || batches[0]?.id || '',
         facilitator: FACILITATOR_NAME,
@@ -102,8 +108,11 @@ export default function TraineeProfilePage() {
       logEvent('Session', `Scheduled "${title.trim()}".`);
       showToast('1:1 session scheduled');
       setScheduleOpen(false);
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Unable to schedule session.');
+    } finally {
       setSaving(false);
-    }, 400);
+    }
   }
 
   function handleSendReminder() {
@@ -111,16 +120,13 @@ export default function TraineeProfilePage() {
     showToast(`Reminder sent to ${traineeName}`);
   }
 
-  function handleMessage() {
-    createThread({
-      title: `Note for ${traineeName}`,
-      batchId: batch!.id,
-      author: FACILITATOR_NAME,
-      role: 'facilitator',
-      message: `Hi ${traineeName}, wanted to reach out regarding your progress.`
-    });
-    showToast(`Discussion started with ${traineeName}`);
-    navigate(ROUTES.FACILITATOR, { state: { tab: 'discussions' } });
+  async function handleMessage() {
+    const email = await findUserEmailByName(traineeName, 'trainee');
+    if (!email) {
+      showToast(`No email on file for ${traineeName}.`, 'error');
+      return;
+    }
+    window.location.href = `mailto:${email}`;
   }
 
   const initials = traineeName
@@ -134,7 +140,7 @@ export default function TraineeProfilePage() {
     <div className="min-h-screen bg-slate-50">
       <header className="bg-white border-b border-gray-200 px-8 py-5">
         <button onClick={goBack} className="text-sm text-blue-600 hover:underline font-medium mb-3">
-          ‹ Back to Trainee Directory
+          {backTarget.label}
         </button>
         <Breadcrumbs trail={['Facilitator Dashboard', 'Trainees', traineeName]} />
         <div className="flex items-center gap-4 mt-2">
@@ -202,7 +208,7 @@ export default function TraineeProfilePage() {
                     <td className="px-6 py-4">
                       <StatusBadge status={submission.status} />
                     </td>
-                    <td className="px-6 py-4 text-gray-600">{submission.submittedOn}</td>
+                    <td className="px-6 py-4 text-gray-600">{submission.submittedOn ? formatDateTime(submission.submittedOn) : '—'}</td>
                     <td className="px-6 py-4 text-gray-600">{submission.grade !== null ? `${submission.grade}/100` : '—'}</td>
                   </tr>
                 ))}
@@ -250,22 +256,23 @@ export default function TraineeProfilePage() {
           <div className="space-y-4">
             {formError && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{formError}</div>}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
-              <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} className="w-full px-3 py-2 border rounded-lg outline-none" />
+              <label htmlFor="trainee-profile-session-title" className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+              <input id="trainee-profile-session-title" type="text" value={title} onChange={(e) => setTitle(e.target.value)} className="w-full px-3 py-2 border rounded-lg outline-none" />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
-                <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full px-3 py-2 border rounded-lg outline-none" />
+                <label htmlFor="trainee-profile-session-date" className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                <input id="trainee-profile-session-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-full px-3 py-2 border rounded-lg outline-none" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Time</label>
-                <input type="time" value={time} onChange={(e) => setTime(e.target.value)} className="w-full px-3 py-2 border rounded-lg outline-none" />
+                <label htmlFor="trainee-profile-session-time" className="block text-sm font-medium text-gray-700 mb-1">Time</label>
+                <input id="trainee-profile-session-time" type="time" value={time} onChange={(e) => setTime(e.target.value)} className="w-full px-3 py-2 border rounded-lg outline-none" />
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Platform</label>
+              <label htmlFor="trainee-profile-session-platform" className="block text-sm font-medium text-gray-700 mb-1">Platform</label>
               <select
+                id="trainee-profile-session-platform"
                 value={platform}
                 onChange={(e) => setPlatform(e.target.value as MeetingPlatform)}
                 className="w-full px-3 py-2 border rounded-lg outline-none bg-white"
@@ -277,8 +284,9 @@ export default function TraineeProfilePage() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Meeting Link (optional)</label>
+              <label htmlFor="trainee-profile-session-link" className="block text-sm font-medium text-gray-700 mb-1">Meeting Link (optional)</label>
               <input
+                id="trainee-profile-session-link"
                 type="url"
                 value={link}
                 onChange={(e) => setLink(e.target.value)}

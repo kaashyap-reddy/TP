@@ -4,14 +4,16 @@ import { useResourcesStore } from '../store/resourcesStore';
 import { Session, useSessionsStore } from '../store/sessionsStore';
 import { useToastStore } from '../store/toastStore';
 import { useAnnouncementsStore } from '../store/announcementsStore';
-import { effectiveStatus, useAssignmentsStore } from '../store/assignmentsStore';
+import { effectiveStatus, isOverdue, useAssignmentsStore } from '../store/assignmentsStore';
 import { useFeedbackStore } from '../store/feedbackStore';
 import { useAuditLogStore } from '../store/auditLogStore';
 import { useBatchesStore } from '../store/batchesStore';
-import { useDiscussionsStore } from '../store/discussionsStore';
 import { useAuthStore } from '../store/authStore';
-import { logout } from '../services/authService';
-import { isRecentlyUpdated } from '../utils/dateUtils';
+import { logout } from '../services/api/authService';
+import { assignmentAttachmentUrl } from '../services/api/assignmentService';
+import { submissionAttachmentUrl } from '../services/api/submissionService';
+import { findUserEmailByName } from '../services/api/userService';
+import { formatDate, formatDateTime, isRecentlyUpdated } from '../utils/dateUtils';
 import { average } from '../utils/mathUtils';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { useEscapeKey } from '../hooks/useEscapeKey';
@@ -30,6 +32,9 @@ import StatCard from '../components/StatCard';
 import PageHeader from '../components/PageHeader';
 import SearchInput from '../components/SearchInput';
 import Table from '../components/Table';
+import FileViewButton from '../components/FileViewButton';
+import FeedbackCard from '../components/FeedbackCard';
+import SessionsCalendarView from '../components/SessionsCalendarView';
 import DashboardLayout from '../layouts/DashboardLayout';
 import type { TraineeTabId } from '../constants/navigation';
 import { TRAINEE_HEADER_TITLES, TRAINEE_BRAND_LABEL, TRAINEE_NAV_ITEMS } from '../constants/navigation';
@@ -41,19 +46,32 @@ const HEADER_TITLES = TRAINEE_HEADER_TITLES;
 
 export default function TraineeDashboardPage() {
   const navigate = useNavigate();
-  const { resources, incrementDownloadCount } = useResourcesStore();
-  const { sessions } = useSessionsStore();
+  const { id: currentUserId, displayName, clearSession } = useAuthStore();
+  const { resources, fetchResources, downloadResource } = useResourcesStore();
+  useEffect(() => {
+    fetchResources();
+  }, [fetchResources]);
+  const { sessions, fetchSessions } = useSessionsStore();
+  useEffect(() => {
+    fetchSessions();
+  }, [fetchSessions]);
   const { showToast } = useToastStore();
   const { announcements, markRead } = useAnnouncementsStore();
-  const { batches } = useBatchesStore();
-  const { assignments, updateSubmission } = useAssignmentsStore();
-  const { feedback } = useFeedbackStore();
+  const { batches, fetchBatches } = useBatchesStore();
+  useEffect(() => {
+    // Scoped to the trainee's own batch(es) — a trainee must not see other batches' rosters.
+    if (currentUserId) fetchBatches({ traineeId: currentUserId });
+  }, [fetchBatches, currentUserId]);
+  const { assignments, fetchAssignments, submitOwnAssignment, uploadSubmissionAttachment } = useAssignmentsStore();
+  useEffect(() => {
+    fetchAssignments();
+  }, [fetchAssignments]);
+  const { feedback, fetchFeedback, submitFeedbackAboutFacilitator } = useFeedbackStore();
+  useEffect(() => {
+    fetchFeedback();
+  }, [fetchFeedback]);
   const auditEntries = useAuditLogStore((s) => s.entries);
   const logEvent = useAuditLogStore((s) => s.logEvent);
-  const threads = useDiscussionsStore((s) => s.threads);
-  const createThread = useDiscussionsStore((s) => s.createThread);
-  const addMessage = useDiscussionsStore((s) => s.addMessage);
-  const { displayName } = useAuthStore();
 
   const [activeTab, setActiveTab] = useState<TabId>('dashboard');
   const markedReadRef = useRef<Set<string>>(new Set());
@@ -75,9 +93,8 @@ export default function TraineeDashboardPage() {
 
   // Assignments / submission
   const [submitModalOpen, setSubmitModalOpen] = useState(false);
-  const [submitTarget, setSubmitTarget] = useState<{ assignmentId: string; batchId: string } | null>(null);
-  const [submitTraineeName, setSubmitTraineeName] = useState('');
-  const [submitFileName, setSubmitFileName] = useState('');
+  const [submitTarget, setSubmitTarget] = useState<{ assignmentId: string; batchId: string; isResubmit: boolean } | null>(null);
+  const [submitFile, setSubmitFile] = useState<File | null>(null);
   const [submitComment, setSubmitComment] = useState('');
   const [submitFormError, setSubmitFormError] = useState('');
   const [submitFormSaving, setSubmitFormSaving] = useState(false);
@@ -89,17 +106,19 @@ export default function TraineeDashboardPage() {
   const [feedbackSearch, setFeedbackSearch] = useState('');
   const [resourcePreview, setResourcePreview] = useState<{ title: string; category: string; uploadedBy: string; uploadedAt: string } | null>(null);
 
+  // Give-feedback form (trainee -> facilitator)
+  const [feedbackGiveFacilitatorId, setFeedbackGiveFacilitatorId] = useState('');
+  const [feedbackGiveCategory, setFeedbackGiveCategory] = useState('Teaching Quality');
+  const [feedbackGiveRating, setFeedbackGiveRating] = useState('');
+  const [feedbackGiveComment, setFeedbackGiveComment] = useState('');
+  const [feedbackGiveSaving, setFeedbackGiveSaving] = useState(false);
+
   // Assignments search/filter
   const [assignmentSearch, setAssignmentSearch] = useState('');
   const [assignmentStatusFilter, setAssignmentStatusFilter] = useState<'All' | 'Open' | 'Closed' | 'Overdue' | 'Draft'>('All');
 
-  // Discussions
-  const [threadSearch, setThreadSearch] = useState('');
-  const [selectedThreadId, setSelectedThreadId] = useState<string | null>(threads[0]?.id ?? null);
-  const [replyText, setReplyText] = useState('');
-  const [newThreadModalOpen, setNewThreadModalOpen] = useState(false);
-  const [newThreadTitle, setNewThreadTitle] = useState('');
-  const [newThreadMessage, setNewThreadMessage] = useState('');
+  // Sessions & Calendar
+  const [sessionViewMode, setSessionViewMode] = useState<'list' | 'calendar'>('list');
 
   useEscapeKey(() => setNotificationOpen(false), notificationOpen);
 
@@ -154,6 +173,10 @@ export default function TraineeDashboardPage() {
       }),
     [feedback, feedbackSearch]
   );
+  // The backend already restricts a trainee's feedback list to entries where they're the
+  // trainee party (either direction) — split here purely for the two display sections.
+  const feedbackReceived = useMemo(() => filteredFeedback.filter((f) => f.direction !== 'TraineeToFacilitator'), [filteredFeedback]);
+  const feedbackGiven = useMemo(() => filteredFeedback.filter((f) => f.direction === 'TraineeToFacilitator'), [filteredFeedback]);
 
   const facilitatorContacts = useMemo(
     () =>
@@ -173,89 +196,86 @@ export default function TraineeDashboardPage() {
     [facilitatorContacts, facilitatorSearch]
   );
 
-  const filteredThreads = useMemo(
-    () => threads.filter((t) => t.title.toLowerCase().includes(threadSearch.trim().toLowerCase())),
-    [threads, threadSearch]
-  );
-  const selectedThread = threads.find((t) => t.id === selectedThreadId) ?? null;
+  // The facilitator(s) assigned to this trainee's own batch(es) — the only people they're
+  // allowed to give feedback about.
+  const myFacilitators = useMemo(() => {
+    const seen = new Map<string, { id: string; name: string; batchId: string }>();
+    for (const b of batches) {
+      if (b.pocId && !seen.has(b.pocId)) seen.set(b.pocId, { id: b.pocId, name: b.poc, batchId: b.id });
+    }
+    return Array.from(seen.values());
+  }, [batches]);
 
-  const sessionsByDate = useMemo(
-    () =>
-      sessions.reduce<Record<string, Session[]>>((acc, s) => {
-        acc[s.date] = acc[s.date] ? [...acc[s.date], s] : [s];
-        return acc;
-      }, {}),
-    [sessions]
-  );
-  const calendarDates = useMemo(
-    () => Object.keys(sessionsByDate).sort((a, b) => new Date(a).getTime() - new Date(b).getTime()),
-    [sessionsByDate]
-  );
+  const mySessions = useMemo(() => {
+    const myBatchIds = new Set(batches.map((b) => b.id));
+    return sessions.filter((s) => myBatchIds.has(s.batchId));
+  }, [sessions, batches]);
 
-  function openSubmitModal(assignmentId: string, batchId: string) {
-    setSubmitTarget({ assignmentId, batchId });
-    setSubmitTraineeName('');
-    setSubmitFileName('');
+  function openSubmitModal(assignmentId: string, batchId: string, isResubmit: boolean) {
+    setSubmitTarget({ assignmentId, batchId, isResubmit });
+    setSubmitFile(null);
     setSubmitComment('');
+    setSubmitFormError('');
     setSubmitModalOpen(true);
   }
 
-  function handleSubmitAssignment() {
-    if (!submitTarget || !submitTraineeName) {
-      setSubmitFormError('Please select your name before submitting.');
+  async function handleSubmitAssignment() {
+    if (!submitTarget || submitFormSaving) return; // guards against a double-click firing two submissions
+    if (!submitFile) {
+      setSubmitFormError('Please choose a file to submit.');
       return;
     }
     setSubmitFormError('');
     setSubmitFormSaving(true);
-    setTimeout(() => {
+    try {
       const assignment = assignments.find((a) => a.id === submitTarget.assignmentId);
-      const isLate = assignment ? new Date() > new Date(assignment.deadline) : false;
-      updateSubmission(submitTarget.assignmentId, submitTraineeName, {
-        status: isLate ? 'Late' : 'Under Review',
-        submittedOn: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-        feedback: submitComment
-      });
-      logEvent('Submission', `${submitTraineeName} submitted "${assignment?.title ?? submitTarget.assignmentId}"${submitFileName ? ` (${submitFileName})` : ''}.`);
-      showToast('Assignment submitted successfully!');
+      const submission = await submitOwnAssignment(submitTarget.assignmentId, submitComment || undefined);
+      if (submission.id) {
+        await uploadSubmissionAttachment(submitTarget.assignmentId, submission.id, submitFile);
+      }
+      logEvent('Submission', `${displayName ?? 'A trainee'} ${submitTarget.isResubmit ? 'resubmitted' : 'submitted'} "${assignment?.title ?? submitTarget.assignmentId}" (${submitFile.name}).`);
+      showToast(submitTarget.isResubmit ? 'Submission replaced successfully!' : 'Assignment submitted successfully!');
       setSubmitModalOpen(false);
+      setSubmitTarget(null);
+    } catch (err) {
+      setSubmitFormError(err instanceof Error ? err.message : 'Unable to submit assignment.');
+    } finally {
       setSubmitFormSaving(false);
-    }, 400);
+    }
   }
 
-  function handleContactFacilitator(name: string) {
-    const batch = batches.find((b) => b.poc === name);
-    const thread = createThread({
-      title: `Question for ${name}`,
-      batchId: batch?.id ?? batches[0]?.id ?? '',
-      author: displayName ?? 'Trainee',
-      role: 'trainee',
-      message: `Hi ${name}, I had a question and wanted to start a conversation here.`
-    });
-    setSelectedThreadId(thread.id);
-    setActiveTab('discussions');
-    showToast(`Discussion started with ${name}`);
+  async function handleContactFacilitator(name: string) {
+    const email = await findUserEmailByName(name, 'facilitator');
+    if (!email) {
+      showToast(`No email on file for ${name}.`, 'error');
+      return;
+    }
+    window.location.href = `mailto:${email}`;
   }
 
-  function handleCreateThread() {
-    if (!newThreadTitle.trim()) return;
-    const thread = createThread({
-      title: newThreadTitle.trim(),
-      batchId: batches[0]?.id ?? '',
-      author: displayName ?? 'Trainee',
-      role: 'trainee',
-      message: newThreadMessage
-    });
-    setSelectedThreadId(thread.id);
-    setNewThreadModalOpen(false);
-    setNewThreadTitle('');
-    setNewThreadMessage('');
-    showToast('Discussion created');
-  }
-
-  function handleSendReply() {
-    if (!selectedThread || !replyText.trim()) return;
-    addMessage(selectedThread.id, { author: displayName ?? 'Trainee', role: 'trainee', text: replyText.trim() });
-    setReplyText('');
+  async function handleGiveFeedback() {
+    const facilitator = myFacilitators.find((f) => f.id === feedbackGiveFacilitatorId);
+    if (!facilitator || !feedbackGiveRating) return;
+    setFeedbackGiveSaving(true);
+    try {
+      await submitFeedbackAboutFacilitator({
+        batchId: facilitator.batchId,
+        facilitatorId: facilitator.id,
+        category: feedbackGiveCategory,
+        rating: Number(feedbackGiveRating) || 0,
+        comment: feedbackGiveComment || undefined
+      });
+      showToast('Feedback submitted');
+      logEvent('Feedback', `Submitted feedback for ${facilitator.name}.`);
+      setFeedbackGiveFacilitatorId('');
+      setFeedbackGiveCategory('Teaching Quality');
+      setFeedbackGiveRating('');
+      setFeedbackGiveComment('');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Unable to submit feedback.', 'error');
+    } finally {
+      setFeedbackGiveSaving(false);
+    }
   }
 
   function handleJoinMeeting(session: Session) {
@@ -385,30 +405,65 @@ export default function TraineeDashboardPage() {
                     { key: 'batch', label: 'Batch' },
                     { key: 'status', label: 'Status' },
                     { key: 'deadline', label: 'Deadline' },
-                    { key: 'submissions', label: 'Submissions' },
+                    { key: 'mysubmission', label: 'My Submission' },
                     { key: 'action', label: 'Action' }
                   ]}
                 >
                   {filteredAssignments.map((a) => {
                     const batch = batches.find((b) => b.id === a.batchId);
-                    const completed = a.submissions.filter((s) => s.status === 'Completed').length;
+                    const mySubmission = a.submissions.find((s) => s.traineeId === currentUserId);
+                    const hasFile = !!mySubmission?.attachmentId;
+                    const deadlinePassed = isOverdue(a);
                     return (
                       <tr key={a.id} className="hover:bg-gray-50 transition-colors">
                         <td className="px-6 py-4">
                           <div className="font-bold text-gray-800"><HighlightMatch text={a.title} query={assignmentSearch} /></div>
                           {a.description && <div className="text-xs text-gray-500 mt-1">{a.description}</div>}
+                          <div className="mt-1">
+                            <FileViewButton
+                              url={a.attachmentFilename ? assignmentAttachmentUrl(a.id) : null}
+                              fileName={a.attachmentFilename ?? undefined}
+                              label="View Assignment File"
+                              className="text-xs font-bold text-blue-600 hover:underline disabled:text-gray-300 disabled:no-underline"
+                            />
+                          </div>
                         </td>
                         <td className="px-6 py-4 text-gray-600 font-medium">{batch?.name ?? a.batchId}</td>
                         <td className="px-6 py-4"><StatusBadge status={effectiveStatus(a)} /></td>
-                        <td className="px-6 py-4 text-gray-600 font-medium">{a.deadline}</td>
-                        <td className="px-6 py-4"><span className="text-blue-600 font-medium">{completed} / {a.submissions.length}</span></td>
+                        <td className="px-6 py-4 text-gray-600 font-medium">
+                          {formatDateTime(a.deadline)}
+                          {deadlinePassed && <div className="text-[11px] text-red-500 font-bold mt-0.5">Deadline passed</div>}
+                        </td>
                         <td className="px-6 py-4">
-                          <button
-                            onClick={() => openSubmitModal(a.id, a.batchId)}
-                            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 shadow-sm transition-colors"
-                          >
-                            Submit Work
-                          </button>
+                          {hasFile ? (
+                            <div>
+                              <div className="text-sm text-gray-700 font-medium truncate max-w-[10rem]">{mySubmission!.attachmentFilename}</div>
+                              <div className="text-xs text-gray-400">{mySubmission!.submittedOn ? formatDateTime(mySubmission!.submittedOn) : ''}</div>
+                              <StatusBadge status={mySubmission!.status} />
+                            </div>
+                          ) : (
+                            <span className="text-xs text-gray-400">Not submitted</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex flex-col gap-1.5 items-start">
+                            {hasFile && (
+                              <FileViewButton
+                                url={submissionAttachmentUrl(mySubmission!.id!, mySubmission!.attachmentId!)}
+                                fileName={mySubmission!.attachmentFilename}
+                                label="View Submission"
+                                className="text-xs font-bold text-blue-600 hover:underline"
+                              />
+                            )}
+                            <button
+                              onClick={() => openSubmitModal(a.id, a.batchId, hasFile)}
+                              disabled={hasFile && deadlinePassed}
+                              title={hasFile && deadlinePassed ? 'The deadline has passed — this submission can no longer be replaced.' : undefined}
+                              className="px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-600"
+                            >
+                              {hasFile ? 'Resubmit' : 'Submit Work'}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -418,79 +473,79 @@ export default function TraineeDashboardPage() {
             </div>
           </div>
 
-          {/* Discussions Tab */}
-          <div className={`${hiddenUnless('discussions')} flex h-full border border-gray-200 rounded-xl shadow-sm bg-white overflow-hidden`}>
-            <div className="w-1/3 border-r border-gray-200 flex flex-col">
-              <div className="p-4 border-b border-gray-200 bg-gray-50">
-                <button onClick={() => setNewThreadModalOpen(true)} className="w-full py-2 bg-blue-600 text-white rounded-lg font-medium shadow-sm hover:bg-blue-700">+ New Discussion</button>
-                <input
-                  type="text"
-                  value={threadSearch}
-                  onChange={(e) => setThreadSearch(e.target.value)}
-                  placeholder="Search discussions..."
-                  className="w-full mt-3 px-3 py-2 border rounded-lg outline-none text-sm"
-                />
-              </div>
-              <div className="flex-1 overflow-y-auto divide-y divide-gray-100">
-                {filteredThreads.length === 0 && (
-                  <EmptyState title="No discussions found" message="Try a different search term." icon="search" />
-                )}
-                {filteredThreads.map((t) => (
+          {/* Batches Tab */}
+          <div className={hiddenUnless('batches')}>
+            <h2 className="text-2xl font-bold mb-6">My Batch</h2>
+            {batches.length === 0 ? (
+              <EmptyState title="You're not enrolled in a batch yet" message="Once you're added to a batch, it will show up here." icon="inbox" />
+            ) : (
+              <div className="space-y-8">
+                {batches.map((b, index) => {
+                  // No backend concept of a "primary batch" exists yet when a trainee is enrolled
+                  // in more than one — the scoped fetch above returns this trainee's original/
+                  // earliest enrollment first, so that's used as the current-batch signal here.
+                  const isCurrent = index === 0;
+                  return (
                   <div
-                    key={t.id}
-                    onClick={() => setSelectedThreadId(t.id)}
-                    className={`p-4 cursor-pointer ${t.id === selectedThreadId ? 'bg-blue-50 border-l-4 border-blue-600' : 'hover:bg-gray-50'}`}
+                    key={b.id}
+                    className={
+                      isCurrent
+                        ? 'bg-blue-50/60 border-2 border-blue-200 rounded-xl shadow-md overflow-hidden'
+                        : 'bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden'
+                    }
                   >
-                    <h4 className="font-bold text-gray-800 text-sm">{t.title}</h4>
-                    <p className="text-xs text-gray-500 mt-1">{t.author} • {t.messages.length} {t.messages.length === 1 ? 'reply' : 'replies'}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="w-2/3 flex flex-col bg-gray-50">
-              {!selectedThread ? (
-                <div className="flex-1 p-8 flex items-center justify-center text-gray-400">
-                  Select a thread to view full conversation history.
-                </div>
-              ) : (
-                <>
-                  <div className="p-6 border-b border-gray-200 bg-white">
-                    <h3 className="text-xl font-bold">{selectedThread.title}</h3>
-                    <div className="text-sm text-gray-500 mt-1">Started by {selectedThread.author} • {selectedThread.createdAt}</div>
-                  </div>
-                  <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                    {selectedThread.messages.map((m) => (
-                      <div className="flex space-x-4" key={m.id}>
-                        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold flex-shrink-0 ${m.role === 'facilitator' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
-                          {m.author.charAt(0).toUpperCase()}
-                        </div>
-                        <div className={`p-4 rounded-xl border shadow-sm flex-1 ${m.role === 'facilitator' ? 'bg-blue-50 border-blue-100' : 'bg-white border-gray-200'}`}>
-                          <div className="font-medium text-sm text-gray-800 mb-2">
-                            {m.author}{m.role === 'facilitator' ? ' (Facilitator)' : ''} <span className="text-xs text-gray-400 font-normal ml-2">{m.at}</span>
-                          </div>
-                          <p className="text-sm text-gray-700 leading-relaxed">{m.text}</p>
-                        </div>
+                    <div className={`p-6 border-b flex items-start justify-between flex-wrap gap-3 ${isCurrent ? 'border-blue-200 bg-blue-50' : 'border-gray-200 bg-gray-50'}`}>
+                      <div>
+                        {isCurrent && (
+                          <span className="inline-block mb-2 text-[11px] font-bold uppercase tracking-wide text-blue-700 bg-blue-100 px-2.5 py-1 rounded-full">
+                            My Current Batch
+                          </span>
+                        )}
+                        <h3 className="text-xl font-bold text-gray-800">{b.name}</h3>
+                        <p className="text-sm text-gray-500 mt-1">{b.program} • {b.track}</p>
                       </div>
-                    ))}
-                  </div>
-                  <div className="p-4 border-t border-gray-200 bg-white">
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="text"
-                        value={replyText}
-                        onChange={(e) => setReplyText(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && handleSendReply()}
-                        placeholder="Type your reply..."
-                        className="flex-1 px-4 py-2 bg-gray-100 border-transparent rounded-full focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
-                      />
-                      <button onClick={handleSendReply} className="p-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 shadow-sm">
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" /></svg>
-                      </button>
+                      <StatusBadge status={b.status} />
+                    </div>
+                    <div className="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 border-b border-gray-100">
+                      <div>
+                        <div className="text-xs font-bold text-gray-400 uppercase tracking-wide">Facilitator</div>
+                        <div className="text-gray-800 font-medium mt-1">{b.poc || '—'}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-gray-400 uppercase tracking-wide">Start Date</div>
+                        <div className="text-gray-800 font-medium mt-1">{b.startDate ? formatDate(b.startDate) : b.startMonth || '—'}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-gray-400 uppercase tracking-wide">End Date</div>
+                        <div className="text-gray-800 font-medium mt-1">{b.endDate ? formatDate(b.endDate) : '—'}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-gray-400 uppercase tracking-wide">Completion</div>
+                        <div className="text-gray-800 font-medium mt-1">{b.completion !== null ? `${b.completion}%` : '—'}</div>
+                      </div>
+                    </div>
+                    <div className="p-6">
+                      <h4 className="text-sm font-bold text-gray-700 mb-3">Other Trainees in This Batch ({b.members.length})</h4>
+                      {b.members.length === 0 ? (
+                        <p className="text-sm text-gray-400">No other trainees enrolled yet.</p>
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                          {b.members.map((name) => (
+                            <div key={name} className="flex items-center gap-3 p-2 border border-gray-100 rounded-lg">
+                              <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold flex-shrink-0">
+                                {name.split(' ').map((p) => p.charAt(0)).join('').slice(0, 2).toUpperCase()}
+                              </div>
+                              <span className="text-sm text-gray-700 truncate">{name}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
-                </>
-              )}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Announcements Tab */}
@@ -513,15 +568,24 @@ export default function TraineeDashboardPage() {
             </div>
           </div>
 
-          {/* Meetings Tab */}
-          <div className={hiddenUnless('meetings')}>
-            <h2 className="text-2xl font-bold mb-6">Upcoming Sessions</h2>
+          {/* Sessions & Calendar Tab */}
+          <div className={hiddenUnless('sessions')}>
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-bold">Sessions & Calendar</h2>
+              <div className="flex rounded-lg border border-gray-300 overflow-hidden text-sm font-medium">
+                <button onClick={() => setSessionViewMode('list')} className={`px-3 py-2 transition-colors ${sessionViewMode === 'list' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>List</button>
+                <button onClick={() => setSessionViewMode('calendar')} className={`px-3 py-2 transition-colors ${sessionViewMode === 'calendar' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>Calendar</button>
+              </div>
+            </div>
+            {sessionViewMode === 'calendar' ? (
+              <SessionsCalendarView />
+            ) : (
             <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-              {sessions.length === 0 ? (
+              {mySessions.length === 0 ? (
                 <EmptyState title="No sessions scheduled" message="Sessions your facilitator schedules will show up here." icon="calendar" />
               ) : (
                 <div className="p-6 space-y-4">
-                  {sessions.map((session) => {
+                  {mySessions.map((session) => {
                     const isUpcoming = session.status === 'Upcoming';
                     const [month, day] = session.date.split(' ');
                     const dayNumber = (day || '').replace(',', '');
@@ -558,6 +622,7 @@ export default function TraineeDashboardPage() {
                 </div>
               )}
             </div>
+            )}
           </div>
 
           {/* Facilitators Directory Tab */}
@@ -625,7 +690,7 @@ export default function TraineeDashboardPage() {
                       <p className="text-xs text-gray-500 mb-1">Uploaded by {resource.uploadedBy} • {resource.uploadedAt}</p>
                       <p className="text-xs text-gray-400 mb-4">{resource.fileSize} • {resource.downloadCount} downloads</p>
                       <button
-                        onClick={() => { incrementDownloadCount(resource.id); setResourcePreview(resource); }}
+                        onClick={() => { downloadResource(resource.id); setResourcePreview(resource); }}
                         className="w-full py-2 bg-blue-50 text-blue-700 font-bold rounded-lg hover:bg-blue-100 transition-colors"
                       >
                         {isVideo ? 'Watch Now' : 'Download'}
@@ -637,67 +702,88 @@ export default function TraineeDashboardPage() {
             )}
           </div>
 
-          {/* Calendar Tab */}
-          <div className={hiddenUnless('calendar')}>
-            <h2 className="text-2xl font-bold mb-6">Assignment & Event Calendar</h2>
-            <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-              {calendarDates.length === 0 ? (
-                <EmptyState title="No scheduled sessions yet" message="Sessions your facilitator schedules will show up here." icon="calendar" />
+          {/* Grades & Feedback Tab */}
+          <div className={hiddenUnless('grades')}>
+            <PageHeader title="Feedback & Grades" wrap={false}>
+              <SearchInput value={feedbackSearch} onChange={setFeedbackSearch} placeholder="Search feedback..." />
+            </PageHeader>
+
+            <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6 mb-8">
+              <h3 className="font-bold text-lg mb-4">Give Feedback to Facilitator</h3>
+              {myFacilitators.length === 0 ? (
+                <EmptyState title="No facilitator assigned yet" message="You'll be able to give feedback once you're enrolled in a batch." icon="inbox" />
               ) : (
-                <div className="divide-y divide-gray-100">
-                  {calendarDates.map((date) => (
-                    <div key={date} className="p-5 flex gap-6">
-                      <div className="w-28 flex-shrink-0 text-sm font-bold text-gray-500">{date}</div>
-                      <div className="flex-1 space-y-2">
-                        {sessionsByDate[date].map((s) => (
-                          <button
-                            key={s.id}
-                            onClick={() => handleJoinMeeting(s)}
-                            className="w-full flex items-center justify-between bg-gray-50 border border-gray-100 rounded-lg px-4 py-2 hover:bg-gray-100 hover:shadow-sm transition text-left"
-                          >
-                            <div>
-                              <div className="font-medium text-gray-800 text-sm">{s.title}</div>
-                              <div className="text-xs text-gray-500">{s.time} • {s.facilitator}</div>
-                            </div>
-                            <StatusBadge status={s.status} />
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <select
+                    value={feedbackGiveFacilitatorId}
+                    onChange={(e) => setFeedbackGiveFacilitatorId(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg outline-none bg-white"
+                  >
+                    <option value="">Select Facilitator</option>
+                    {myFacilitators.map((f) => (
+                      <option key={f.id} value={f.id}>{f.name}</option>
+                    ))}
+                  </select>
+                  <select value={feedbackGiveCategory} onChange={(e) => setFeedbackGiveCategory(e.target.value)} className="w-full px-3 py-2 border rounded-lg outline-none bg-white">
+                    <option value="Teaching Quality">Category: Teaching Quality</option>
+                    <option value="Responsiveness">Category: Responsiveness</option>
+                    <option value="Overall Experience">Category: Overall Experience</option>
+                  </select>
+                  <input
+                    type="number"
+                    min={1}
+                    max={5}
+                    value={feedbackGiveRating}
+                    onChange={(e) => setFeedbackGiveRating(e.target.value)}
+                    placeholder="Rating 1-5"
+                    className="w-full px-3 py-2 border rounded-lg outline-none"
+                  />
+                  <div className="md:col-span-2">
+                    <textarea
+                      value={feedbackGiveComment}
+                      onChange={(e) => setFeedbackGiveComment(e.target.value)}
+                      className="w-full px-3 py-2 border rounded-lg outline-none h-24"
+                      placeholder="Share your experience..."
+                    ></textarea>
+                  </div>
+                  <div className="md:col-span-2">
+                    <SavingButton
+                      onClick={handleGiveFeedback}
+                      isSaving={feedbackGiveSaving}
+                      disabled={!feedbackGiveFacilitatorId || !feedbackGiveRating}
+                      label="Submit Feedback"
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium disabled:opacity-50"
+                    />
+                  </div>
                 </div>
               )}
             </div>
-          </div>
 
-          {/* Grades & Feedback Tab */}
-          <div className={hiddenUnless('grades')}>
-            <PageHeader title="Historical Feedback & Grades" wrap={false}>
-              <SearchInput value={feedbackSearch} onChange={setFeedbackSearch} placeholder="Search feedback..." />
-            </PageHeader>
-            <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden mb-8">
-              <div className="p-6 border-b border-gray-200 bg-gray-50">
-                <h3 className="font-bold text-lg">Facilitator Feedback History</h3>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                <div className="p-6 border-b border-gray-200 bg-gray-50">
+                  <h3 className="font-bold text-lg">Feedback You Submitted</h3>
+                </div>
+                <div className="p-6 space-y-3">
+                  {feedbackGiven.length === 0 ? (
+                    <EmptyState title="No feedback submitted yet" icon="inbox" />
+                  ) : (
+                    feedbackGiven.map((f) => <FeedbackCard key={f.id} entry={f} />)
+                  )}
+                </div>
               </div>
-              <div className="p-6 space-y-6">
-                {filteredFeedback.length === 0 && (
-                  <EmptyState title="No feedback found" message="Try a different search term." icon="search" />
-                )}
-                {filteredFeedback.map((f) => (
-                  <div key={f.id} className="border border-gray-200 rounded-lg p-5 relative overflow-hidden">
-                    <div className="absolute top-0 left-0 w-1 h-full bg-green-500"></div>
-                    <div className="flex justify-between items-start mb-3">
-                      <div>
-                        <h4 className="font-bold text-gray-800 text-lg">{f.trainee}</h4>
-                        <p className="text-sm text-gray-500 mt-1">Reviewed by {f.facilitator} • {f.category}</p>
-                      </div>
-                      <div className="bg-green-100 text-green-800 font-bold px-4 py-2 rounded-lg text-xl">{f.rating}/5</div>
-                    </div>
-                    {f.comment && (
-                      <div className="bg-gray-50 p-4 rounded-lg mt-3 text-sm text-gray-700 italic border border-gray-100">"{f.comment}"</div>
-                    )}
-                  </div>
-                ))}
+
+              <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                <div className="p-6 border-b border-gray-200 bg-gray-50">
+                  <h3 className="font-bold text-lg">Feedback Received</h3>
+                </div>
+                <div className="p-6 space-y-3">
+                  {feedbackReceived.length === 0 ? (
+                    <EmptyState title="No feedback found" message="Try a different search term." icon="search" />
+                  ) : (
+                    feedbackReceived.map((f) => <FeedbackCard key={f.id} entry={f} />)
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -707,7 +793,7 @@ export default function TraineeDashboardPage() {
       <Modal
         open={submitModalOpen}
         onClose={() => { setSubmitModalOpen(false); setSubmitFormError(''); }}
-        title="Submit Assignment"
+        title={submitTarget?.isResubmit ? 'Replace Submission' : 'Submit Assignment'}
         subtitle="You can replace your submission before the deadline."
         maxWidth="md"
       >
@@ -716,29 +802,19 @@ export default function TraineeDashboardPage() {
               <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{submitFormError}</div>
             )}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Your Name</label>
-              <select
-                value={submitTraineeName}
-                onChange={(e) => setSubmitTraineeName(e.target.value)}
-                className="w-full px-3 py-2 border rounded-lg outline-none bg-white"
-              >
-                <option value="">Select your name</option>
-                {(batches.find((b) => b.id === submitTarget?.batchId)?.members ?? []).map((name) => (
-                  <option key={name} value={name}>{name}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Upload File (.zip, .pdf)</label>
+              <label htmlFor="trainee-submit-file" className="block text-sm font-medium text-gray-700 mb-1">Upload File</label>
               <input
+                id="trainee-submit-file"
                 type="file"
-                onChange={(e) => setSubmitFileName(e.target.files?.[0]?.name ?? '')}
+                onChange={(e) => setSubmitFile(e.target.files?.[0] ?? null)}
                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
               />
+              {submitFile && <p className="text-xs text-gray-500 mt-1">{submitFile.name}</p>}
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Comments (Optional)</label>
+              <label htmlFor="trainee-submit-comment" className="block text-sm font-medium text-gray-700 mb-1">Comments (Optional)</label>
               <textarea
+                id="trainee-submit-comment"
                 value={submitComment}
                 onChange={(e) => setSubmitComment(e.target.value)}
                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none h-24"
@@ -748,25 +824,7 @@ export default function TraineeDashboardPage() {
           </div>
           <div className="flex justify-end space-x-3 mt-6">
             <button onClick={() => { setSubmitModalOpen(false); setSubmitFormError(''); }} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium">Cancel</button>
-            <SavingButton onClick={handleSubmitAssignment} isSaving={submitFormSaving} label="Submit" />
-          </div>
-      </Modal>
-
-      {/* New Discussion Modal */}
-      <Modal open={newThreadModalOpen} onClose={() => setNewThreadModalOpen(false)} title="New Discussion" maxWidth="md">
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
-              <input type="text" value={newThreadTitle} onChange={(e) => setNewThreadTitle(e.target.value)} className="w-full px-3 py-2 border rounded-lg outline-none" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Message</label>
-              <textarea value={newThreadMessage} onChange={(e) => setNewThreadMessage(e.target.value)} className="w-full px-3 py-2 border rounded-lg outline-none h-24"></textarea>
-            </div>
-          </div>
-          <div className="flex justify-end space-x-3 mt-6">
-            <button onClick={() => setNewThreadModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium">Cancel</button>
-            <button onClick={handleCreateThread} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium">Create</button>
+            <SavingButton onClick={handleSubmitAssignment} isSaving={submitFormSaving} label={submitTarget?.isResubmit ? 'Replace Submission' : 'Submit'} />
           </div>
       </Modal>
 
@@ -793,8 +851,10 @@ export default function TraineeDashboardPage() {
         confirmLabel="Log Out"
         danger
         onConfirm={() => {
-          logout();
-          navigate(ROUTES.LOGIN);
+          logout().finally(() => {
+            clearSession();
+            navigate(ROUTES.LOGIN);
+          });
         }}
         onCancel={() => setLogoutConfirmOpen(false)}
       />
