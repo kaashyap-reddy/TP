@@ -66,6 +66,8 @@ export interface DemoSubmission {
   grade: string | null;
   feedback: string | null;
   trainee: PersonRef;
+  /** Same shape the real backend serializes (submissions.service.ts) — set by the demo upload route. */
+  attachments?: { id: string; originalFilename: string; mimeType: string; sizeBytes: number; uploadedAt: string; isCurrent: boolean }[];
 }
 
 export interface DemoAssignment {

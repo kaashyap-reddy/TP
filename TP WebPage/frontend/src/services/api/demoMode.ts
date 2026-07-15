@@ -634,8 +634,28 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
     }
     notFound();
   }
-  if (method === 'POST' && matchPath('/submissions/:id/attachments', path)) {
-    return { attachment: { id: nextId('demo-attachment') } };
+  const submissionAttachMatch = matchPath('/submissions/:id/attachments', path);
+  if (method === 'POST' && submissionAttachMatch) {
+    // Mirror the real backend's response shape (submissions.service.ts) — the store reads
+    // originalFilename/mimeType off it to show "My Submission" immediately after upload, and
+    // storing it on the demo submission keeps the filename visible across a refetch too.
+    const file = b.file instanceof File ? b.file : null;
+    const attachment = {
+      id: nextId('demo-attachment'),
+      originalFilename: file?.name ?? 'submission.txt',
+      mimeType: file?.type || 'text/plain',
+      sizeBytes: file?.size ?? 0,
+      uploadedAt: new Date().toISOString(),
+      isCurrent: true
+    };
+    for (const assignment of assignments) {
+      const sub = assignment.submissions.find((s) => s.id === submissionAttachMatch.id);
+      if (sub) {
+        sub.attachments = [attachment];
+        break;
+      }
+    }
+    return { attachment };
   }
 
   // ---- sessions ----
