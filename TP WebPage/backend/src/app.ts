@@ -11,6 +11,7 @@ import { swaggerSpec } from './config/swagger';
 import { errorHandler } from './middleware/errorHandler';
 import { notFound } from './middleware/notFound';
 import { apiRateLimiter } from './middleware/rateLimit';
+import assignmentFeedbackRoutes from './routes/assignmentFeedback.routes';
 import assignmentsRoutes from './routes/assignments.routes';
 import attendanceRoutes from './routes/attendance.routes';
 import authRoutes from './routes/auth.routes';
@@ -72,6 +73,7 @@ export function createApp(): Express {
   app.use('/api/batches', batchesRoutes);
   app.use('/api/training-plans', trainingPlansRoutes);
   app.use('/api/assignments', assignmentsRoutes);
+  app.use('/api/assignments', assignmentFeedbackRoutes);
   app.use('/api/submissions', submissionsRoutes);
   app.use('/api/sessions', sessionsRoutes);
   app.use('/api/sessions', sessionFeedbackRoutes);

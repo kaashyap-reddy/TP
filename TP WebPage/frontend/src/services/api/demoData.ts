@@ -70,6 +70,15 @@ export interface DemoSubmission {
   attachments?: { id: string; originalFilename: string; mimeType: string; sizeBytes: number; uploadedAt: string; isCurrent: boolean }[];
 }
 
+export interface DemoAssignmentFeedbackForm {
+  id: string;
+  name: string;
+  description: string;
+  formUrl: string;
+  audience: 'Trainees' | 'Facilitators' | 'Both';
+  _count: { submissions: number };
+}
+
 export interface DemoAssignment {
   id: string;
   batchId: string;
@@ -82,6 +91,7 @@ export interface DemoAssignment {
   deadline: string;
   session: { id: string; title: string } | null;
   submissions: DemoSubmission[];
+  feedbackForm?: DemoAssignmentFeedbackForm | null;
 }
 
 export interface DemoSessionFeedbackForm {

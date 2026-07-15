@@ -9,6 +9,7 @@ import { ROUTES } from '../constants/routes';
 import { assignmentAttachmentUrl } from '../services/api/assignmentService';
 import { submissionAttachmentUrl } from '../services/api/submissionService';
 import FileViewButton from '../components/FileViewButton';
+import AssignmentFeedbackCell from '../components/AssignmentFeedbackCell';
 import { formatDateTime } from '../utils/dateUtils';
 
 const STATUS_BADGE: Record<SubmissionStatus, string> = {
@@ -23,6 +24,7 @@ export default function AssignmentDetailPage() {
   const navigate = useNavigate();
   const assignment = useAssignmentsStore((s) => s.assignments.find((a) => a.id === assignmentId));
   const updateSubmission = useAssignmentsStore((s) => s.updateSubmission);
+  const setAssignmentFeedbackForm = useAssignmentsStore((s) => s.setAssignmentFeedbackForm);
   const fetchAssignments = useAssignmentsStore((s) => s.fetchAssignments);
   const fetchSubmissionsForAssignment = useAssignmentsStore((s) => s.fetchSubmissionsForAssignment);
   useEffect(() => {
@@ -110,6 +112,15 @@ export default function AssignmentDetailPage() {
           </div>
         </div>
         {assignment.description && <p className="text-sm text-gray-600 mt-3 max-w-2xl">{assignment.description}</p>}
+        {role !== 'trainee' && (
+          <div className="mt-3">
+            <AssignmentFeedbackCell
+              assignment={assignment}
+              canManage
+              onChange={(assignmentId, feedbackForm) => setAssignmentFeedbackForm(assignmentId, feedbackForm)}
+            />
+          </div>
+        )}
       </header>
 
       <div className="p-8">

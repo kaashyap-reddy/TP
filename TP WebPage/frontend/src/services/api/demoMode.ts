@@ -17,6 +17,7 @@ import {
   DEMO_TRAINING_PLANS,
   DEMO_USERS,
   nthWorkingDay,
+  type DemoAssignment,
   type DemoResource,
   type DemoSession,
   type DemoSubmission,
@@ -64,6 +65,7 @@ let feedback = clone(DEMO_FEEDBACK);
 const trainingPlans = clone(DEMO_TRAINING_PLANS);
 // submitterId — the trainee OR facilitator who submitted (a form's audience can target either).
 let sessionFeedbackSubmissions: { formId: string; submitterId: string }[] = [];
+let assignmentFeedbackSubmissions: { formId: string; submitterId: string }[] = [];
 let idCounter = 1000;
 
 function clone<T>(value: T): T {
@@ -92,6 +94,18 @@ function withFeedbackFormVisibility(session: DemoSession): DemoSession {
   if (currentUser.role === 'trainee' && session.feedbackForm.audience === 'Facilitators') return { ...session, feedbackForm: null };
   if (currentUser.role === 'facilitator' && session.feedbackForm.audience === 'Trainees') return { ...session, feedbackForm: null };
   return session;
+}
+
+// Same idea as withFeedbackFormVisibility above, but for a form attached directly to an
+// Assignment. Demo assignments carry no per-item facilitator owner (they're Training-Plan-owned,
+// like the real backend's simplified Assignment response — see demoData.ts's note on this), so
+// any admin or facilitator is treated as a manager here; only a trainee gets audience-gated.
+function withAssignmentFeedbackFormVisibility(assignment: DemoAssignment): DemoAssignment {
+  if (!assignment.feedbackForm) return assignment;
+  const currentUser = currentDemoUser();
+  if (currentUser.role === 'admin' || currentUser.role === 'facilitator') return assignment;
+  if (currentUser.role === 'trainee' && assignment.feedbackForm.audience === 'Facilitators') return { ...assignment, feedbackForm: null };
+  return assignment;
 }
 
 /** Whether this role is a legitimate respondent for a form with this audience — mirrors sessionFeedback.service.ts's isRespondent(). */
@@ -555,7 +569,7 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
   if (method === 'GET' && path === '/assignments') {
     let results = assignments;
     if (query?.batchId) results = results.filter((a) => a.batches.some((bb) => bb.id === query.batchId));
-    return paginated(results);
+    return paginated(results.map((a) => withAssignmentFeedbackFormVisibility(a)));
   }
   if (method === 'POST' && path === '/assignments') {
     const { batchId, batches: assignmentBatches } = resolveAssignmentBatches(parseBatchIds(b.batchIds));
@@ -579,7 +593,7 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
   if (assignmentIdMatch) {
     const assignment = assignments.find((x) => x.id === assignmentIdMatch.id);
     if (!assignment) notFound();
-    if (method === 'GET') return { assignment };
+    if (method === 'GET') return { assignment: withAssignmentFeedbackFormVisibility(assignment) };
     if (method === 'PATCH') {
       const { batchIds, sessionId, ...rest } = b;
       Object.assign(assignment, rest);
@@ -620,6 +634,77 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
       else assignment.submissions.push(created);
       return { submission: created };
     }
+  }
+
+  // ---- assignment feedback (external form link + submission tracking, mirrors session feedback) ----
+  const assignmentFeedbackFormMatch = matchPath('/assignments/:id/feedback-form', path);
+  if (assignmentFeedbackFormMatch) {
+    const assignment = assignments.find((x) => x.id === assignmentFeedbackFormMatch.id);
+    if (!assignment) notFound();
+
+    const currentUser = currentDemoUser();
+    const isManager = currentUser.role === 'admin' || currentUser.role === 'facilitator';
+
+    if (method === 'GET') {
+      if (!assignment.feedbackForm) return { form: null };
+      if (!isManager && currentUser.role === 'trainee' && assignment.feedbackForm.audience === 'Facilitators') return { form: null };
+      const totalTrainees = batches.find((bt) => bt.id === assignment.batchId)?.members.length ?? 0;
+      const respondent = isRespondentFor(currentUser.role, assignment.feedbackForm.audience);
+      const mySubmitted = respondent
+        ? assignmentFeedbackSubmissions.some((s) => s.formId === assignment.feedbackForm!.id && s.submitterId === currentUser.id)
+        : null;
+      return {
+        form: { ...assignment.feedbackForm, submittedCount: assignment.feedbackForm._count.submissions, totalTrainees, mySubmitted }
+      };
+    }
+    if (method === 'POST') {
+      if (assignment.feedbackForm) {
+        const err = new Error('This assignment already has a feedback form attached — edit it instead.') as Error & { status?: number };
+        err.status = 409;
+        throw err;
+      }
+      assignment.feedbackForm = {
+        id: nextId('demo-assignment-feedback-form'),
+        name: String(b.name ?? `${assignment.title} Feedback`),
+        description: String(b.description ?? ''),
+        formUrl: String(b.formUrl ?? ''),
+        audience: (b.audience as 'Trainees' | 'Facilitators' | 'Both') ?? 'Both',
+        _count: { submissions: 0 }
+      };
+      const totalTrainees = batches.find((bt) => bt.id === assignment.batchId)?.members.length ?? 0;
+      return { form: { ...assignment.feedbackForm, submittedCount: 0, totalTrainees, mySubmitted: null } };
+    }
+    if (method === 'PATCH' && assignment.feedbackForm) {
+      if (b.name !== undefined) assignment.feedbackForm.name = String(b.name);
+      if (b.description !== undefined) assignment.feedbackForm.description = String(b.description);
+      if (b.formUrl !== undefined) assignment.feedbackForm.formUrl = String(b.formUrl);
+      if (b.audience !== undefined) assignment.feedbackForm.audience = b.audience as 'Trainees' | 'Facilitators' | 'Both';
+      const totalTrainees = batches.find((bt) => bt.id === assignment.batchId)?.members.length ?? 0;
+      return {
+        form: { ...assignment.feedbackForm, submittedCount: assignment.feedbackForm._count.submissions, totalTrainees, mySubmitted: null }
+      };
+    }
+    if (method === 'DELETE' && assignment.feedbackForm) {
+      assignment.feedbackForm = null;
+      return undefined;
+    }
+  }
+  const assignmentFeedbackSubmitMatch = matchPath('/assignments/:id/feedback-form/submissions', path);
+  if (method === 'POST' && assignmentFeedbackSubmitMatch) {
+    const assignment = assignments.find((x) => x.id === assignmentFeedbackSubmitMatch.id);
+    if (!assignment || !assignment.feedbackForm) notFound();
+    const currentUser = currentDemoUser();
+    if (!isRespondentFor(currentUser.role, assignment.feedbackForm.audience)) {
+      const err = new Error('This feedback form is not for your role.') as Error & { status?: number };
+      err.status = 403;
+      throw err;
+    }
+    const alreadySubmitted = assignmentFeedbackSubmissions.some((s) => s.formId === assignment.feedbackForm!.id && s.submitterId === currentUser.id);
+    if (!alreadySubmitted) {
+      assignmentFeedbackSubmissions = [...assignmentFeedbackSubmissions, { formId: assignment.feedbackForm.id, submitterId: currentUser.id }];
+      assignment.feedbackForm._count.submissions += 1;
+    }
+    return { submission: { id: nextId('demo-assignment-feedback-submission') } };
   }
 
   // ---- submissions (grading) ----

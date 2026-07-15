@@ -14,6 +14,7 @@ import { assignmentAttachmentUrl } from '../services/api/assignmentService';
 import { submissionAttachmentUrl } from '../services/api/submissionService';
 import { findUserEmailByName } from '../services/api/userService';
 import * as sessionFeedbackService from '../services/api/sessionFeedbackService';
+import * as assignmentFeedbackService from '../services/api/assignmentFeedbackService';
 import { formatDate, formatDateTime, isRecentlyUpdated } from '../utils/dateUtils';
 import { average } from '../utils/mathUtils';
 import { useClickOutside } from '../hooks/useClickOutside';
@@ -235,6 +236,29 @@ export default function TraineeDashboardPage() {
     }
   }
 
+  // Which of my assignments' feedback forms I've already submitted — same pattern as session
+  // feedback above, but keyed by assignment id since these forms attach directly to assignments.
+  const [mySubmittedFormAssignmentIds, setMySubmittedFormAssignmentIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    const assignmentsWithForms = assignments.filter((a) => a.feedbackForm);
+    Promise.all(
+      assignmentsWithForms.map((a) =>
+        assignmentFeedbackService.getAssignmentFeedbackForm(a.id).then((form) => (form?.mySubmitted ? a.id : null))
+      )
+    ).then((ids) => setMySubmittedFormAssignmentIds(new Set(ids.filter((id): id is string => id !== null))));
+  }, [assignments]);
+
+  async function handleSubmitAssignmentFeedback(assignment: { id: string; feedbackForm: { formUrl: string } | null }) {
+    if (!assignment.feedbackForm) return;
+    window.open(assignment.feedbackForm.formUrl, '_blank', 'noopener,noreferrer');
+    try {
+      await assignmentFeedbackService.submitAssignmentFeedback(assignment.id);
+      setMySubmittedFormAssignmentIds((prev) => new Set(prev).add(assignment.id));
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Unable to record feedback submission.', 'error');
+    }
+  }
+
   function openSubmitModal(assignmentId: string, batchId: string, isResubmit: boolean) {
     setSubmitTarget({ assignmentId, batchId, isResubmit });
     setSubmitFile(null);
@@ -451,6 +475,20 @@ export default function TraineeDashboardPage() {
                               className="text-xs font-bold text-blue-600 hover:underline disabled:text-gray-300 disabled:no-underline"
                             />
                           </div>
+                          {a.feedbackForm && (
+                            <div className="mt-1.5">
+                              {mySubmittedFormAssignmentIds.has(a.id) ? (
+                                <span className="text-xs font-bold text-green-700 bg-green-50 border border-green-200 px-2 py-1 rounded-lg">Feedback Submitted</span>
+                              ) : (
+                                <button
+                                  onClick={() => handleSubmitAssignmentFeedback(a)}
+                                  className="text-xs font-bold text-white bg-green-600 hover:bg-green-700 px-2.5 py-1 rounded-lg transition-colors"
+                                >
+                                  Submit Assignment Feedback
+                                </button>
+                              )}
+                            </div>
+                          )}
                         </td>
                         <td className="px-6 py-4 text-gray-600 font-medium">{batch?.name ?? a.batchId}</td>
                         <td className="px-6 py-4"><StatusBadge status={effectiveStatus(a)} /></td>

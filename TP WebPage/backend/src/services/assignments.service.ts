@@ -23,7 +23,10 @@ const include = {
     include: { batch: { select: { id: true, name: true, code: true, trainingPlan: { select: { id: true, name: true } } } } }
   },
   session: { select: { id: true, title: true } },
-  submissions: { include: { trainee: { select: { id: true, name: true, email: true } } } }
+  submissions: { include: { trainee: { select: { id: true, name: true, email: true } } } },
+  feedbackForm: {
+    select: { id: true, name: true, description: true, formUrl: true, audience: true, _count: { select: { submissions: true } } }
+  }
 } satisfies Prisma.AssignmentInclude;
 
 type AssignmentWithIncludes = Prisma.AssignmentGetPayload<{ include: typeof include }>;
@@ -52,12 +55,28 @@ function serialize(assignment: AssignmentWithIncludes) {
   };
 }
 
+// An assignment's embedded feedback form shouldn't leak to a role it isn't meant for — same rule
+// as sessions.service.ts's withFeedbackFormVisibility() and assignmentFeedback.service.ts's
+// getForAssignment(). `actor` is optional only because a couple of internal callers (and tests)
+// don't have one; the HTTP handlers always pass req.user.
+function withFeedbackFormVisibility<T extends { facilitatorId: string | null; feedbackForm: { audience: string } | null }>(
+  actor: AuthenticatedUser | undefined,
+  assignment: T
+): T {
+  if (!actor || !assignment.feedbackForm) return assignment;
+  const isManager = actor.role === 'admin' || (actor.role === 'facilitator' && actor.id === assignment.facilitatorId);
+  if (isManager) return assignment;
+  if (actor.role === 'trainee' && assignment.feedbackForm.audience === 'Facilitators') return { ...assignment, feedbackForm: null };
+  if (actor.role === 'facilitator' && assignment.feedbackForm.audience === 'Trainees') return { ...assignment, feedbackForm: null };
+  return assignment;
+}
+
 async function assertBatchesExist(batchIds: string[]): Promise<void> {
   const batches = await prisma.batch.findMany({ where: { id: { in: batchIds }, deletedAt: null } });
   if (batches.length !== batchIds.length) throw ApiError.badRequest('One or more selected batches do not exist.');
 }
 
-export async function list(query: z.infer<typeof listAssignmentsQuerySchema>) {
+export async function list(query: z.infer<typeof listAssignmentsQuerySchema>, actor?: AuthenticatedUser) {
   const { skip, take, page, pageSize } = getPagination(query);
 
   const where: Prisma.AssignmentWhereInput = {
@@ -72,13 +91,18 @@ export async function list(query: z.infer<typeof listAssignmentsQuerySchema>) {
     prisma.assignment.count({ where })
   ]);
 
-  return buildPaginatedResponse(assignments.map(serialize), total, page, pageSize);
+  return buildPaginatedResponse(
+    assignments.map((a) => serialize(withFeedbackFormVisibility(actor, a))),
+    total,
+    page,
+    pageSize
+  );
 }
 
-export async function getById(id: string) {
+export async function getById(id: string, actor?: AuthenticatedUser) {
   const assignment = await prisma.assignment.findFirst({ where: { id, deletedAt: null }, include });
   if (!assignment) throw ApiError.notFound('Assignment not found.');
-  return serialize(assignment);
+  return serialize(withFeedbackFormVisibility(actor, assignment));
 }
 
 export async function create(

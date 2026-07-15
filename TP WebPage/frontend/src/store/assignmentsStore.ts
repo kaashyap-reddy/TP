@@ -25,6 +25,8 @@ interface AssignmentsState {
   bulkDelete: (ids: string[]) => Promise<void>;
   bulkClose: (ids: string[]) => Promise<void>;
   bulkExtendDeadline: (ids: string[], newDeadline: string) => Promise<void>;
+  /** Syncs local state after AssignmentFeedbackCell's own attach/edit/remove call — no separate network round-trip. */
+  setAssignmentFeedbackForm: (assignmentId: string, feedbackForm: Assignment['feedbackForm']) => void;
 }
 
 export const useAssignmentsStore = create<AssignmentsState>()((set, get) => ({
@@ -127,6 +129,9 @@ export const useAssignmentsStore = create<AssignmentsState>()((set, get) => ({
   bulkExtendDeadline: async (ids, newDeadline) => {
     await Promise.all(ids.map((id) => assignmentService.updateAssignment(id, { deadline: newDeadline })));
     set({ assignments: get().assignments.map((a) => (ids.includes(a.id) ? { ...a, deadline: newDeadline } : a)) });
+  },
+  setAssignmentFeedbackForm: (assignmentId, feedbackForm) => {
+    set({ assignments: get().assignments.map((a) => (a.id === assignmentId ? { ...a, feedbackForm } : a)) });
   }
 }));
 

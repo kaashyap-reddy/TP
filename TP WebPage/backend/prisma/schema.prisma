@@ -151,27 +151,29 @@ model User {
 
   role Role @relation(fields: [roleId], references: [id])
 
-  profile                     UserProfile?
-  refreshTokens               RefreshToken[]
-  invitesSent                 UserInvite[]                @relation("InviteSentBy")
-  batchesAsFacilitator        Batch[]                     @relation("BatchFacilitator")
-  batchEnrollments            BatchTrainee[]
-  assignmentsCreated          Assignment[]
-  submissions                 Submission[]
-  sessionsAsFacilitator       Session[]
-  attendanceMarked            Attendance[]                @relation("AttendanceMarkedBy")
-  attendanceRecords           Attendance[]                @relation("AttendanceTrainee")
-  resourcesUploaded           Resource[]
-  feedbackAsTrainee           FeedbackEntry[]             @relation("FeedbackTrainee")
-  feedbackAsFacilitator       FeedbackEntry[]             @relation("FeedbackFacilitator")
-  sessionFeedbackFormsCreated SessionFeedbackForm[]
-  sessionFeedbackSubmissions  SessionFeedbackSubmission[]
-  announcements               Announcement[]
-  announcementReads           AnnouncementRead[]
-  discussionThreads           DiscussionThread[]
-  discussionMessages          DiscussionMessage[]
-  auditLogEntries             AuditLog[]
-  notificationReads           NotificationRead[]
+  profile                        UserProfile?
+  refreshTokens                  RefreshToken[]
+  invitesSent                    UserInvite[]                   @relation("InviteSentBy")
+  batchesAsFacilitator           Batch[]                        @relation("BatchFacilitator")
+  batchEnrollments               BatchTrainee[]
+  assignmentsCreated             Assignment[]
+  submissions                    Submission[]
+  sessionsAsFacilitator          Session[]
+  attendanceMarked               Attendance[]                   @relation("AttendanceMarkedBy")
+  attendanceRecords              Attendance[]                   @relation("AttendanceTrainee")
+  resourcesUploaded              Resource[]
+  feedbackAsTrainee              FeedbackEntry[]                @relation("FeedbackTrainee")
+  feedbackAsFacilitator          FeedbackEntry[]                @relation("FeedbackFacilitator")
+  sessionFeedbackFormsCreated    SessionFeedbackForm[]
+  sessionFeedbackSubmissions     SessionFeedbackSubmission[]
+  assignmentFeedbackFormsCreated AssignmentFeedbackForm[]
+  assignmentFeedbackSubmissions  AssignmentFeedbackSubmission[]
+  announcements                  Announcement[]
+  announcementReads              AnnouncementRead[]
+  discussionThreads              DiscussionThread[]
+  discussionMessages             DiscussionMessage[]
+  auditLogEntries                AuditLog[]
+  notificationReads              NotificationRead[]
 
   // Matches the admin user-listing endpoint's role filter (GET /users?role=...).
   @@index([roleId])
@@ -418,6 +420,7 @@ model Assignment {
   session                Session?                @relation(fields: [sessionId], references: [id], onDelete: SetNull)
   submissions            Submission[]
   batches                AssignmentBatch[]
+  feedbackForm           AssignmentFeedbackForm?
 
   @@index([batchId])
   @@index([deadline])
@@ -603,6 +606,43 @@ model SessionFeedbackSubmission {
   @@unique([formId, submitterId])
   @@index([submitterId])
   @@map("session_feedback_submissions")
+}
+
+// Assignment Feedback: the same external-form-link pattern as SessionFeedbackForm above, but
+// attached directly to an Assignment — for feedback that belongs to a piece of work rather than
+// a session (an assignment with no related session, or work-specific surveys). Shares the
+// SessionFeedbackAudience enum so both features gate visibility identically.
+model AssignmentFeedbackForm {
+  id           String                  @id @default(uuid())
+  assignmentId String                  @unique @map("assignment_id")
+  name         String
+  description  String                  @default("")
+  formUrl      String                  @map("form_url")
+  audience     SessionFeedbackAudience @default(Both)
+  createdBy    String                  @map("created_by")
+  createdAt    DateTime                @default(now()) @map("created_at")
+  updatedAt    DateTime                @updatedAt @map("updated_at")
+
+  assignment  Assignment                     @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  creator     User                           @relation(fields: [createdBy], references: [id])
+  submissions AssignmentFeedbackSubmission[]
+
+  @@map("assignment_feedback_forms")
+}
+
+model AssignmentFeedbackSubmission {
+  id          String   @id @default(uuid())
+  formId      String   @map("form_id")
+  // The trainee OR facilitator who submitted — same audience semantics as session feedback.
+  submitterId String   @map("submitter_id")
+  submittedAt DateTime @default(now()) @map("submitted_at")
+
+  form      AssignmentFeedbackForm @relation(fields: [formId], references: [id], onDelete: Cascade)
+  submitter User                   @relation(fields: [submitterId], references: [id], onDelete: Cascade)
+
+  @@unique([formId, submitterId])
+  @@index([submitterId])
+  @@map("assignment_feedback_submissions")
 }
 
 model FeedbackEntry {

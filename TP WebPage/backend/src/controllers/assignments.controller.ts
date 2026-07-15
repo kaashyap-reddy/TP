@@ -8,7 +8,7 @@ import { isInlineViewable } from '../utils/fileDisposition';
 import { logger } from '../utils/logger';
 
 export const listAssignmentsHandler = asyncHandler(async (req: Request, res: Response) => {
-  res.status(200).json(await assignmentsService.list(req.query as never));
+  res.status(200).json(await assignmentsService.list(req.query as never, req.user));
 });
 
 export const createAssignmentHandler = asyncHandler(async (req: Request, res: Response) => {
@@ -24,7 +24,7 @@ export const createAssignmentHandler = asyncHandler(async (req: Request, res: Re
 });
 
 export const getAssignmentHandler = asyncHandler(async (req: Request, res: Response) => {
-  const assignment = await assignmentsService.getById(req.params.id);
+  const assignment = await assignmentsService.getById(req.params.id, req.user);
   res.status(200).json({ assignment });
 });
 

@@ -1,3 +1,5 @@
+import type { AssignmentFeedbackAudience } from './assignmentFeedback';
+
 export type SubmissionStatus = 'Not Started' | 'Under Review' | 'Completed' | 'Late';
 export type AssignmentStatus = 'Draft' | 'Open' | 'Closed';
 
@@ -42,4 +44,13 @@ export interface Assignment {
   status: AssignmentStatus;
   submissions: Submission[];
   attachmentFilename: string | null;
+  /** Feedback-form summary if one is attached directly to this assignment — null means none. Full stats come from assignmentFeedbackService.getAssignmentFeedbackForm(). */
+  feedbackForm: {
+    id: string;
+    name: string;
+    description: string;
+    formUrl: string;
+    audience: AssignmentFeedbackAudience;
+    submittedCount: number;
+  } | null;
 }

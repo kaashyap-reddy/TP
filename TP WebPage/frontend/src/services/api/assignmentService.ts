@@ -1,4 +1,5 @@
 import type { Assignment, AssignmentBatchRef, AssignmentStatus } from '../../types/assignment';
+import type { AssignmentFeedbackAudience } from '../../types/assignmentFeedback';
 import { api } from './apiClient';
 import { ApiSubmission, toFrontendSubmission } from './submissionService';
 
@@ -13,6 +14,14 @@ interface ApiAssignment {
   deadline: string;
   session: { id: string; title: string } | null;
   attachment: { originalFilename: string; mimeType: string; sizeBytes: number } | null;
+  feedbackForm: {
+    id: string;
+    name: string;
+    description: string;
+    formUrl: string;
+    audience: AssignmentFeedbackAudience;
+    _count: { submissions: number };
+  } | null;
   // Embedded directly by the backend list/create/update endpoints (see backend's
   // assignments.service.ts) — avoids one GET /assignments/:id/submissions round-trip per
   // assignment that a separate fetch here would otherwise require for every list render.
@@ -54,7 +63,17 @@ function toFrontendAssignment(apiAssignment: ApiAssignment): Assignment {
     description: apiAssignment.description,
     status: apiAssignment.status,
     submissions: apiAssignment.submissions.map(toFrontendSubmission),
-    attachmentFilename: apiAssignment.attachment?.originalFilename ?? null
+    attachmentFilename: apiAssignment.attachment?.originalFilename ?? null,
+    feedbackForm: apiAssignment.feedbackForm
+      ? {
+          id: apiAssignment.feedbackForm.id,
+          name: apiAssignment.feedbackForm.name,
+          description: apiAssignment.feedbackForm.description,
+          formUrl: apiAssignment.feedbackForm.formUrl,
+          audience: apiAssignment.feedbackForm.audience,
+          submittedCount: apiAssignment.feedbackForm._count.submissions
+        }
+      : null
   };
 }
 
