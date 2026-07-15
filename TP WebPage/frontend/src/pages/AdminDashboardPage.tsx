@@ -4,6 +4,10 @@ import { Batch, useBatchesStore } from '../store/batchesStore';
 import { effectiveStatus, useAssignmentsStore } from '../store/assignmentsStore';
 import { assignmentAttachmentUrl } from '../services/api/assignmentService';
 import { MeetingPlatform, Session, SessionStatus, useSessionsStore } from '../store/sessionsStore';
+import { useTrainingPlansStore } from '../store/trainingPlansStore';
+import * as sessionFeedbackService from '../services/api/sessionFeedbackService';
+import TrainingPlansPanel from './admin/TrainingPlansPanel';
+import SessionFeedbackCell from '../components/SessionFeedbackCell';
 import { RESOURCE_CATEGORIES, useResourcesStore } from '../store/resourcesStore';
 import { useFeedbackStore } from '../store/feedbackStore';
 import { useAuditLogStore } from '../store/auditLogStore';
@@ -27,7 +31,7 @@ import FeedbackCard from '../components/FeedbackCard';
 import NotificationPanel, { categorize } from '../components/NotificationPanel';
 import ProfileDropdown from '../components/ProfileDropdown';
 import BatchRow from '../components/admin/BatchRow';
-import { formatDateTime, isRecentlyUpdated } from '../utils/dateUtils';
+import { formatDate, formatDateTime, isRecentlyUpdated } from '../utils/dateUtils';
 import { downloadTextFile } from '../utils/downloadFile';
 import { average } from '../utils/mathUtils';
 import GlobalSearch, { SearchItem } from '../components/GlobalSearch';
@@ -104,7 +108,9 @@ const REPORT_DEFS: ReportDef[] = [
 export default function AdminDashboardPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const initialTab = (location.state as { tab?: TabId } | null)?.tab;
+  const locationState = location.state as { tab?: TabId; expandBatchId?: string } | null;
+  const initialTab = locationState?.tab;
+  const initialExpandBatchId = locationState?.expandBatchId;
   const clearSession = useAuthStore((s) => s.clearSession);
   const { batches, fetchBatches, updateBatch, deleteBatch, createBatch } = useBatchesStore();
 
@@ -127,6 +133,10 @@ export default function AdminDashboardPage() {
   useEffect(() => {
     fetchFeedback();
   }, [fetchFeedback]);
+  const { trainingPlans, fetchTrainingPlans } = useTrainingPlansStore();
+  useEffect(() => {
+    fetchTrainingPlans();
+  }, [fetchTrainingPlans]);
   const { entries: auditEntries, logEvent } = useAuditLogStore();
   const { showToast } = useToastStore();
   const { announcements, postAnnouncement } = useAnnouncementsStore();
@@ -153,7 +163,6 @@ export default function AdminDashboardPage() {
   useClickOutside(notificationMenuRef, () => setNotificationOpen(false), notificationOpen);
   const [readLogIds, setReadLogIds] = useState<Set<string>>(new Set());
   const [chartParameter, setChartParameter] = useState('completion');
-  const [chartLabel, setChartLabel] = useState('Completion Rate - All 8 Active Batches');
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
 
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
@@ -171,7 +180,7 @@ export default function AdminDashboardPage() {
   const [batchPocFilter, setBatchPocFilter] = useState('All POCs');
   const [batchMonthFilter, setBatchMonthFilter] = useState('All Months');
   const [batchMinCompletion, setBatchMinCompletion] = useState(0);
-  const [expandedBatchId, setExpandedBatchId] = useState<string | null>(null);
+  const [expandedBatchId, setExpandedBatchId] = useState<string | null>(initialExpandBatchId ?? null);
   const [batchSort, setBatchSort] = useState<'program' | 'name' | 'trainees' | 'score' | 'completion'>('program');
   const [selectedBatchIds, setSelectedBatchIds] = useState<Set<string>>(new Set());
   const [resourceSearch, setResourceSearch] = useState('');
@@ -214,8 +223,13 @@ export default function AdminDashboardPage() {
   // Batch management
   const [bulkUploadModalOpen, setBulkUploadModalOpen] = useState(false);
   const [newBatchName, setNewBatchName] = useState('');
-  const [newBatchProgram, setNewBatchProgram] = useState<Batch['program']>('BA');
-  const [newBatchPoc, setNewBatchPoc] = useState('Srikar Kulkarni');
+  const [newBatchTrainingPlanId, setNewBatchTrainingPlanId] = useState('');
+  useEffect(() => {
+    if (!newBatchTrainingPlanId && trainingPlans.length > 0) setNewBatchTrainingPlanId(trainingPlans[0].id);
+  }, [trainingPlans, newBatchTrainingPlanId]);
+  // Trainer/POC is optional — the org's workflow is just Name + Training Plan + Start Date.
+  const [newBatchPoc, setNewBatchPoc] = useState('');
+  const [newBatchStartDate, setNewBatchStartDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [csvFileName, setCsvFileName] = useState('');
   const [csvRowCount, setCsvRowCount] = useState<number | null>(null);
 
@@ -233,13 +247,12 @@ export default function AdminDashboardPage() {
 
   // Assignments
   const [createAssignmentModalOpen, setCreateAssignmentModalOpen] = useState(false);
-  const [assignmentForm, setAssignmentForm] = useState({ title: '', batchIds: [] as string[], facilitator: 'Srikar Kulkarni', deadline: '', description: '' });
+  const [assignmentForm, setAssignmentForm] = useState({ title: '', agenda: '', batchIds: [] as string[], sessionId: '', deadline: '', description: '' });
   const [assignmentFile, setAssignmentFile] = useState<File | null>(null);
   const [assignmentFormError, setAssignmentFormError] = useState('');
   const [assignmentFormSaving, setAssignmentFormSaving] = useState(false);
   const [assignmentSearch, setAssignmentSearch] = useState('');
   const [assignmentStatusFilter, setAssignmentStatusFilter] = useState('All Statuses');
-  const [assignmentFacilitatorFilter, setAssignmentFacilitatorFilter] = useState('All Facilitators');
   const [assignmentBatchFilter, setAssignmentBatchFilter] = useState('All Batches');
   const [selectedAssignmentIds, setSelectedAssignmentIds] = useState<Set<string>>(new Set());
   const [assignmentPage, setAssignmentPage] = useState(1);
@@ -314,15 +327,14 @@ export default function AdminDashboardPage() {
     setNotificationOpen((open) => !open);
   }
 
-  function updateChartPreview(value: string) {
-    setChartParameter(value);
-    setChartLabel(`${CHART_LABEL_MAP[value]} - All 8 Active Batches`);
-  }
-
   // ---- Batch management actions ----
   function openBatchManage(batchId: string) {
     setSelectedBatchId(batchId);
     setBatchManageModalOpen(true);
+  }
+
+  function openTraineeProfile(batchId: string, traineeName: string) {
+    navigate(ROUTES.ADMIN_TRAINEE_PROFILE(traineeName), { state: { from: { batchId } } });
   }
 
   function openReschedule() {
@@ -453,18 +465,20 @@ export default function AdminDashboardPage() {
 
   async function executeOnboarding() {
     const rowCount = csvRowCount ?? 0;
+    const plan = trainingPlans.find((p) => p.id === newBatchTrainingPlanId);
     const batch = await createBatch({
-      name: newBatchName.trim() || `${newBatchProgram} New Batch`,
-      program: newBatchProgram,
-      track: 'BTech',
-      poc: newBatchPoc,
+      name: newBatchName.trim() || `${plan?.name ?? 'Training Plan'} New Batch`,
+      trainingPlanId: newBatchTrainingPlanId,
+      poc: newBatchPoc || undefined,
       traineeCount: rowCount,
-      startMonth: new Date().toLocaleString('en-US', { month: 'long' })
+      startDate: newBatchStartDate
     });
-    logEvent('Onboarding', `Automated Onboarding Engine created "${batch.name}" and dispatched ${rowCount} invitation emails.`);
-    showToast(`Batch created — ${rowCount} email invitations dispatched.`);
+    logEvent('Onboarding', `Training Plan automation generated "${batch.name}"'s full ~2-month schedule and dispatched ${rowCount} invitation emails.`);
+    showToast(`Batch created — full schedule generated automatically.`);
     setBulkUploadModalOpen(false);
     setNewBatchName('');
+    setNewBatchPoc('');
+    setNewBatchStartDate(new Date().toISOString().slice(0, 10));
     setCsvFileName('');
     setCsvRowCount(null);
   }
@@ -482,7 +496,7 @@ export default function AdminDashboardPage() {
       logEvent('Assignment', `"${assignment.title}" was created for ${assignment.batches.length} batch(es).`);
       showToast('Assignment created');
       setCreateAssignmentModalOpen(false);
-      setAssignmentForm({ title: '', batchIds: [], facilitator: 'Srikar Kulkarni', deadline: '', description: '' });
+      setAssignmentForm({ title: '', agenda: '', batchIds: [], sessionId: '', deadline: '', description: '' });
       setAssignmentFile(null);
     } catch (err) {
       setAssignmentFormError(err instanceof Error ? err.message : 'Unable to create assignment.');
@@ -657,13 +671,13 @@ export default function AdminDashboardPage() {
           const submitted = a.submissions.filter((s) => s.status === 'Completed').length;
           const late = a.submissions.filter((s) => s.status === 'Late').length;
           const pending = a.submissions.length - submitted - late;
-          return [a.title, batch?.name ?? a.batchId, a.facilitator, formatDateTime(a.deadline), effectiveStatus(a), submitted, pending, late];
+          return [a.title, batch?.name ?? a.batchId, a.trainingPlanName ?? '—', formatDate(a.deadline), effectiveStatus(a), submitted, pending, late];
         });
         const chart = assignments.filter((a) => inRange(a.deadline)).slice(0, 8).map((a) => {
           const pct = a.submissions.length > 0 ? Math.round((a.submissions.filter((s) => s.status === 'Completed').length / a.submissions.length) * 100) : 0;
           return { label: a.title, percent: pct, displayValue: `${pct}%`, color: 'bg-green-500' };
         });
-        return { title: 'Assignment Report', headers: ['Assignment', 'Batch', 'Facilitator', 'Deadline', 'Status', 'Submitted', 'Pending', 'Late'], rows, chart };
+        return { title: 'Assignment Report', headers: ['Assignment', 'Batch', 'Training Plan', 'Deadline', 'Status', 'Submitted', 'Pending', 'Late'], rows, chart };
       }
       case 'performance': {
         const rows = batches.map((b) => [b.name, b.program, b.poc, b.avgScore ?? '—', `${b.completion ?? 0}%`, `${b.attendanceRate ?? 0}%`]);
@@ -992,18 +1006,16 @@ export default function AdminDashboardPage() {
   const totalRead = announcements.reduce((sum, a) => sum + a.readByCount, 0);
   const totalUnread = Math.max(0, totalAudienceReached - totalRead);
 
-  const assignmentFacilitators = Array.from(new Set(assignments.map((a) => a.facilitator)));
   const filteredAssignments = useMemo(
     () =>
       assignments.filter((a) => {
         const q = assignmentSearch.trim().toLowerCase();
         const matchesSearch = q === '' || a.title.toLowerCase().includes(q);
         const matchesStatus = assignmentStatusFilter === 'All Statuses' || effectiveStatus(a) === assignmentStatusFilter;
-        const matchesFacilitator = assignmentFacilitatorFilter === 'All Facilitators' || a.facilitator === assignmentFacilitatorFilter;
         const matchesBatch = assignmentBatchFilter === 'All Batches' || a.batches.some((b) => b.name === assignmentBatchFilter);
-        return matchesSearch && matchesStatus && matchesFacilitator && matchesBatch;
+        return matchesSearch && matchesStatus && matchesBatch;
       }),
-    [assignments, assignmentSearch, assignmentStatusFilter, assignmentFacilitatorFilter, assignmentBatchFilter, batches]
+    [assignments, assignmentSearch, assignmentStatusFilter, assignmentBatchFilter, batches]
   );
   const ASSIGNMENT_PAGE_SIZE = 6;
   const assignmentPageCount = Math.max(1, Math.ceil(filteredAssignments.length / ASSIGNMENT_PAGE_SIZE));
@@ -1296,7 +1308,7 @@ export default function AdminDashboardPage() {
             <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6 mb-8">
               <div className="flex justify-between items-center mb-6">
                 <h3 className="font-bold text-lg text-gray-800">Batch Performance Comparison</h3>
-                <select value={chartParameter} onChange={(e) => updateChartPreview(e.target.value)} className="px-3 py-1.5 border rounded-lg text-sm outline-none bg-gray-50 focus:ring-2 focus:ring-blue-500">
+                <select value={chartParameter} onChange={(e) => setChartParameter(e.target.value)} className="px-3 py-1.5 border rounded-lg text-sm outline-none bg-gray-50 focus:ring-2 focus:ring-blue-500">
                   <option value="completion">Completion Rate</option>
                   <option value="avgscore">Average Score</option>
                   <option value="attendance">Attendance Rate</option>
@@ -1305,7 +1317,7 @@ export default function AdminDashboardPage() {
                 </select>
               </div>
               <div className="h-80 w-full bg-gray-50 border border-dashed border-gray-300 rounded flex flex-col items-center justify-center text-gray-400 p-6 text-center">
-                <div className="text-sm font-medium text-gray-500 mb-4">{chartLabel}</div>
+                <div className="text-sm font-medium text-gray-500 mb-4">{CHART_LABEL_MAP[chartParameter]} - All {batches.length} Active Batches</div>
                 <div className="w-full max-w-2xl space-y-3">
                   {batches.map((b, i) => {
                     const { percent, label } = getChartBarValue(b, chartParameter);
@@ -1418,6 +1430,7 @@ export default function AdminDashboardPage() {
                           onToggleExpand={() => setExpandedBatchId(expandedBatchId === b.id ? null : b.id)}
                           onToggleSelect={() => toggleBatchSelected(b.id)}
                           onManage={() => openBatchManage(b.id)}
+                          onSelectTrainee={(name) => openTraineeProfile(b.id, name)}
                         />
                       ))
                     : programsInOrder.map((program) => (
@@ -1436,6 +1449,7 @@ export default function AdminDashboardPage() {
                                 onToggleExpand={() => setExpandedBatchId(expandedBatchId === b.id ? null : b.id)}
                                 onToggleSelect={() => toggleBatchSelected(b.id)}
                                 onManage={() => openBatchManage(b.id)}
+                                onSelectTrainee={(name) => openTraineeProfile(b.id, name)}
                               />
                             ))}
                         </Fragment>
@@ -1443,6 +1457,11 @@ export default function AdminDashboardPage() {
                 </tbody>
               </table>
             </div>
+          </div>
+
+          {/* Training Plans Tab */}
+          <div className={hiddenUnless('trainingPlans')}>
+            <TrainingPlansPanel />
           </div>
 
           {/* Automated Report Generation Tab */}
@@ -1678,10 +1697,6 @@ export default function AdminDashboardPage() {
                   <option>Closed</option>
                   <option>Overdue</option>
                 </select>
-                <select value={assignmentFacilitatorFilter} onChange={(e) => setAssignmentFacilitatorFilter(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg outline-none text-sm bg-white">
-                  <option>All Facilitators</option>
-                  {assignmentFacilitators.map((f) => <option key={f}>{f}</option>)}
-                </select>
                 <select value={assignmentBatchFilter} onChange={(e) => setAssignmentBatchFilter(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg outline-none text-sm bg-white">
                   <option>All Batches</option>
                   {batches.map((b) => <option key={b.id}>{b.name}</option>)}
@@ -1717,7 +1732,7 @@ export default function AdminDashboardPage() {
                   },
                   { key: 'title', label: 'Title' },
                   { key: 'batch', label: 'Batch' },
-                  { key: 'facilitator', label: 'Facilitator' },
+                  { key: 'session', label: 'Related Session' },
                   { key: 'deadline', label: 'Deadline' },
                   { key: 'status', label: 'Status' },
                   { key: 'progress', label: 'Submitted / Pending / Late' },
@@ -1741,8 +1756,8 @@ export default function AdminDashboardPage() {
                           <AssignmentTitleLink id={a.id} title={a.title} />
                         </td>
                         <td className="px-6 py-4 text-gray-600"><AssignmentBatchesCell batches={a.batches} /></td>
-                        <td className="px-6 py-4 text-gray-600">{a.facilitator}</td>
-                        <td className="px-6 py-4 text-gray-600">{formatDateTime(a.deadline)}</td>
+                        <td className="px-6 py-4 text-gray-600">{a.sessionTitle ?? '—'}</td>
+                        <td className="px-6 py-4 text-gray-600">{formatDate(a.deadline)}</td>
                         <td className="px-6 py-4"><StatusBadge status={effectiveStatus(a)} /></td>
                         <td className="px-6 py-4 w-56">
                           <div className="flex items-center justify-between text-[11px] text-gray-500 font-bold mb-1">
@@ -1888,6 +1903,14 @@ export default function AdminDashboardPage() {
                               <span className="text-[11px] text-gray-400">No link set</span>
                             )}
                           </div>
+                          <div className="flex items-center gap-3 mt-2 text-[11px] text-gray-500">
+                            <span>Assignment: {s.relatedAssignmentTitle ?? '—'}</span>
+                            <SessionFeedbackCell
+                              session={s}
+                              canManage
+                              onChange={(sessionId, feedbackForm) => updateSession(sessionId, { feedbackForm })}
+                            />
+                          </div>
                           {(attendancePercent !== null || isEditingAttendance) && (
                             <div className="mt-2 flex items-center gap-3 text-xs">
                               {!isEditingAttendance ? (
@@ -2019,7 +2042,32 @@ export default function AdminDashboardPage() {
           {/* Feedback Tab (Global Read View) */}
           <div className={hiddenUnless('feedback')}>
             <Breadcrumbs trail={['Admin', 'Feedback']} />
-            <h2 className="text-2xl font-bold mb-6">Global Trainee Feedback Reviews</h2>
+            <h2 className="text-2xl font-bold mb-1">Session Feedback</h2>
+            <p className="text-gray-500 text-sm mb-6">Attach, copy, and edit each session's external feedback-form link, and track submissions.</p>
+
+            <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6 mb-10">
+              {sessions.length === 0 ? (
+                <EmptyState title="No sessions yet" icon="calendar" />
+              ) : (
+                <div className="space-y-2">
+                  {sessions.map((s) => {
+                    const batch = batches.find((b) => b.id === s.batchId);
+                    return (
+                      <div key={s.id} className="flex items-center justify-between px-4 py-3 border border-gray-200 rounded-lg">
+                        <div>
+                          <div className="text-sm font-medium text-gray-800">{s.title}</div>
+                          <div className="text-xs text-gray-400">{batch?.name ?? s.batchId}</div>
+                        </div>
+                        <SessionFeedbackCell session={s} canManage onChange={(sessionId, feedbackForm) => updateSession(sessionId, { feedbackForm })} />
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <h2 className="text-xl font-bold text-gray-500 mb-1">Facilitator Performance Feedback</h2>
+            <p className="text-gray-400 text-sm mb-6">Trainee/facilitator ratings — unrelated to Session Feedback above.</p>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
               <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-150">
@@ -2113,7 +2161,9 @@ export default function AdminDashboardPage() {
           <button onClick={() => setBulkUploadModalOpen(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded" aria-label="Close"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
 
           <h2 className="text-2xl font-black text-gray-900 mb-2">Create Batch</h2>
-          <p className="text-gray-500 text-sm mb-6">Optionally upload a CSV file containing trainee details to automatically enroll them and dispatch secure email invitations.</p>
+          <p className="text-gray-500 text-sm mb-6">
+            Name it, pick a Training Plan, and set a start date — the full ~2-month schedule (sessions, assignments, resources, announcements, feedback links) is generated automatically.
+          </p>
 
           <div className="space-y-5">
             <div>
@@ -2124,39 +2174,47 @@ export default function AdminDashboardPage() {
                 value={newBatchName}
                 onChange={(e) => setNewBatchName(e.target.value)}
                 className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 font-medium"
-                placeholder="e.g. Enterprise Fullstack 2026"
+                placeholder="e.g. BA BTech - July 2026"
               />
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label htmlFor="admin-new-batch-program" className="block text-sm font-bold text-gray-700 mb-1">Branch</label>
+                <label htmlFor="admin-new-batch-plan" className="block text-sm font-bold text-gray-700 mb-1">Training Plan</label>
                 <select
-                  id="admin-new-batch-program"
-                  value={newBatchProgram}
-                  onChange={(e) => setNewBatchProgram(e.target.value as Batch['program'])}
+                  id="admin-new-batch-plan"
+                  value={newBatchTrainingPlanId}
+                  onChange={(e) => setNewBatchTrainingPlanId(e.target.value)}
                   className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 font-medium"
                 >
-                  <option value="BA">Business Analytics</option>
-                  <option value="Data Engineering">Data Engineering</option>
-                  <option value="AI ML">AI / ML</option>
-                  <option value="UI/UX">UI / UX</option>
+                  {trainingPlans.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
               </div>
               <div>
-                <label htmlFor="admin-new-batch-poc" className="block text-sm font-bold text-gray-700 mb-1">Assign POC</label>
-                <select
-                  id="admin-new-batch-poc"
-                  value={newBatchPoc}
-                  onChange={(e) => setNewBatchPoc(e.target.value)}
+                <label htmlFor="admin-new-batch-start-date" className="block text-sm font-bold text-gray-700 mb-1">Start Date</label>
+                <input
+                  id="admin-new-batch-start-date"
+                  type="date"
+                  value={newBatchStartDate}
+                  onChange={(e) => setNewBatchStartDate(e.target.value)}
                   className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 font-medium"
-                >
-                  {pocOptions.map((poc) => <option key={poc}>{poc}</option>)}
-                </select>
+                />
               </div>
+            </div>
+            <div>
+              <label htmlFor="admin-new-batch-poc" className="block text-sm font-bold text-gray-700 mb-1">Assign POC / Trainer (optional)</label>
+              <select
+                id="admin-new-batch-poc"
+                value={newBatchPoc}
+                onChange={(e) => setNewBatchPoc(e.target.value)}
+                className="w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+              >
+                <option value="">No trainer assigned yet</option>
+                {pocOptions.map((poc) => <option key={poc}>{poc}</option>)}
+              </select>
             </div>
 
             <div className="mt-4">
-              <label className="block text-sm font-bold text-gray-700 mb-2">Upload Trainee Roster (CSV)</label>
+              <label className="block text-sm font-bold text-gray-700 mb-2">Upload Trainee Roster (CSV, optional)</label>
               <label className="border-2 border-dashed border-blue-300 bg-blue-50/50 rounded-xl p-8 flex flex-col items-center justify-center cursor-pointer hover:bg-blue-50 transition-colors">
                 <svg className="w-10 h-10 text-blue-500 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
                 <span className="font-bold text-blue-700">{csvFileName || 'Click to upload CSV'}</span>
@@ -2192,16 +2250,27 @@ export default function AdminDashboardPage() {
               <label htmlFor="admin-assignment-title" className="block text-sm font-medium text-gray-700 mb-1">Title</label>
               <input id="admin-assignment-title" type="text" value={assignmentForm.title} onChange={(e) => setAssignmentForm({ ...assignmentForm, title: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500" />
             </div>
+            <div>
+              <label htmlFor="admin-assignment-agenda" className="block text-sm font-medium text-gray-700 mb-1">Agenda / Objective</label>
+              <input
+                id="admin-assignment-agenda"
+                type="text"
+                value={assignmentForm.agenda}
+                onChange={(e) => setAssignmentForm({ ...assignmentForm, agenda: e.target.value })}
+                placeholder="e.g. Requirement Gathering, SQL Basics"
+                className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
             <BatchMultiSelect
               batches={batches}
               selectedIds={assignmentForm.batchIds}
               onChange={(batchIds) => setAssignmentForm({ ...assignmentForm, batchIds })}
             />
             <div>
-              <label htmlFor="admin-assignment-facilitator" className="block text-sm font-medium text-gray-700 mb-1">Session Facilitator</label>
-              <select id="admin-assignment-facilitator" value={assignmentForm.facilitator} onChange={(e) => setAssignmentForm({ ...assignmentForm, facilitator: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none bg-white">
-                {pocOptions.map((poc) => <option key={poc}>{poc}</option>)}
-                <option>External Guest Facilitator</option>
+              <label htmlFor="admin-assignment-session" className="block text-sm font-medium text-gray-700 mb-1">Related Session (optional)</label>
+              <select id="admin-assignment-session" value={assignmentForm.sessionId} onChange={(e) => setAssignmentForm({ ...assignmentForm, sessionId: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none bg-white">
+                <option value="">No related session</option>
+                {sessions.filter((s) => assignmentForm.batchIds.includes(s.batchId)).map((s) => <option key={s.id} value={s.id}>{s.title}</option>)}
               </select>
             </div>
             <div>

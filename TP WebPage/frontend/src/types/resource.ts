@@ -10,4 +10,6 @@ export interface Resource {
   version: string;
   downloadCount: number;
   fileSize: string;
+  /** Set for resources copied from a Training Plan template (a shared link, not an uploaded file). */
+  externalUrl: string | null;
 }

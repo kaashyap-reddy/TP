@@ -14,6 +14,8 @@ const AssignmentDetailPage = lazy(() => import('./pages/AssignmentDetailPage'));
 const AccountSettingsPage = lazy(() => import('./pages/AccountSettingsPage'));
 const TraineeProfilePage = lazy(() => import('./pages/TraineeProfilePage'));
 const FacilitatorBatchDetailPage = lazy(() => import('./pages/FacilitatorBatchDetailPage'));
+const TrainingPlanDetailPage = lazy(() => import('./pages/admin/TrainingPlanDetailPage'));
+const AdminTraineeProfilePage = lazy(() => import('./pages/admin/AdminTraineeProfilePage'));
 
 function RouteLoadingFallback() {
   return (
@@ -74,6 +76,22 @@ export default function App() {
             element={
               <RequireAuth role="facilitator">
                 <FacilitatorBatchDetailPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path={ROUTE_PATTERNS.ADMIN_TRAINING_PLAN_DETAIL}
+            element={
+              <RequireAuth role="admin">
+                <TrainingPlanDetailPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path={ROUTE_PATTERNS.ADMIN_TRAINEE_PROFILE}
+            element={
+              <RequireAuth role="admin">
+                <AdminTraineeProfilePage />
               </RequireAuth>
             }
           />

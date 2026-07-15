@@ -12,7 +12,6 @@ export interface Submission {
   traineeId?: string;
   /** The trainee's enrolled batch for this row — present on roster rows from an assignment's submissions list. */
   batchId?: string;
-  batchName?: string;
   /** The trainee's current submitted file, if any — absent means "Not submitted". */
   attachmentId?: string;
   attachmentFilename?: string;
@@ -31,7 +30,13 @@ export interface Assignment {
   /** Primary/first batch — kept for callers that only need one; see `batches` for the full set. */
   batchId: string;
   batches: AssignmentBatchRef[];
-  facilitator: string;
+  /** The session this assignment is tied to, if any — assignments belong to a Training Plan, not an individual facilitator. */
+  sessionId: string | null;
+  sessionTitle: string | null;
+  /** The Training Plan of the assignment's primary batch, if it has one. */
+  trainingPlanName: string | null;
+  /** What the assignment is meant to achieve (e.g. "Requirement Gathering", "SQL Basics"). */
+  agenda: string;
   deadline: string;
   description: string;
   status: AssignmentStatus;

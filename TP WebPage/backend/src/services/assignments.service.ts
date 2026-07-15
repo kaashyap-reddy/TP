@@ -13,16 +13,25 @@ import { createAssignmentSchema, listAssignmentsQuerySchema, updateAssignmentSch
 // batches this nested include into one extra query across the whole page of results, not one
 // query per assignment, which is what previously made the frontend do N extra HTTP round-trips
 // (GET /assignments/:id/submissions for every assignment) after listing.
+// `facilitator` is intentionally NOT included here — assignments belong to a Training Plan, not
+// an individual facilitator, so the API no longer surfaces one in list/detail responses (the
+// underlying `facilitatorId` column still exists and is read directly off `existing`/`assignment`
+// scalars for the assertOwnerOrAdmin() ownership check below, which doesn't need the join).
 const include = {
-  facilitator: { select: { id: true, name: true, email: true } },
-  batch: { select: { id: true, name: true, code: true } },
-  batches: { include: { batch: { select: { id: true, name: true, code: true } } } },
+  batch: { select: { id: true, name: true, code: true, trainingPlan: { select: { id: true, name: true } } } },
+  batches: {
+    include: { batch: { select: { id: true, name: true, code: true, trainingPlan: { select: { id: true, name: true } } } } }
+  },
+  session: { select: { id: true, title: true } },
   submissions: { include: { trainee: { select: { id: true, name: true, email: true } } } }
 } satisfies Prisma.AssignmentInclude;
 
 type AssignmentWithIncludes = Prisma.AssignmentGetPayload<{ include: typeof include }>;
 
-function assertOwnerOrAdmin(actor: AuthenticatedUser, facilitatorId: string) {
+// facilitatorId is nullable — assignments generated from a Training Plan template usually have
+// no individual owner. A null facilitatorId never matches an actor, so only admin can manage an
+// unowned assignment; once a trainer is set, that facilitator (or admin) can.
+function assertOwnerOrAdmin(actor: AuthenticatedUser, facilitatorId: string | null) {
   if (actor.role === 'admin') return;
   if (actor.role === 'facilitator' && actor.id === facilitatorId) return;
   throw ApiError.forbidden('You do not own this assignment.');
@@ -87,10 +96,12 @@ export async function create(
     const assignment = await prisma.assignment.create({
       data: {
         title: input.title,
+        agenda: input.agenda,
         description: input.description,
         deadline: input.deadline,
         status: input.status,
         facilitatorId: actor.id,
+        sessionId: input.sessionId,
         // Primary/first batch — see the schema comment on Assignment.batchId.
         batchId: batchIds[0],
         batches: { create: batchIds.map((batchId) => ({ batchId })) },
@@ -134,9 +145,11 @@ export async function update(
 
   const data: Prisma.AssignmentUpdateInput = {
     ...(input.title !== undefined ? { title: input.title } : {}),
+    ...(input.agenda !== undefined ? { agenda: input.agenda } : {}),
     ...(input.description !== undefined ? { description: input.description } : {}),
     ...(input.deadline !== undefined ? { deadline: input.deadline } : {}),
     ...(input.status !== undefined ? { status: input.status } : {}),
+    ...(input.sessionId !== undefined ? { sessionId: input.sessionId } : {}),
     ...(batchIds ? { batchId: batchIds[0] } : {}),
     ...(newStorageKey
       ? {

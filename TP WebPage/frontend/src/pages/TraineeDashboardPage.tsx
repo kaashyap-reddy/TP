@@ -13,6 +13,7 @@ import { logout } from '../services/api/authService';
 import { assignmentAttachmentUrl } from '../services/api/assignmentService';
 import { submissionAttachmentUrl } from '../services/api/submissionService';
 import { findUserEmailByName } from '../services/api/userService';
+import * as sessionFeedbackService from '../services/api/sessionFeedbackService';
 import { formatDate, formatDateTime, isRecentlyUpdated } from '../utils/dateUtils';
 import { average } from '../utils/mathUtils';
 import { useClickOutside } from '../hooks/useClickOutside';
@@ -180,7 +181,7 @@ export default function TraineeDashboardPage() {
 
   const facilitatorContacts = useMemo(
     () =>
-      Array.from(new Set(batches.map((b) => b.poc))).map((name) => {
+      Array.from(new Set(batches.map((b) => b.poc).filter((name): name is string => name.trim() !== ''))).map((name) => {
         const theirBatches = batches.filter((b) => b.poc === name);
         const lastSession = sessions.filter((s) => s.facilitator === name).slice(-1)[0];
         return {
@@ -210,6 +211,29 @@ export default function TraineeDashboardPage() {
     const myBatchIds = new Set(batches.map((b) => b.id));
     return sessions.filter((s) => myBatchIds.has(s.batchId));
   }, [sessions, batches]);
+
+  // Which of my completed sessions' feedback forms I've already submitted — fetched once per
+  // session that has a form attached, so the "Submit Session Feedback" button can hide itself.
+  const [mySubmittedFormSessionIds, setMySubmittedFormSessionIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    const sessionsWithForms = mySessions.filter((s) => s.status === 'Completed' && s.feedbackForm);
+    Promise.all(
+      sessionsWithForms.map((s) =>
+        sessionFeedbackService.getSessionFeedbackForm(s.id).then((form) => (form?.mySubmitted ? s.id : null))
+      )
+    ).then((ids) => setMySubmittedFormSessionIds(new Set(ids.filter((id): id is string => id !== null))));
+  }, [mySessions]);
+
+  async function handleSubmitSessionFeedback(session: Session) {
+    if (!session.feedbackForm) return;
+    window.open(session.feedbackForm.formUrl, '_blank', 'noopener,noreferrer');
+    try {
+      await sessionFeedbackService.submitSessionFeedback(session.id);
+      setMySubmittedFormSessionIds((prev) => new Set(prev).add(session.id));
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Unable to record feedback submission.', 'error');
+    }
+  }
 
   function openSubmitModal(assignmentId: string, batchId: string, isResubmit: boolean) {
     setSubmitTarget({ assignmentId, batchId, isResubmit });
@@ -611,8 +635,25 @@ export default function TraineeDashboardPage() {
                         <div className="flex-1">
                           <div className="font-bold text-gray-800">{session.title}</div>
                           <div className="text-sm text-gray-500 mt-1">{session.time} • Facilitator: {session.facilitator}</div>
+                          <div className="text-xs text-gray-400 mt-1">Assignment: {session.relatedAssignmentTitle ?? '—'}</div>
                           {isUpcoming && (
                             <button onClick={() => handleJoinMeeting(session)} className="mt-2 text-sm bg-blue-600 text-white px-4 py-1.5 rounded-lg hover:bg-blue-700 transition-colors">Join Meeting</button>
+                          )}
+                          {session.status === 'Completed' && (
+                            session.feedbackForm ? (
+                              mySubmittedFormSessionIds.has(session.id) ? (
+                                <span className="mt-2 inline-block text-xs font-bold text-green-700 bg-green-50 border border-green-200 px-3 py-1.5 rounded-lg">Feedback Submitted</span>
+                              ) : (
+                                <button
+                                  onClick={() => handleSubmitSessionFeedback(session)}
+                                  className="mt-2 text-sm bg-green-600 text-white px-4 py-1.5 rounded-lg hover:bg-green-700 transition-colors"
+                                >
+                                  Submit Session Feedback
+                                </button>
+                              )
+                            ) : (
+                              <span className="mt-2 inline-block text-xs text-gray-400">Session Feedback: Not available</span>
+                            )
                           )}
                         </div>
                         <StatusBadge status={session.status} />
@@ -704,11 +745,45 @@ export default function TraineeDashboardPage() {
 
           {/* Grades & Feedback Tab */}
           <div className={hiddenUnless('grades')}>
-            <PageHeader title="Feedback & Grades" wrap={false}>
-              <SearchInput value={feedbackSearch} onChange={setFeedbackSearch} placeholder="Search feedback..." />
-            </PageHeader>
+            <PageHeader title="My Session Feedback" wrap={false} />
 
-            <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6 mb-8">
+            <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden mb-10">
+              <div className="p-6 space-y-3">
+                {mySessions.filter((s) => s.feedbackForm).length === 0 ? (
+                  <EmptyState title="No session feedback forms yet" message="Forms appear here once your facilitator attaches them to a session." icon="inbox" />
+                ) : (
+                  mySessions
+                    .filter((s) => s.feedbackForm)
+                    .map((s) => {
+                      const submitted = mySubmittedFormSessionIds.has(s.id);
+                      return (
+                        <div key={s.id} className="flex items-center justify-between px-4 py-3 border border-gray-200 rounded-lg">
+                          <div>
+                            <div className="text-sm font-medium text-gray-800">{s.title}</div>
+                            <div className="text-xs text-gray-400">{s.date}</div>
+                          </div>
+                          {submitted ? (
+                            <span className="text-xs font-bold text-green-700 bg-green-50 border border-green-200 px-3 py-1.5 rounded-lg">Submitted</span>
+                          ) : (
+                            <button
+                              onClick={() => handleSubmitSessionFeedback(s)}
+                              className="text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-lg transition-colors"
+                            >
+                              Open Feedback Form
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })
+                )}
+              </div>
+            </div>
+
+            <h2 className="text-xl font-bold text-gray-500 mb-1">Facilitator Feedback</h2>
+            <p className="text-gray-400 text-sm mb-6">Ratings about/from your facilitator — unrelated to Session Feedback above.</p>
+            <SearchInput value={feedbackSearch} onChange={setFeedbackSearch} placeholder="Search feedback..." />
+
+            <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6 mb-8 mt-4">
               <h3 className="font-bold text-lg mb-4">Give Feedback to Facilitator</h3>
               {myFacilitators.length === 0 ? (
                 <EmptyState title="No facilitator assigned yet" message="You'll be able to give feedback once you're enrolled in a batch." icon="inbox" />

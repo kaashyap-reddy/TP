@@ -1,4 +1,5 @@
 import type { MeetingPlatform, Session, SessionStatus } from '../../types/session';
+import type { SessionFeedbackAudience } from '../../types/sessionFeedback';
 import { formatTimeRange, parseTimeRange } from '../../utils/sessionTime';
 import { api } from './apiClient';
 
@@ -23,10 +24,20 @@ interface ApiSession {
   batchId: string;
   title: string;
   scheduledAt: string;
+  durationMinutes: number;
   platform: ApiPlatform;
   meetingLink: string | null;
   status: SessionStatus;
   facilitator: { id: string; name: string; email: string };
+  relatedAssignments: { id: string; title: string }[];
+  feedbackForm: {
+    id: string;
+    name: string;
+    description: string;
+    formUrl: string;
+    audience: SessionFeedbackAudience;
+    _count: { submissions: number };
+  } | null;
 }
 
 interface PaginatedResponse<T> {
@@ -34,7 +45,7 @@ interface PaginatedResponse<T> {
   pagination: { page: number; pageSize: number; total: number; totalPages: number };
 }
 
-/** The API stores a single instant (scheduledAt); the UI displays a start-end range. Combine date + range-start on write. */
+/** The API stores a single instant (scheduledAt) plus a duration; the UI displays a start-end range. Combine date + range-start on write. */
 function toScheduledAt(dateStr: string, timeStr: string): string {
   const { start } = parseTimeRange(timeStr);
   const base = new Date(dateStr);
@@ -43,17 +54,21 @@ function toScheduledAt(dateStr: string, timeStr: string): string {
   return base.toISOString();
 }
 
-/** No end-time field exists server-side, so the displayed range defaults to a 60-minute block on reload. */
-function fromScheduledAt(iso: string): { date: string; time: string } {
+function toDurationMinutes(timeStr: string): number {
+  const { start, end } = parseTimeRange(timeStr);
+  return Math.max(1, end - start);
+}
+
+function fromScheduledAt(iso: string, durationMinutes: number): { date: string; time: string } {
   const scheduled = new Date(iso);
   const date = scheduled.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   const start = scheduled.getHours() * 60 + scheduled.getMinutes();
-  const time = formatTimeRange(start, start + 60);
+  const time = formatTimeRange(start, start + durationMinutes);
   return { date, time };
 }
 
 function toFrontendSession(apiSession: ApiSession): Session {
-  const { date, time } = fromScheduledAt(apiSession.scheduledAt);
+  const { date, time } = fromScheduledAt(apiSession.scheduledAt, apiSession.durationMinutes);
   return {
     id: apiSession.id,
     title: apiSession.title,
@@ -66,7 +81,19 @@ function toFrontendSession(apiSession: ApiSession): Session {
     status: apiSession.status,
     // No aggregate-attendance field server-side (attendance is per-trainee); overlaid client-side by the store.
     presentCount: null,
-    absentCount: null
+    absentCount: null,
+    relatedAssignmentId: apiSession.relatedAssignments?.[0]?.id ?? null,
+    relatedAssignmentTitle: apiSession.relatedAssignments?.[0]?.title ?? null,
+    feedbackForm: apiSession.feedbackForm
+      ? {
+          id: apiSession.feedbackForm.id,
+          name: apiSession.feedbackForm.name,
+          description: apiSession.feedbackForm.description,
+          formUrl: apiSession.feedbackForm.formUrl,
+          audience: apiSession.feedbackForm.audience,
+          submittedCount: apiSession.feedbackForm._count.submissions
+        }
+      : null
   };
 }
 
@@ -75,13 +102,17 @@ export async function listSessions(filters?: { batchId?: string }): Promise<Sess
   return res.data.map(toFrontendSession);
 }
 
-export type CreateSessionInput = Omit<Session, 'id' | 'presentCount' | 'absentCount'>;
+export type CreateSessionInput = Omit<
+  Session,
+  'id' | 'presentCount' | 'absentCount' | 'relatedAssignmentId' | 'relatedAssignmentTitle' | 'feedbackForm'
+>;
 
 export async function createSession(input: CreateSessionInput): Promise<Session> {
   const created = await api.post<{ session: ApiSession }>('/sessions', {
     batchId: input.batchId,
     title: input.title,
     scheduledAt: toScheduledAt(input.date, input.time),
+    durationMinutes: toDurationMinutes(input.time),
     platform: PLATFORM_TO_API[input.platform],
     meetingLink: input.link || undefined,
     status: input.status
@@ -98,6 +129,7 @@ export async function updateSession(id: string, changes: Partial<Session>): Prom
   if (changes.status !== undefined) patch.status = changes.status;
   if (changes.date !== undefined && changes.time !== undefined) {
     patch.scheduledAt = toScheduledAt(changes.date, changes.time);
+    patch.durationMinutes = toDurationMinutes(changes.time);
   }
 
   if (Object.keys(patch).length === 0) {

@@ -8,7 +8,20 @@
 // in-memory module state below) resets on reload. This is a presentation aid, not a persistence
 // layer: don't rely on edits made during a demo surviving a refresh.
 import type { Role } from '../../types/role';
-import { DEMO_ASSIGNMENTS, DEMO_BATCHES, DEMO_FEEDBACK, DEMO_RESOURCES, DEMO_SESSIONS, DEMO_USERS, type DemoResource, type DemoSubmission } from './demoData';
+import {
+  DEMO_ASSIGNMENTS,
+  DEMO_BATCHES,
+  DEMO_FEEDBACK,
+  DEMO_RESOURCES,
+  DEMO_SESSIONS,
+  DEMO_TRAINING_PLANS,
+  DEMO_USERS,
+  nthWorkingDay,
+  type DemoResource,
+  type DemoSession,
+  type DemoSubmission,
+  type DemoTrainingPlanRef
+} from './demoData';
 
 const MODE_KEY = 'tp-demo-mode';
 const EMAIL_KEY = 'tp-demo-email';
@@ -48,6 +61,9 @@ let assignments = clone(DEMO_ASSIGNMENTS);
 let sessions = clone(DEMO_SESSIONS);
 let resources = clone(DEMO_RESOURCES);
 let feedback = clone(DEMO_FEEDBACK);
+const trainingPlans = clone(DEMO_TRAINING_PLANS);
+// submitterId — the trainee OR facilitator who submitted (a form's audience can target either).
+let sessionFeedbackSubmissions: { formId: string; submitterId: string }[] = [];
 let idCounter = 1000;
 
 function clone<T>(value: T): T {
@@ -61,6 +77,28 @@ function nextId(prefix: string): string {
 
 function paginated<T>(items: T[]) {
   return { data: items, pagination: { page: 1, pageSize: items.length, total: items.length, totalPages: 1 } };
+}
+
+// A session's embedded feedback form shouldn't leak to a role it isn't meant for — e.g. a
+// Facilitators-only form showing up (and being usable) on a trainee's calendar. Admin and the
+// session's owning facilitator always see it; everyone else only sees it if the form's audience
+// actually includes their role. Mirrors sessions.service.ts's withFeedbackFormVisibility() and
+// sessionFeedback.service.ts's getForSession() on the real backend.
+function withFeedbackFormVisibility(session: DemoSession): DemoSession {
+  if (!session.feedbackForm) return session;
+  const currentUser = currentDemoUser();
+  const isManager = currentUser.role === 'admin' || (currentUser.role === 'facilitator' && currentUser.id === session.facilitator?.id);
+  if (isManager) return session;
+  if (currentUser.role === 'trainee' && session.feedbackForm.audience === 'Facilitators') return { ...session, feedbackForm: null };
+  if (currentUser.role === 'facilitator' && session.feedbackForm.audience === 'Trainees') return { ...session, feedbackForm: null };
+  return session;
+}
+
+/** Whether this role is a legitimate respondent for a form with this audience — mirrors sessionFeedback.service.ts's isRespondent(). */
+function isRespondentFor(role: string, audience: string): boolean {
+  if (role === 'trainee') return audience === 'Trainees' || audience === 'Both';
+  if (role === 'facilitator') return audience === 'Facilitators' || audience === 'Both';
+  return false;
 }
 
 function notFound(): never {
@@ -110,14 +148,20 @@ function parseBatchIds(raw: unknown): string[] {
 }
 
 /** Resolves batchIds to the same `{ batchId, batches }` shape the real backend serializes assignments with. */
-function resolveAssignmentBatches(batchIds: string[]): { batchId: string; batches: { id: string; name: string; code: string }[] } {
+function resolveAssignmentBatches(
+  batchIds: string[]
+): { batchId: string; batches: { id: string; name: string; code: string; trainingPlan: DemoTrainingPlanRef }[] } {
   const resolved = batchIds
     .map((id) => batches.find((x) => x.id === id))
     .filter((x): x is (typeof batches)[number] => x !== undefined);
   return {
     batchId: resolved[0]?.id ?? '',
-    batches: resolved.map((b) => ({ id: b.id, name: b.name, code: b.code }))
+    batches: resolved.map((b) => ({ id: b.id, name: b.name, code: b.code, trainingPlan: b.trainingPlan }))
   };
+}
+
+function deriveProgramTrack(planCode: string): { program: string; track: string } {
+  return { program: 'BA', track: planCode.toLowerCase().includes('mba') ? 'MBA' : 'BTech' };
 }
 
 export function handleDemoRequest(method: Method, path: string, body: unknown, query?: Record<string, unknown>): unknown {
@@ -174,20 +218,115 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
     return paginated(results);
   }
   if (method === 'POST' && path === '/batches') {
+    const plan = trainingPlans.find((p) => p.id === b.trainingPlanId);
+    if (!plan) {
+      const err = new Error('No such training plan.') as Error & { status?: number };
+      err.status = 400;
+      throw err;
+    }
+    const { program, track } = deriveProgramTrack(plan.code);
+    // Trainer is optional, same as the real backend — only look one up if the Admin picked one.
+    const facilitator = b.facilitatorId ? facilitatorRefFor(b.facilitatorId as string) : null;
+    const actor = currentDemoUser();
+    const startDate = b.startMonth ? new Date(b.startMonth as string) : new Date();
+
+    // "Approximately 2 months" ends up being however long the generated schedule actually runs.
+    const lastSessionDayOffset = plan.sessions.reduce((max, s) => Math.max(max, s.dayOffset), -1);
+    const endDate =
+      lastSessionDayOffset >= 0
+        ? nthWorkingDay(startDate, lastSessionDayOffset).toISOString()
+        : new Date(startDate.getTime() + plan.durationMonths * 30 * 24 * 60 * 60 * 1000).toISOString();
+
     const created = {
       id: nextId('demo-batch'),
       code: String(b.code ?? nextId('batch')),
       name: String(b.name ?? 'New Batch'),
-      program: String(b.program ?? 'BA'),
-      track: String(b.track ?? 'BTech'),
+      program,
+      track,
       status: String(b.status ?? 'Upcoming'),
-      startMonth: (b.startMonth as string) ?? null,
-      endDate: (b.endDate as string) ?? null,
-      facilitator: facilitatorRefFor(b.facilitatorId as string | undefined),
+      startMonth: startDate.toISOString(),
+      endDate,
+      facilitator,
+      trainingPlan: { id: plan.id, code: plan.code, name: plan.name },
       members: [] as string[],
       metrics: { traineeCount: 0, avgScore: null, completionPct: null, attendanceRate: null, submissionRate: null, feedbackRating: null }
     };
     batches = [created, ...batches];
+
+    // Mirrors the real Training Plan automation: instantiate the plan's ~42 sessions (skipping
+    // weekends), assignment schedule, resources, and feedback links onto this new batch
+    // immediately — the same behavior backend's batches.service.ts create() transaction produces.
+    const sessionIdByTemplateId = new Map<string, string>();
+
+    for (const templateSession of plan.sessions) {
+      const scheduledAt = new Date(nthWorkingDay(startDate, templateSession.dayOffset).getTime() + templateSession.startMinute * 60 * 1000).toISOString();
+      const newSession: DemoSession = {
+        id: nextId('demo-session'),
+        batchId: created.id,
+        title: templateSession.title,
+        scheduledAt,
+        durationMinutes: templateSession.endMinute - templateSession.startMinute,
+        platform: templateSession.platform,
+        meetingLink: null,
+        status: 'Upcoming',
+        facilitator,
+        relatedAssignments: [],
+        feedbackForm: templateSession.feedbackFormUrl
+          ? {
+              id: nextId('demo-feedback-form'),
+              name: `${templateSession.title} — Session Feedback`,
+              description: `Share your feedback on the "${templateSession.title}" session (demo link).`,
+              formUrl: templateSession.feedbackFormUrl,
+              audience: 'Trainees',
+              _count: { submissions: 0 }
+            }
+          : null
+      };
+      sessions = [...sessions, newSession];
+      sessionIdByTemplateId.set(templateSession.id, newSession.id);
+    }
+
+    for (const templateAssignment of plan.assignments) {
+      const deadline = nthWorkingDay(startDate, templateAssignment.dueDayOffset).toISOString();
+      const relatedSessionId = templateAssignment.relatedSessionId ? sessionIdByTemplateId.get(templateAssignment.relatedSessionId) : undefined;
+      const relatedSession = relatedSessionId ? sessions.find((s) => s.id === relatedSessionId) : undefined;
+
+      const newAssignment = {
+        id: nextId('demo-assignment'),
+        batchId: created.id,
+        batches: [{ id: created.id, name: created.name, code: created.code, trainingPlan: created.trainingPlan }],
+        title: templateAssignment.title,
+        agenda: templateAssignment.agenda,
+        description: templateAssignment.description,
+        status: 'Open',
+        deadline,
+        session: relatedSession ? { id: relatedSession.id, title: relatedSession.title } : null,
+        submissions: [] as DemoSubmission[]
+      };
+      assignments = [...assignments, newAssignment];
+      if (relatedSession) relatedSession.relatedAssignments = [{ id: newAssignment.id, title: newAssignment.title }];
+    }
+
+    for (const templateResource of plan.resources) {
+      const newResource: DemoResource = {
+        id: nextId('demo-resource'),
+        batchId: created.id,
+        title: templateResource.title,
+        category: templateResource.category,
+        version: 'v1.0',
+        sizeBytes: null,
+        externalUrl: templateResource.url,
+        uploadedBy: actor.id,
+        verified: true,
+        downloadCount: 0,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        uploader: { id: actor.id, name: actor.name, email: actor.email },
+        batch: null
+      };
+      resources = [...resources, newResource];
+    }
+
     return { batch: created };
   }
   const batchIdMatch = matchPath('/batches/:id', path);
@@ -262,6 +401,156 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
     }
   }
 
+  // ---- training plans ----
+  if (method === 'GET' && path === '/training-plans') {
+    return {
+      trainingPlans: trainingPlans.map((p) => ({
+        id: p.id,
+        code: p.code,
+        name: p.name,
+        durationMonths: p.durationMonths,
+        _count: {
+          sessions: p.sessions.length,
+          assignments: p.assignments.length,
+          resources: p.resources.length,
+          announcements: p.announcements.length,
+          batches: batches.filter((b) => b.trainingPlan.id === p.id).length
+        }
+      }))
+    };
+  }
+  const trainingPlanIdMatch = matchPath('/training-plans/:id', path);
+  if (trainingPlanIdMatch) {
+    const plan = trainingPlans.find((p) => p.id === trainingPlanIdMatch.id);
+    if (!plan) notFound();
+    if (method === 'GET') return { trainingPlan: plan };
+    if (method === 'PATCH') {
+      Object.assign(plan, b);
+      return { trainingPlan: plan };
+    }
+  }
+
+  const tpSessionsMatch = matchPath('/training-plans/:id/sessions', path);
+  if (tpSessionsMatch && method === 'POST') {
+    const plan = trainingPlans.find((p) => p.id === tpSessionsMatch.id);
+    if (!plan) notFound();
+    const created = {
+      id: nextId('demo-tps'),
+      title: String(b.title ?? 'New Session'),
+      agenda: String(b.agenda ?? ''),
+      dayOffset: Number(b.dayOffset ?? 0),
+      startMinute: Number(b.startMinute ?? 870),
+      endMinute: Number(b.endMinute ?? 990),
+      platform: String(b.platform ?? 'Other'),
+      order: Number(b.order ?? plan.sessions.length + 1),
+      feedbackFormUrl: (b.feedbackFormUrl as string) || null
+    };
+    plan.sessions = [...plan.sessions, created];
+    return { session: created };
+  }
+  const tpSessionIdMatch = matchPath('/training-plans/:id/sessions/:sessionId', path);
+  if (tpSessionIdMatch) {
+    const plan = trainingPlans.find((p) => p.id === tpSessionIdMatch.id);
+    if (!plan) notFound();
+    const session = plan.sessions.find((s) => s.id === tpSessionIdMatch.sessionId);
+    if (!session) notFound();
+    if (method === 'PATCH') {
+      Object.assign(session, b);
+      return { session };
+    }
+    if (method === 'DELETE') {
+      plan.sessions = plan.sessions.filter((s) => s.id !== tpSessionIdMatch.sessionId);
+      return undefined;
+    }
+  }
+
+  const tpAssignmentsMatch = matchPath('/training-plans/:id/assignments', path);
+  if (tpAssignmentsMatch && method === 'POST') {
+    const plan = trainingPlans.find((p) => p.id === tpAssignmentsMatch.id);
+    if (!plan) notFound();
+    const relatedSession = b.relatedSessionId ? plan.sessions.find((s) => s.id === b.relatedSessionId) : undefined;
+    const created = {
+      id: nextId('demo-tpa'),
+      title: String(b.title ?? 'New Assignment'),
+      agenda: String(b.agenda ?? ''),
+      description: String(b.description ?? ''),
+      dueDayOffset: Number(b.dueDayOffset ?? 0),
+      relatedSessionId: relatedSession?.id ?? null,
+      relatedSession: relatedSession ? { id: relatedSession.id, title: relatedSession.title } : null
+    };
+    plan.assignments = [...plan.assignments, created];
+    return { assignment: created };
+  }
+  const tpAssignmentIdMatch = matchPath('/training-plans/:id/assignments/:assignmentId', path);
+  if (tpAssignmentIdMatch) {
+    const plan = trainingPlans.find((p) => p.id === tpAssignmentIdMatch.id);
+    if (!plan) notFound();
+    const assignment = plan.assignments.find((a) => a.id === tpAssignmentIdMatch.assignmentId);
+    if (!assignment) notFound();
+    if (method === 'PATCH') {
+      const { relatedSessionId, ...rest } = b;
+      Object.assign(assignment, rest);
+      if (relatedSessionId !== undefined) {
+        const relatedSession = relatedSessionId ? plan.sessions.find((s) => s.id === relatedSessionId) : undefined;
+        assignment.relatedSessionId = relatedSession?.id ?? null;
+        assignment.relatedSession = relatedSession ? { id: relatedSession.id, title: relatedSession.title } : null;
+      }
+      return { assignment };
+    }
+    if (method === 'DELETE') {
+      plan.assignments = plan.assignments.filter((a) => a.id !== tpAssignmentIdMatch.assignmentId);
+      return undefined;
+    }
+  }
+
+  const tpResourcesMatch = matchPath('/training-plans/:id/resources', path);
+  if (tpResourcesMatch && method === 'POST') {
+    const plan = trainingPlans.find((p) => p.id === tpResourcesMatch.id);
+    if (!plan) notFound();
+    const created = { id: nextId('demo-tpr'), title: String(b.title ?? 'New Resource'), category: String(b.category ?? ''), url: String(b.url ?? '') };
+    plan.resources = [...plan.resources, created];
+    return { resource: created };
+  }
+  const tpResourceIdMatch = matchPath('/training-plans/:id/resources/:resourceId', path);
+  if (tpResourceIdMatch) {
+    const plan = trainingPlans.find((p) => p.id === tpResourceIdMatch.id);
+    if (!plan) notFound();
+    const resource = plan.resources.find((r) => r.id === tpResourceIdMatch.resourceId);
+    if (!resource) notFound();
+    if (method === 'PATCH') {
+      Object.assign(resource, b);
+      return { resource };
+    }
+    if (method === 'DELETE') {
+      plan.resources = plan.resources.filter((r) => r.id !== tpResourceIdMatch.resourceId);
+      return undefined;
+    }
+  }
+
+  const tpAnnouncementsMatch = matchPath('/training-plans/:id/announcements', path);
+  if (tpAnnouncementsMatch && method === 'POST') {
+    const plan = trainingPlans.find((p) => p.id === tpAnnouncementsMatch.id);
+    if (!plan) notFound();
+    const created = { id: nextId('demo-tpan'), title: String(b.title ?? 'New Announcement'), message: String(b.message ?? ''), priority: String(b.priority ?? 'Normal') };
+    plan.announcements = [...plan.announcements, created];
+    return { announcement: created };
+  }
+  const tpAnnouncementIdMatch = matchPath('/training-plans/:id/announcements/:announcementId', path);
+  if (tpAnnouncementIdMatch) {
+    const plan = trainingPlans.find((p) => p.id === tpAnnouncementIdMatch.id);
+    if (!plan) notFound();
+    const announcement = plan.announcements.find((a) => a.id === tpAnnouncementIdMatch.announcementId);
+    if (!announcement) notFound();
+    if (method === 'PATCH') {
+      Object.assign(announcement, b);
+      return { announcement };
+    }
+    if (method === 'DELETE') {
+      plan.announcements = plan.announcements.filter((a) => a.id !== tpAnnouncementIdMatch.announcementId);
+      return undefined;
+    }
+  }
+
   // ---- assignments ----
   if (method === 'GET' && path === '/assignments') {
     let results = assignments;
@@ -270,15 +559,17 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
   }
   if (method === 'POST' && path === '/assignments') {
     const { batchId, batches: assignmentBatches } = resolveAssignmentBatches(parseBatchIds(b.batchIds));
+    const relatedSession = b.sessionId ? sessions.find((s) => s.id === b.sessionId) : undefined;
     const created = {
       id: nextId('demo-assignment'),
       batchId,
       batches: assignmentBatches,
       title: String(b.title ?? 'New Assignment'),
+      agenda: String(b.agenda ?? ''),
       description: String(b.description ?? ''),
       status: String(b.status ?? 'Draft'),
       deadline: String(b.deadline ?? new Date().toISOString()),
-      facilitator: facilitatorRefFor(undefined),
+      session: relatedSession ? { id: relatedSession.id, title: relatedSession.title } : null,
       submissions: [] as DemoSubmission[]
     };
     assignments = [created, ...assignments];
@@ -290,11 +581,15 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
     if (!assignment) notFound();
     if (method === 'GET') return { assignment };
     if (method === 'PATCH') {
-      const { batchIds, ...rest } = b;
+      const { batchIds, sessionId, ...rest } = b;
       Object.assign(assignment, rest);
       if (batchIds !== undefined) {
         const parsed = parseBatchIds(batchIds);
         if (parsed.length > 0) Object.assign(assignment, resolveAssignmentBatches(parsed));
+      }
+      if (sessionId) {
+        const relatedSession = sessions.find((s) => s.id === sessionId);
+        assignment.session = relatedSession ? { id: relatedSession.id, title: relatedSession.title } : null;
       }
       return { assignment };
     }
@@ -347,18 +642,21 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
   if (method === 'GET' && path === '/sessions') {
     let results = sessions;
     if (query?.batchId) results = results.filter((s) => s.batchId === query.batchId);
-    return paginated(results);
+    return paginated(results.map((s) => withFeedbackFormVisibility(s)));
   }
   if (method === 'POST' && path === '/sessions') {
-    const created = {
+    const created: DemoSession = {
       id: nextId('demo-session'),
       batchId: String(b.batchId ?? ''),
       title: String(b.title ?? 'New Session'),
       scheduledAt: String(b.scheduledAt ?? new Date().toISOString()),
+      durationMinutes: Number(b.durationMinutes ?? 120),
       platform: String(b.platform ?? 'Other'),
       meetingLink: (b.meetingLink as string) ?? null,
       status: String(b.status ?? 'Upcoming'),
-      facilitator: facilitatorRefFor(undefined)
+      facilitator: facilitatorRefFor(undefined),
+      relatedAssignments: [],
+      feedbackForm: null
     };
     sessions = [created, ...sessions];
     return { session: created };
@@ -367,7 +665,7 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
   if (sessionIdMatch) {
     const session = sessions.find((x) => x.id === sessionIdMatch.id);
     if (!session) notFound();
-    if (method === 'GET') return { session };
+    if (method === 'GET') return { session: withFeedbackFormVisibility(session) };
     if (method === 'PATCH') {
       Object.assign(session, b);
       return { session };
@@ -381,6 +679,75 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
   if (attendanceMatch) {
     if (method === 'GET') return { attendance: [] };
     if (method === 'PUT') return { attendance: [] };
+  }
+
+  // ---- session feedback (external form link + submission tracking) ----
+  const feedbackFormMatch = matchPath('/sessions/:id/feedback-form', path);
+  if (feedbackFormMatch) {
+    const session = sessions.find((x) => x.id === feedbackFormMatch.id);
+    if (!session) notFound();
+
+    const currentUser = currentDemoUser();
+    const isManager = currentUser.role === 'admin' || (currentUser.role === 'facilitator' && currentUser.id === session.facilitator?.id);
+
+    if (method === 'GET') {
+      if (!session.feedbackForm) return { form: null };
+      if (!isManager) {
+        if (currentUser.role === 'trainee' && session.feedbackForm.audience === 'Facilitators') return { form: null };
+        if (currentUser.role === 'facilitator' && session.feedbackForm.audience === 'Trainees') return { form: null };
+      }
+      const totalTrainees = batches.find((bt) => bt.id === session.batchId)?.members.length ?? 0;
+      const respondent = isRespondentFor(currentUser.role, session.feedbackForm.audience);
+      const mySubmitted = respondent
+        ? sessionFeedbackSubmissions.some((s) => s.formId === session.feedbackForm!.id && s.submitterId === currentUser.id)
+        : null;
+      return {
+        form: { ...session.feedbackForm, submittedCount: session.feedbackForm._count.submissions, totalTrainees, mySubmitted }
+      };
+    }
+    if (method === 'POST') {
+      session.feedbackForm = {
+        id: nextId('demo-feedback-form'),
+        name: String(b.name ?? `${session.title} Feedback`),
+        description: String(b.description ?? ''),
+        formUrl: String(b.formUrl ?? ''),
+        audience: (b.audience as 'Trainees' | 'Facilitators' | 'Both') ?? 'Both',
+        _count: { submissions: 0 }
+      };
+      const totalTrainees = batches.find((bt) => bt.id === session.batchId)?.members.length ?? 0;
+      return { form: { ...session.feedbackForm, submittedCount: 0, totalTrainees, mySubmitted: null } };
+    }
+    if (method === 'PATCH' && session.feedbackForm) {
+      if (b.name !== undefined) session.feedbackForm.name = String(b.name);
+      if (b.description !== undefined) session.feedbackForm.description = String(b.description);
+      if (b.formUrl !== undefined) session.feedbackForm.formUrl = String(b.formUrl);
+      if (b.audience !== undefined) session.feedbackForm.audience = b.audience as 'Trainees' | 'Facilitators' | 'Both';
+      const totalTrainees = batches.find((bt) => bt.id === session.batchId)?.members.length ?? 0;
+      return {
+        form: { ...session.feedbackForm, submittedCount: session.feedbackForm._count.submissions, totalTrainees, mySubmitted: null }
+      };
+    }
+    if (method === 'DELETE' && session.feedbackForm) {
+      session.feedbackForm = null;
+      return undefined;
+    }
+  }
+  const feedbackFormSubmitMatch = matchPath('/sessions/:id/feedback-form/submissions', path);
+  if (method === 'POST' && feedbackFormSubmitMatch) {
+    const session = sessions.find((x) => x.id === feedbackFormSubmitMatch.id);
+    if (!session || !session.feedbackForm) notFound();
+    const currentUser = currentDemoUser();
+    if (!isRespondentFor(currentUser.role, session.feedbackForm.audience)) {
+      const err = new Error('This feedback form is not for your role.') as Error & { status?: number };
+      err.status = 403;
+      throw err;
+    }
+    const alreadySubmitted = sessionFeedbackSubmissions.some((s) => s.formId === session.feedbackForm!.id && s.submitterId === currentUser.id);
+    if (!alreadySubmitted) {
+      sessionFeedbackSubmissions = [...sessionFeedbackSubmissions, { formId: session.feedbackForm.id, submitterId: currentUser.id }];
+      session.feedbackForm._count.submissions += 1;
+    }
+    return { submission: { id: nextId('demo-feedback-submission') } };
   }
 
   // ---- resources ----
@@ -397,6 +764,7 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
       category: String(b.category ?? 'PDF Guides'),
       version: String(b.version ?? 'v1.0'),
       sizeBytes: '204800',
+      externalUrl: null,
       uploadedBy: 'demo-facilitator',
       verified: false,
       downloadCount: 0,
@@ -488,7 +856,11 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
               batchNames: [batches.find((b) => b.id === a.batchId)?.name ?? ''],
               relatedEntityId: a.id,
               status: a.status,
-              metadata: { facilitatorName: a.facilitator?.name ?? null }
+              // Assignments are Training-Plan-owned, not facilitator-owned, in the new workflow —
+              // the real backend's calendar metadata still exposes a facilitatorName (an internal
+              // ownership detail unrelated to the Assignment API response change), but demo
+              // fixtures no longer track a per-assignment facilitator to mirror that with.
+              metadata: { facilitatorName: null }
             }))
         : [];
 

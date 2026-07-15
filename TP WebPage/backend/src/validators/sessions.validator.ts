@@ -13,7 +13,9 @@ export const listSessionsQuerySchema = paginationQuerySchema.extend({
 export const createSessionSchema = z.object({
   batchId: z.string().uuid(),
   title: z.string().trim().min(1),
+  agenda: z.string().trim().optional(),
   scheduledAt: z.coerce.date(),
+  durationMinutes: z.number().int().positive().optional().default(120),
   platform: platformEnum.optional().default('Other'),
   meetingLink: z.string().trim().url().optional(),
   status: statusEnum.optional().default('Upcoming')

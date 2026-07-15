@@ -7,7 +7,8 @@ interface ApiResource {
   title: string;
   category: string;
   version: string;
-  sizeBytes: string;
+  sizeBytes: string | null;
+  externalUrl: string | null;
   uploadedBy: string;
   verified: boolean;
   downloadCount: number;
@@ -26,7 +27,7 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-function formatFileSize(sizeBytes: string): string {
+function formatFileSize(sizeBytes: string | null): string {
   const bytes = Number(sizeBytes);
   if (!bytes) return '—';
   const mb = bytes / (1024 * 1024);
@@ -45,7 +46,8 @@ function toFrontendResource(apiResource: ApiResource): Resource {
     lastUpdated: formatDate(apiResource.updatedAt),
     version: apiResource.version,
     downloadCount: apiResource.downloadCount,
-    fileSize: formatFileSize(apiResource.sizeBytes)
+    fileSize: apiResource.externalUrl ? 'External link' : formatFileSize(apiResource.sizeBytes),
+    externalUrl: apiResource.externalUrl
   };
 }
 

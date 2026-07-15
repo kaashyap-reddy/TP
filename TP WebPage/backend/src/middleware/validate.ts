@@ -1,11 +1,13 @@
 import { NextFunction, Request, Response } from 'express';
-import { AnyZodObject, ZodError } from 'zod';
+import { ZodError, ZodTypeAny } from 'zod';
 import { ApiError } from '../utils/ApiError';
 
 interface ValidationSchemas {
-  body?: AnyZodObject;
-  query?: AnyZodObject;
-  params?: AnyZodObject;
+  // ZodTypeAny (not AnyZodObject) so schemas built with .refine() (e.g. cross-field time-range
+  // checks) — which return ZodEffects, not ZodObject — can still be passed here.
+  body?: ZodTypeAny;
+  query?: ZodTypeAny;
+  params?: ZodTypeAny;
 }
 
 export function validate(schemas: ValidationSchemas) {

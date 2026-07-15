@@ -7,6 +7,7 @@
 export type AdminTabId =
   | 'analytics'
   | 'batches'
+  | 'trainingPlans'
   | 'assignments'
   | 'sessions'
   | 'resources'
@@ -18,6 +19,7 @@ export type AdminTabId =
 export const ADMIN_HEADER_TITLES: Record<AdminTabId, string> = {
   analytics: 'System Analytics Dashboard',
   batches: 'Batch Management & Onboarding',
+  trainingPlans: 'Training Plans',
   assignments: 'Global Assignments Overview',
   sessions: 'Sessions & Calendar',
   resources: 'Global Content Repository',
@@ -65,7 +67,7 @@ export const TRAINEE_HEADER_TITLES: Record<TraineeTabId, string> = {
   sessions: 'Sessions & Calendar',
   resources: 'Learning Repository',
   announcements: 'Announcements',
-  grades: 'Feedback & Grades',
+  grades: 'My Session Feedback',
   facilitators: 'Facilitator Contacts'
 };
 
@@ -88,9 +90,13 @@ const ANNOUNCEMENTS_ICON =
 
 export const ADMIN_BRAND_LABEL = 'Admin Portal';
 
+const TRAINING_PLANS_ICON =
+  'M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s4.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253';
+
 export const ADMIN_NAV_ITEMS: NavItem<AdminTabId>[] = [
   { tabId: 'analytics', label: 'Real-time Analytics', iconPath: 'M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z' },
   { tabId: 'batches', label: 'Batch Management', iconPath: BATCHES_ICON },
+  { tabId: 'trainingPlans', label: 'Training Plans', iconPath: TRAINING_PLANS_ICON },
   { tabId: 'assignments', label: 'Assignments', iconPath: ASSIGNMENTS_ICON },
   { tabId: 'sessions', label: 'Sessions & Calendar', iconPath: SESSIONS_CALENDAR_ICON },
   { tabId: 'resources', label: 'Global Resources', iconPath: RESOURCES_ICON },
@@ -144,7 +150,7 @@ export const TRAINEE_NAV_ITEMS: NavItem<TraineeTabId>[] = [
   { tabId: 'announcements', label: 'Announcements', iconPath: ANNOUNCEMENTS_ICON },
   {
     tabId: 'grades',
-    label: 'Feedback & Grades',
+    label: 'My Session Feedback',
     iconPath: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z'
   },
   {

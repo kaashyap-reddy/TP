@@ -34,17 +34,22 @@ export const listAssignmentsQuerySchema = paginationQuerySchema.extend({
 export const createAssignmentSchema = z.object({
   batchIds: batchIdsField,
   title: z.string().trim().min(1),
+  // What the assignment is meant to achieve (e.g. "Requirement Gathering", "SQL Basics").
+  agenda: z.string().trim().optional().default(''),
   description: z.string().trim().optional().default(''),
   deadline: z.coerce.date(),
-  status: statusEnum.optional().default('Draft')
+  status: statusEnum.optional().default('Draft'),
+  sessionId: z.string().uuid().optional()
 });
 
 export const updateAssignmentSchema = z.object({
   title: z.string().trim().min(1).optional(),
+  agenda: z.string().trim().optional(),
   description: z.string().trim().optional(),
   deadline: z.coerce.date().optional(),
   status: statusEnum.optional(),
-  batchIds: batchIdsField.optional()
+  batchIds: batchIdsField.optional(),
+  sessionId: z.string().uuid().nullable().optional()
 });
 
 export const assignmentIdParamsSchema = z.object({ id: z.string().uuid() });

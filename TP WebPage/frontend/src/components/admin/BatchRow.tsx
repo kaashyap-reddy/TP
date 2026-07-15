@@ -10,9 +10,10 @@ interface BatchRowProps {
   onToggleExpand: () => void;
   onToggleSelect: () => void;
   onManage: () => void;
+  onSelectTrainee: (traineeName: string) => void;
 }
 
-function BatchRow({ batch: b, isExpanded, isSelected, onToggleExpand, onToggleSelect, onManage }: BatchRowProps) {
+function BatchRow({ batch: b, isExpanded, isSelected, onToggleExpand, onToggleSelect, onManage, onSelectTrainee }: BatchRowProps) {
   return (
     <Fragment>
       <tr className="hover:bg-slate-50 transition-colors">
@@ -35,7 +36,7 @@ function BatchRow({ batch: b, isExpanded, isSelected, onToggleExpand, onToggleSe
           </div>
         </td>
         <td className="px-6 py-4"><span className="px-2.5 py-1 bg-blue-100 text-blue-700 text-xs rounded-full font-bold">{b.program}</span></td>
-        <td className="px-6 py-4 font-medium text-gray-700">{b.poc}</td>
+        <td className="px-6 py-4 font-medium text-gray-700">{b.poc || '—'}</td>
         <td className="px-6 py-4 w-48">
           <div className="flex items-center gap-4">
             <div className="text-[10px] text-gray-400 uppercase font-bold flex-shrink-0">Avg Score <span className="text-blue-600 text-xs normal-case font-bold ml-1">{b.avgScore !== null ? `${b.avgScore}%` : '—'}</span></div>
@@ -62,7 +63,13 @@ function BatchRow({ batch: b, isExpanded, isSelected, onToggleExpand, onToggleSe
             ) : (
               <div className="flex flex-wrap gap-2">
                 {b.members.map((m) => (
-                  <span key={m} className="px-3 py-1 bg-white border border-gray-200 rounded-full text-xs font-medium text-gray-700">{m}</span>
+                  <button
+                    key={m}
+                    onClick={() => onSelectTrainee(m)}
+                    className="px-3 py-1 bg-white border border-gray-200 rounded-full text-xs font-medium text-blue-700 hover:bg-blue-50 hover:border-blue-300 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {m}
+                  </button>
                 ))}
               </div>
             )}

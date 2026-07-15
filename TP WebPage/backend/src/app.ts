@@ -20,8 +20,10 @@ import feedbackRoutes from './routes/feedback.routes';
 import healthRoutes from './routes/health.routes';
 import notificationsRoutes from './routes/notifications.routes';
 import resourcesRoutes from './routes/resources.routes';
+import sessionFeedbackRoutes from './routes/sessionFeedback.routes';
 import sessionsRoutes from './routes/sessions.routes';
 import submissionsRoutes from './routes/submissions.routes';
+import trainingPlansRoutes from './routes/trainingPlans.routes';
 import usersRoutes from './routes/users.routes';
 
 export function createApp(): Express {
@@ -68,9 +70,11 @@ export function createApp(): Express {
   app.use('/api/auth', authRoutes);
   app.use('/api/users', usersRoutes);
   app.use('/api/batches', batchesRoutes);
+  app.use('/api/training-plans', trainingPlansRoutes);
   app.use('/api/assignments', assignmentsRoutes);
   app.use('/api/submissions', submissionsRoutes);
   app.use('/api/sessions', sessionsRoutes);
+  app.use('/api/sessions', sessionFeedbackRoutes);
   app.use('/api/attendance', attendanceRoutes);
   app.use('/api/resources', resourcesRoutes);
   app.use('/api/feedback', feedbackRoutes);

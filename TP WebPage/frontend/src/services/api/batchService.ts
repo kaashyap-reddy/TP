@@ -4,13 +4,6 @@ import { api } from './apiClient';
 
 type ApiProgram = 'BA' | 'DataEngineering' | 'AIML' | 'UIUX';
 
-const PROGRAM_TO_API: Record<Batch['program'], ApiProgram> = {
-  BA: 'BA',
-  'Data Engineering': 'DataEngineering',
-  'AI ML': 'AIML',
-  'UI/UX': 'UIUX'
-};
-
 const PROGRAM_FROM_API: Record<ApiProgram, Batch['program']> = {
   BA: 'BA',
   DataEngineering: 'Data Engineering',
@@ -28,6 +21,7 @@ interface ApiBatch {
   startMonth: string | null;
   endDate: string | null;
   facilitator: { id: string; name: string; email: string } | null;
+  trainingPlan: { id: string; code: string; name: string } | null;
 }
 
 interface ApiBatchMetrics {
@@ -71,6 +65,8 @@ function toFrontendBatchBase(apiBatch: ApiBatch, metrics: ApiBatchMetrics, membe
     name: apiBatch.name,
     program: PROGRAM_FROM_API[apiBatch.program],
     track: apiBatch.track,
+    trainingPlanId: apiBatch.trainingPlan?.id ?? null,
+    trainingPlanName: apiBatch.trainingPlan?.name ?? null,
     poc: apiBatch.facilitator?.name ?? '',
     pocId: apiBatch.facilitator?.id ?? null,
     traineeCount: metrics.traineeCount,
@@ -104,10 +100,12 @@ export async function listBatches(filters?: { facilitatorId?: string; traineeId?
 
 export interface CreateBatchInput {
   name: string;
-  program: Batch['program'];
-  track: Batch['track'];
-  poc: string;
-  startMonth: string;
+  /** Every batch belongs to exactly one Training Plan (currently BA BTech or BA MBA) — program/track are derived server-side from it. */
+  trainingPlanId: string;
+  /** ISO date string (e.g. straight from a native date picker) — the batch's Start Date. Everything else (end date, ~42 sessions, assignments, resources, announcements, feedback links) is generated automatically from it. */
+  startDate: string;
+  /** Optional Trainer/POC — the org's workflow doesn't require one at batch-creation time (same as Session/Assignment "Trainer"). */
+  poc?: string;
   members?: string[];
   /** Accepted for call-site compatibility with the CSV-onboarding form; traineeCount is always server-derived from real enrollments, so this has no effect. */
   traineeCount?: number;
@@ -133,15 +131,14 @@ async function enrollByName(batchId: string, names: string[]): Promise<void> {
 }
 
 export async function createBatch(input: CreateBatchInput): Promise<Batch> {
-  const facilitatorId = (await findUserIdByName(input.poc, 'facilitator')) ?? undefined;
+  const facilitatorId = input.poc ? await findUserIdByName(input.poc, 'facilitator') : undefined;
 
   const created = await api.post<{ batch: ApiBatch }>('/batches', {
     code: `${slugify(input.name)}-${Date.now().toString(36).slice(-4)}`,
     name: input.name,
-    program: PROGRAM_TO_API[input.program],
-    track: input.track,
+    trainingPlanId: input.trainingPlanId,
     facilitatorId,
-    startMonth: monthNameToDate(input.startMonth)
+    startMonth: input.startDate ? new Date(input.startDate).toISOString() : undefined
   });
 
   if (input.members?.length) {
@@ -152,12 +149,12 @@ export async function createBatch(input: CreateBatchInput): Promise<Batch> {
 }
 
 export async function updateBatch(id: string, changes: Partial<Batch>): Promise<Batch> {
-  const { poc, program, track, startMonth, status, name, members } = changes;
+  // trainingPlanId is immutable after creation (see backend's updateBatchSchema) — program/track
+  // are derived from it, so they aren't independently editable either.
+  const { poc, startMonth, status, name, members } = changes;
 
   const patch: Record<string, unknown> = {};
   if (name !== undefined) patch.name = name;
-  if (program !== undefined) patch.program = PROGRAM_TO_API[program];
-  if (track !== undefined) patch.track = track;
   if (status !== undefined) patch.status = status;
   if (startMonth !== undefined) patch.startMonth = monthNameToDate(startMonth);
   if (poc !== undefined) {

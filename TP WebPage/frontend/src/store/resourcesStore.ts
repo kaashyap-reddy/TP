@@ -41,6 +41,13 @@ export const useResourcesStore = create<ResourcesState>()((set, get) => ({
   downloadResource: async (id) => {
     const resource = get().resources.find((r) => r.id === id);
     if (!resource) return;
+    // A Training-Plan-sourced resource is a shared external link, not an uploaded file — open it
+    // directly instead of routing through the blob-download endpoint (which would otherwise try
+    // to fetch a cross-origin redirect target and hit CORS).
+    if (resource.externalUrl) {
+      window.open(resource.externalUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
     await resourceService.downloadResource(id, resource.title);
     set({ resources: get().resources.map((r) => (r.id === id ? { ...r, downloadCount: r.downloadCount + 1 } : r)) });
   },

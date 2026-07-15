@@ -4,6 +4,8 @@ export interface Batch {
   name: string;
   program: 'BA' | 'Data Engineering' | 'AI ML' | 'UI/UX';
   track: 'BTech' | 'MBA';
+  trainingPlanId: string | null;
+  trainingPlanName: string | null;
   poc: string;
   pocId: string | null;
   traineeCount: number;

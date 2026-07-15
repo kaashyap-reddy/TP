@@ -57,7 +57,6 @@ export function toFrontendSubmission(apiSub: ApiSubmission): Submission {
     grade: apiSub.grade === null ? null : Number(apiSub.grade),
     feedback: apiSub.feedback ?? '',
     batchId: apiSub.batch?.id,
-    batchName: apiSub.batch?.name,
     attachmentId: currentAttachment?.id,
     attachmentFilename: currentAttachment?.originalFilename,
     attachmentMimeType: currentAttachment?.mimeType

@@ -5,6 +5,8 @@ export const ROUTES = {
   INVITE: '/invite',
   ADMIN: '/admin',
   ADMIN_ACCOUNT_SETTINGS: '/admin/account-settings',
+  ADMIN_TRAINING_PLAN_DETAIL: (planId: string) => `/admin/training-plans/${encodeURIComponent(planId)}`,
+  ADMIN_TRAINEE_PROFILE: (traineeName: string) => `/admin/trainees/${encodeURIComponent(traineeName)}`,
   FACILITATOR: '/facilitator',
   FACILITATOR_ACCOUNT_SETTINGS: '/facilitator/account-settings',
   FACILITATOR_TRAINEE_PROFILE: (traineeName: string) => `/facilitator/trainees/${encodeURIComponent(traineeName)}`,
@@ -20,5 +22,7 @@ export const ROUTES = {
 export const ROUTE_PATTERNS = {
   ASSIGNMENT_DETAIL: '/assignments/:assignmentId',
   FACILITATOR_TRAINEE_PROFILE: '/facilitator/trainees/:traineeName',
-  FACILITATOR_BATCH_DETAIL: '/facilitator/batches/:batchId'
+  FACILITATOR_BATCH_DETAIL: '/facilitator/batches/:batchId',
+  ADMIN_TRAINING_PLAN_DETAIL: '/admin/training-plans/:planId',
+  ADMIN_TRAINEE_PROFILE: '/admin/trainees/:traineeName'
 } as const;

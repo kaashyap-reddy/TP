@@ -8,16 +8,40 @@ import { createSessionSchema, listSessionsQuerySchema, updateSessionSchema } fro
 
 const include = {
   facilitator: { select: { id: true, name: true, email: true } },
-  batch: { select: { id: true, name: true, code: true } }
+  batch: { select: { id: true, name: true, code: true } },
+  relatedAssignments: { select: { id: true, title: true } },
+  feedbackForm: {
+    select: { id: true, name: true, description: true, formUrl: true, audience: true, _count: { select: { submissions: true } } }
+  }
 } satisfies Prisma.SessionInclude;
 
-export function assertOwnerOrAdmin(actor: AuthenticatedUser, facilitatorId: string) {
+// facilitatorId is nullable — a session generated from a Training Plan template often has no
+// Trainer assigned yet. A null facilitatorId can never match an actor, so only admin can manage
+// an unowned session; once a trainer is set, that facilitator (or admin) can.
+export function assertOwnerOrAdmin(actor: AuthenticatedUser, facilitatorId: string | null) {
   if (actor.role === 'admin') return;
   if (actor.role === 'facilitator' && actor.id === facilitatorId) return;
   throw ApiError.forbidden('You do not own this session.');
 }
 
-export async function list(query: z.infer<typeof listSessionsQuerySchema>) {
+// A session's bulk/detail response embeds its feedback form, but that embed shouldn't leak a
+// form scoped to the other role — e.g. a Facilitators-only form showing up (and being usable) on
+// a trainee's calendar. Admin and the session's owning facilitator always see it (they manage
+// it); everyone else only sees it if the form's audience actually includes their role. Mirrors
+// the same rule in sessionFeedback.service.ts's getForSession().
+function withFeedbackFormVisibility<T extends { facilitatorId: string | null; feedbackForm: { audience: string } | null }>(
+  actor: AuthenticatedUser,
+  session: T
+): T {
+  if (!session.feedbackForm) return session;
+  const isManager = actor.role === 'admin' || (actor.role === 'facilitator' && actor.id === session.facilitatorId);
+  if (isManager) return session;
+  if (actor.role === 'trainee' && session.feedbackForm.audience === 'Facilitators') return { ...session, feedbackForm: null };
+  if (actor.role === 'facilitator' && session.feedbackForm.audience === 'Trainees') return { ...session, feedbackForm: null };
+  return session;
+}
+
+export async function list(actor: AuthenticatedUser, query: z.infer<typeof listSessionsQuerySchema>) {
   const { skip, take, page, pageSize } = getPagination(query);
 
   const where: Prisma.SessionWhereInput = {
@@ -32,13 +56,18 @@ export async function list(query: z.infer<typeof listSessionsQuerySchema>) {
     prisma.session.count({ where })
   ]);
 
-  return buildPaginatedResponse(sessions, total, page, pageSize);
+  return buildPaginatedResponse(
+    sessions.map((s) => withFeedbackFormVisibility(actor, s)),
+    total,
+    page,
+    pageSize
+  );
 }
 
-export async function getById(id: string) {
+export async function getById(actor: AuthenticatedUser, id: string) {
   const session = await prisma.session.findFirst({ where: { id, deletedAt: null }, include });
   if (!session) throw ApiError.notFound('Session not found.');
-  return session;
+  return withFeedbackFormVisibility(actor, session);
 }
 
 export async function create(actor: AuthenticatedUser, input: z.infer<typeof createSessionSchema>) {

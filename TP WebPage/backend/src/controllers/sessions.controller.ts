@@ -5,7 +5,8 @@ import { ApiError } from '../utils/ApiError';
 import { asyncHandler } from '../utils/asyncHandler';
 
 export const listSessionsHandler = asyncHandler(async (req: Request, res: Response) => {
-  res.status(200).json(await sessionsService.list(req.query as never));
+  if (!req.user) throw ApiError.unauthorized();
+  res.status(200).json(await sessionsService.list(req.user, req.query as never));
 });
 
 export const createSessionHandler = asyncHandler(async (req: Request, res: Response) => {
@@ -21,7 +22,8 @@ export const createSessionHandler = asyncHandler(async (req: Request, res: Respo
 });
 
 export const getSessionHandler = asyncHandler(async (req: Request, res: Response) => {
-  const session = await sessionsService.getById(req.params.id);
+  if (!req.user) throw ApiError.unauthorized();
+  const session = await sessionsService.getById(req.user, req.params.id);
   res.status(200).json({ session });
 });
 
@@ -39,7 +41,7 @@ export const updateSessionHandler = asyncHandler(async (req: Request, res: Respo
 
 export const deleteSessionHandler = asyncHandler(async (req: Request, res: Response) => {
   if (!req.user) throw ApiError.unauthorized();
-  const session = await sessionsService.getById(req.params.id);
+  const session = await sessionsService.getById(req.user, req.params.id);
   await sessionsService.softDelete(req.user, req.params.id);
   await recordAuditEvent({
     eventType: 'SessionDeleted',

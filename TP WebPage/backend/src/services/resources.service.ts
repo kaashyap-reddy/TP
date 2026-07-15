@@ -19,7 +19,7 @@ function assertOwnerOrAdmin(actor: AuthenticatedUser, uploadedBy: string) {
 }
 
 function serialize(resource: Prisma.ResourceGetPayload<{ include: typeof include }>) {
-  return { ...resource, sizeBytes: resource.sizeBytes.toString() };
+  return { ...resource, sizeBytes: resource.sizeBytes?.toString() ?? null };
 }
 
 export async function list(query: z.infer<typeof listResourcesQuerySchema>) {

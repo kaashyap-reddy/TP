@@ -91,8 +91,11 @@ export default function AssignmentDetailPage() {
         <div className="flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">{assignment.title}</h1>
+            {assignment.agenda && (
+              <span className="inline-block mt-1 text-xs font-bold px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700">{assignment.agenda}</span>
+            )}
             <p className="text-sm text-gray-500 mt-1">
-              {batchNames} • Facilitator: {assignment.facilitator} • Deadline: {formatDateTime(assignment.deadline)}
+              {batchNames} • Related Session: {assignment.sessionTitle ?? '—'} • Deadline: {formatDateTime(assignment.deadline)}
             </p>
           </div>
           <div className="flex items-center gap-3 flex-shrink-0">
@@ -118,7 +121,6 @@ export default function AssignmentDetailPage() {
             <thead>
               <tr className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
                 <th className="px-6 py-3 font-medium">Trainee</th>
-                <th className="px-6 py-3 font-medium">Batch</th>
                 <th className="px-6 py-3 font-medium">Status</th>
                 <th className="px-6 py-3 font-medium">Submitted On</th>
                 <th className="px-6 py-3 font-medium">Grade</th>
@@ -131,7 +133,6 @@ export default function AssignmentDetailPage() {
                 <Fragment key={s.traineeName}>
                   <tr className="hover:bg-gray-50">
                     <td className="px-6 py-4 font-medium text-gray-800">{s.traineeName}</td>
-                    <td className="px-6 py-4 text-gray-500">{s.batchName ?? '—'}</td>
                     <td className="px-6 py-4">
                       <span className={`px-2 py-1 rounded-full font-bold text-xs ${STATUS_BADGE[s.status]}`}>
                         {s.id ? s.status : 'Not submitted'}
@@ -163,7 +164,7 @@ export default function AssignmentDetailPage() {
                   </tr>
                   {gradingTrainee === s.traineeName && (
                     <tr>
-                      <td colSpan={7} className="px-6 py-5 bg-blue-50/40 border-t border-blue-100">
+                      <td colSpan={6} className="px-6 py-5 bg-blue-50/40 border-t border-blue-100">
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                           <div>
                             <label htmlFor="assignment-grade-score" className="block text-xs font-bold text-gray-700 mb-1 uppercase">Score (0-100)</label>

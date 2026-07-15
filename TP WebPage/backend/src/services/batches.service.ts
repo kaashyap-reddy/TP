@@ -12,7 +12,53 @@ import {
   updateBatchSchema
 } from '../validators/batches.validator';
 
-const include = { facilitator: { select: { id: true, name: true, email: true } } } satisfies Prisma.BatchInclude;
+const include = {
+  facilitator: { select: { id: true, name: true, email: true } },
+  trainingPlan: { select: { id: true, code: true, name: true } }
+} satisfies Prisma.BatchInclude;
+
+// Only two plans exist ('ba-btech', 'ba-mba'), both under the 'BA' program — deriving from the
+// code (rather than a lookup table) can't drift out of sync as long as that naming holds.
+function deriveProgramTrack(planCode: string): { program: Prisma.BatchCreateInput['program']; track: Prisma.BatchCreateInput['track'] } {
+  return { program: 'BA', track: planCode.toLowerCase().includes('mba') ? 'MBA' : 'BTech' };
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function addMinutes(date: Date, minutes: number): Date {
+  return new Date(date.getTime() + minutes * 60 * 1000);
+}
+
+// Local (server wall-clock), not UTC — startMinute/endMinute (e.g. 870 = 14:30) are meant as a
+// literal wall-clock time ("2:30 PM"), and the frontend displays scheduledAt using local
+// getHours()/getMinutes(). Anchoring day math to UTC midnight here would silently shift every
+// generated session's displayed time by the server's UTC offset.
+function startOfLocalDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function isWeekend(date: Date): boolean {
+  const day = date.getDay();
+  return day === 0 || day === 6;
+}
+
+/**
+ * The training week is Mon-Fri — weekends are excluded automatically. Returns the date of the
+ * Nth working day (0-indexed) on/after `start`; if `start` itself falls on a weekend, day 0
+ * is the following Monday. dayOffset/dueDayOffset on TrainingPlanSession/TrainingPlanAssignment
+ * are expressed in these working-day terms, not raw calendar days.
+ */
+function nthWorkingDay(start: Date, n: number): Date {
+  let date = startOfLocalDay(start);
+  while (isWeekend(date)) date = new Date(date.getTime() + DAY_MS);
+
+  let count = 0;
+  while (count < n) {
+    date = new Date(date.getTime() + DAY_MS);
+    if (!isWeekend(date)) count += 1;
+  }
+  return date;
+}
 
 // Embedded on every list row alongside `metrics` (below) — every dashboard that lists batches
 // (Admin/Facilitator/Trainee) reads member names directly, not just a count, so this can't be
@@ -135,6 +181,7 @@ export async function list(query: z.infer<typeof listBatchesQuerySchema>) {
     ...(query.track ? { track: query.track } : {}),
     ...(query.status ? { status: query.status } : {}),
     ...(query.facilitatorId ? { facilitatorId: query.facilitatorId } : {}),
+    ...(query.trainingPlanId ? { trainingPlanId: query.trainingPlanId } : {}),
     ...(query.traineeId ? { trainees: { some: { traineeId: query.traineeId, removedAt: null } } } : {}),
     ...(query.search
       ? {
@@ -167,13 +214,148 @@ export async function getById(id: string) {
   return batch;
 }
 
-export async function create(input: z.infer<typeof createBatchSchema>) {
+/**
+ * Creates a batch from a Training Plan template and, in the same transaction, instantiates its
+ * full schedule onto that batch: every TrainingPlanSession becomes a Session (with its default
+ * feedback-form link copied onto a SessionFeedbackForm row), every TrainingPlanAssignment becomes
+ * an Assignment linked to its instantiated Session, every TrainingPlanResource becomes a batch
+ * Resource (as an external link), and every TrainingPlanAnnouncement becomes a batch-scoped
+ * Announcement. This is the org's actual workflow — Admin enters a batch name, picks BA BTech or
+ * BA MBA, and a start date; everything else (~42 sessions across a 5-day week, the assignment
+ * schedule, resources, announcements, feedback links, and the computed end date) appears
+ * automatically and stays editable per-batch afterward without touching the template.
+ *
+ * `actorId` is the admin performing the creation — used only for audit-ownership fields
+ * (SessionFeedbackForm.createdBy, Announcement.authorId, Resource.uploadedBy), never for the
+ * Session/Assignment "Trainer" field, which stays genuinely optional (`input.facilitatorId`).
+ */
+export async function create(actorId: string, input: z.infer<typeof createBatchSchema>) {
   if (input.facilitatorId) await assertRole(input.facilitatorId, 'facilitator');
 
   const existingCode = await prisma.batch.findUnique({ where: { code: input.code } });
   if (existingCode) throw ApiError.conflict('A batch with this code already exists.');
 
-  return prisma.batch.create({ data: input, include });
+  const plan = await prisma.trainingPlan.findUnique({
+    where: { id: input.trainingPlanId },
+    include: {
+      sessions: { orderBy: { order: 'asc' } },
+      assignments: true,
+      resources: true,
+      announcements: true
+    }
+  });
+  if (!plan) throw ApiError.badRequest('No such training plan.');
+
+  const { program, track } = deriveProgramTrack(plan.code);
+  const startDate = input.startMonth ?? new Date();
+  const trainerId = input.facilitatorId ?? null;
+
+  // "Approximately 2 months" ends up being however long the generated schedule actually runs —
+  // the last scheduled session's date — falling back to a flat calendar-month estimate for a
+  // plan with no sessions defined yet.
+  const lastSessionDayOffset = plan.sessions.reduce((max, s) => Math.max(max, s.dayOffset), -1);
+  const endDate =
+    lastSessionDayOffset >= 0
+      ? nthWorkingDay(startDate, lastSessionDayOffset)
+      : new Date(startOfLocalDay(startDate).getTime() + plan.durationMonths * 30 * DAY_MS);
+
+  return prisma.$transaction(async (tx) => {
+    const batch = await tx.batch.create({
+      data: {
+        code: input.code,
+        name: input.name,
+        program,
+        track,
+        trainingPlanId: plan.id,
+        facilitatorId: trainerId,
+        startMonth: startDate,
+        endDate,
+        status: input.status
+      }
+    });
+
+    const sessionIdByTemplateId = new Map<string, string>();
+    for (const templateSession of plan.sessions) {
+      const scheduledAt = addMinutes(nthWorkingDay(startDate, templateSession.dayOffset), templateSession.startMinute);
+      const session = await tx.session.create({
+        data: {
+          batchId: batch.id,
+          facilitatorId: trainerId,
+          trainingPlanSessionId: templateSession.id,
+          title: templateSession.title,
+          agenda: templateSession.agenda,
+          scheduledAt,
+          durationMinutes: templateSession.endMinute - templateSession.startMinute,
+          platform: templateSession.platform,
+          status: 'Upcoming'
+        }
+      });
+      sessionIdByTemplateId.set(templateSession.id, session.id);
+
+      if (templateSession.feedbackFormUrl) {
+        await tx.sessionFeedbackForm.create({
+          data: {
+            sessionId: session.id,
+            name: `${templateSession.title} — Session Feedback`,
+            formUrl: templateSession.feedbackFormUrl,
+            audience: 'Trainees',
+            createdBy: actorId
+          }
+        });
+      }
+    }
+
+    for (const templateAssignment of plan.assignments) {
+      const deadline = addMinutes(nthWorkingDay(startDate, templateAssignment.dueDayOffset), plan.defaultAssignmentDeadlineMinute);
+      const relatedSessionId = templateAssignment.relatedSessionId
+        ? sessionIdByTemplateId.get(templateAssignment.relatedSessionId)
+        : undefined;
+
+      await tx.assignment.create({
+        data: {
+          batchId: batch.id,
+          facilitatorId: trainerId,
+          trainingPlanAssignmentId: templateAssignment.id,
+          sessionId: relatedSessionId,
+          title: templateAssignment.title,
+          agenda: templateAssignment.agenda,
+          description: templateAssignment.description,
+          deadline,
+          status: 'Open',
+          batches: { create: [{ batchId: batch.id }] }
+        }
+      });
+    }
+
+    for (const templateResource of plan.resources) {
+      await tx.resource.create({
+        data: {
+          batchId: batch.id,
+          trainingPlanResourceId: templateResource.id,
+          title: templateResource.title,
+          category: templateResource.category,
+          externalUrl: templateResource.url,
+          uploadedBy: actorId
+        }
+      });
+    }
+
+    for (const templateAnnouncement of plan.announcements) {
+      await tx.announcement.create({
+        data: {
+          batchId: batch.id,
+          trainingPlanAnnouncementId: templateAnnouncement.id,
+          authorId: actorId,
+          title: templateAnnouncement.title,
+          message: templateAnnouncement.message,
+          priority: templateAnnouncement.priority,
+          audience: batch.code
+        }
+      });
+    }
+
+    return tx.batch.findUniqueOrThrow({ where: { id: batch.id }, include });
+  });
 }
 
 export async function update(id: string, input: z.infer<typeof updateBatchSchema>) {

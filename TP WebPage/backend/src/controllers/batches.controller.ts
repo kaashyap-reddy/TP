@@ -9,7 +9,8 @@ export const listBatchesHandler = asyncHandler(async (req: Request, res: Respons
 });
 
 export const createBatchHandler = asyncHandler(async (req: Request, res: Response) => {
-  const batch = await batchesService.create(req.body);
+  if (!req.user) throw ApiError.unauthorized();
+  const batch = await batchesService.create(req.user.id, req.body);
   await recordAuditEvent({
     eventType: 'BatchCreated',
     message: `Batch "${batch.name}" was created.`,

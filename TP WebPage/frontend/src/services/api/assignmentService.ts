@@ -5,12 +5,13 @@ import { ApiSubmission, toFrontendSubmission } from './submissionService';
 interface ApiAssignment {
   id: string;
   batchId: string;
-  batches: AssignmentBatchRef[];
+  batches: (AssignmentBatchRef & { trainingPlan?: { id: string; name: string } | null })[];
   title: string;
+  agenda: string;
   description: string;
   status: AssignmentStatus;
   deadline: string;
-  facilitator: { id: string; name: string; email: string };
+  session: { id: string; title: string } | null;
   attachment: { originalFilename: string; mimeType: string; sizeBytes: number } | null;
   // Embedded directly by the backend list/create/update endpoints (see backend's
   // assignments.service.ts) — avoids one GET /assignments/:id/submissions round-trip per
@@ -45,7 +46,10 @@ function toFrontendAssignment(apiAssignment: ApiAssignment): Assignment {
     title: apiAssignment.title,
     batchId: apiAssignment.batchId,
     batches: apiAssignment.batches ?? [],
-    facilitator: apiAssignment.facilitator?.name ?? '',
+    sessionId: apiAssignment.session?.id ?? null,
+    sessionTitle: apiAssignment.session?.title ?? null,
+    trainingPlanName: apiAssignment.batches?.[0]?.trainingPlan?.name ?? null,
+    agenda: apiAssignment.agenda,
     deadline: apiAssignment.deadline,
     description: apiAssignment.description,
     status: apiAssignment.status,
@@ -61,13 +65,15 @@ export async function listAssignments(filters?: { batchId?: string }): Promise<A
 
 export interface CreateAssignmentInput {
   title: string;
+  /** What the assignment is meant to achieve (e.g. "Requirement Gathering", "SQL Basics"). */
+  agenda?: string;
   /** One or more batches this assignment is assigned to. */
   batchIds: string[];
   deadline: string;
   description: string;
   status?: AssignmentStatus;
-  /** Accepted for call-site compatibility; the API always assigns the creating facilitator, not an arbitrary name. */
-  facilitator?: string;
+  /** The session this assignment relates to, if any. */
+  sessionId?: string;
   /** Optional instructions file. */
   file?: File | null;
 }
@@ -75,17 +81,21 @@ export interface CreateAssignmentInput {
 function toFormData(input: {
   batchIds?: string[];
   title?: string;
+  agenda?: string;
   description?: string;
   deadline?: string;
   status?: AssignmentStatus;
+  sessionId?: string | null;
   file?: File | null;
 }): FormData {
   const formData = new FormData();
   if (input.batchIds) formData.append('batchIds', JSON.stringify(input.batchIds));
   if (input.title !== undefined) formData.append('title', input.title);
+  if (input.agenda !== undefined) formData.append('agenda', input.agenda);
   if (input.description !== undefined) formData.append('description', input.description);
   if (input.deadline !== undefined) formData.append('deadline', input.deadline);
   if (input.status !== undefined) formData.append('status', input.status);
+  if (input.sessionId) formData.append('sessionId', input.sessionId);
   if (input.file) formData.append('file', input.file);
   return formData;
 }
@@ -96,9 +106,11 @@ export async function createAssignment(input: CreateAssignmentInput): Promise<As
     toFormData({
       batchIds: input.batchIds,
       title: input.title,
+      agenda: input.agenda,
       description: input.description,
       deadline: input.deadline,
       status: input.status,
+      sessionId: input.sessionId,
       file: input.file
     })
   );
@@ -109,8 +121,10 @@ export interface UpdateAssignmentInput {
   status?: AssignmentStatus;
   deadline?: string;
   title?: string;
+  agenda?: string;
   description?: string;
   batchIds?: string[];
+  sessionId?: string | null;
   file?: File | null;
 }
 
@@ -126,6 +140,7 @@ export async function deleteAssignment(id: string): Promise<void> {
 export async function duplicateAssignment(assignment: Assignment): Promise<Assignment> {
   return createAssignment({
     title: `${assignment.title} (Copy)`,
+    agenda: assignment.agenda,
     batchIds: assignment.batches.length > 0 ? assignment.batches.map((b) => b.id) : [assignment.batchId],
     deadline: assignment.deadline,
     description: assignment.description,

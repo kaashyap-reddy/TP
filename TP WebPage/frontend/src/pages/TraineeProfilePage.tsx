@@ -36,7 +36,12 @@ export default function TraineeProfilePage() {
 
   const myBatches = useMemo(() => batches.filter((b) => b.poc === FACILITATOR_NAME), [batches]);
   const batch = useMemo(() => myBatches.find((b) => b.members.includes(traineeName)), [myBatches, traineeName]);
-  const facilitatorAssignments = useMemo(() => assignments.filter((a) => a.facilitator === FACILITATOR_NAME), [assignments]);
+  // Assignments belong to a Training Plan, not an individual facilitator — scope to "my batches'
+  // assignments" via batch membership instead of a facilitator-name match.
+  const facilitatorAssignments = useMemo(() => {
+    const myBatchIds = new Set(myBatches.map((b) => b.id));
+    return assignments.filter((a) => a.batches.some((b) => myBatchIds.has(b.id)));
+  }, [assignments, myBatches]);
   const submissionRows = useMemo(
     () =>
       facilitatorAssignments.flatMap((a) => {

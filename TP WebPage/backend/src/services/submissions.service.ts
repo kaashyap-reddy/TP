@@ -21,7 +21,9 @@ async function getAssignmentWithBatchesOrThrow(assignmentId: string) {
   return assignment;
 }
 
-function assertCanManage(actor: AuthenticatedUser, facilitatorId: string) {
+// facilitatorId is nullable — assignments generated from a Training Plan template usually have
+// no individual owner, in which case only admin can manage submissions for them.
+function assertCanManage(actor: AuthenticatedUser, facilitatorId: string | null) {
   if (actor.role === 'admin') return;
   if (actor.role === 'facilitator' && actor.id === facilitatorId) return;
   throw ApiError.forbidden('You do not have access to this assignment.');

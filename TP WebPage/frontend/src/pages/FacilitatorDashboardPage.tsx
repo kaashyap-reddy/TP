@@ -14,8 +14,9 @@ import { useAuthStore } from '../store/authStore';
 import { logout } from '../services/api/authService';
 import { assignmentAttachmentUrl } from '../services/api/assignmentService';
 import { findUserEmailByName } from '../services/api/userService';
+import * as sessionFeedbackService from '../services/api/sessionFeedbackService';
 import { dateStrToIso, formatTimeRange, isoToDateStr, minutesToLabel, parseTimeRange } from '../utils/sessionTime';
-import { formatDateTime } from '../utils/dateUtils';
+import { formatDate, formatDateTime } from '../utils/dateUtils';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useNotifications } from '../hooks/useNotifications';
@@ -39,6 +40,7 @@ import AssignmentBatchesCell from '../components/AssignmentBatchesCell';
 import AssignmentTitleLink from '../components/AssignmentTitleLink';
 import FileViewButton from '../components/FileViewButton';
 import FeedbackCard from '../components/FeedbackCard';
+import SessionFeedbackCell from '../components/SessionFeedbackCell';
 import SessionsCalendarView from '../components/SessionsCalendarView';
 import DashboardLayout from '../layouts/DashboardLayout';
 import type { FacilitatorTabId } from '../constants/navigation';
@@ -182,6 +184,7 @@ export default function FacilitatorDashboardPage() {
   // Assignments tab state
   const [assignmentModalOpen, setAssignmentModalOpen] = useState(false);
   const [newAssignmentTitle, setNewAssignmentTitle] = useState('');
+  const [newAssignmentAgenda, setNewAssignmentAgenda] = useState('');
   const [newAssignmentBatchIds, setNewAssignmentBatchIds] = useState<string[]>([]);
   const [newAssignmentFile, setNewAssignmentFile] = useState<File | null>(null);
   const [newAssignmentDeadline, setNewAssignmentDeadline] = useState('');
@@ -208,7 +211,13 @@ export default function FacilitatorDashboardPage() {
     return activeTab === tab ? '' : 'hidden';
   }
 
-  const facilitatorAssignments = useMemo(() => assignments.filter((a) => a.facilitator === FACILITATOR_NAME), [assignments]);
+  // Assignments belong to a Training Plan, not an individual facilitator (see the schema change) —
+  // scope to "my assignments" via this facilitator's own batches (batches is already scoped by
+  // fetchBatches({ facilitatorId }) above) instead of a facilitator-name match.
+  const facilitatorAssignments = useMemo(() => {
+    const myBatchIds = new Set(batches.map((b) => b.id));
+    return assignments.filter((a) => a.batches.some((b) => myBatchIds.has(b.id)));
+  }, [assignments, batches]);
   const facilitatorFeedback = useMemo(
     () =>
       feedback.filter((f) => f.facilitator === FACILITATOR_NAME).filter((f) => {
@@ -238,6 +247,32 @@ export default function FacilitatorDashboardPage() {
     const myBatchIds = new Set(myBatches.map((b) => b.id));
     return sessions.filter((s) => myBatchIds.has(s.batchId));
   }, [sessions, myBatches]);
+
+  // Which of my completed sessions' Facilitator/Both-audience feedback forms I've already
+  // submitted my own response to — mirrors the trainee dashboard's equivalent tracking, since a
+  // form can target facilitators too, not just be something they manage.
+  const [mySubmittedFeedbackSessionIds, setMySubmittedFeedbackSessionIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    const sessionsWithRespondableForms = mySessions.filter(
+      (s) => s.status === 'Completed' && s.feedbackForm && s.feedbackForm.audience !== 'Trainees'
+    );
+    Promise.all(
+      sessionsWithRespondableForms.map((s) =>
+        sessionFeedbackService.getSessionFeedbackForm(s.id).then((form) => (form?.mySubmitted ? s.id : null))
+      )
+    ).then((ids) => setMySubmittedFeedbackSessionIds(new Set(ids.filter((id): id is string => id !== null))));
+  }, [mySessions]);
+
+  async function handleGiveSessionFeedback(session: Session) {
+    if (!session.feedbackForm) return;
+    window.open(session.feedbackForm.formUrl, '_blank', 'noopener,noreferrer');
+    try {
+      await sessionFeedbackService.submitSessionFeedback(session.id);
+      setMySubmittedFeedbackSessionIds((prev) => new Set(prev).add(session.id));
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Unable to record feedback submission.', 'error');
+    }
+  }
   const traineeContacts = useMemo(
     () =>
       Array.from(new Set(myBatches.flatMap((b) => b.members))).map((name) => {
@@ -530,14 +565,15 @@ export default function FacilitatorDashboardPage() {
       const title = newAssignmentTitle.trim() || 'Untitled Assignment';
       const assignment = await createAssignment({
         title,
+        agenda: newAssignmentAgenda,
         batchIds: newAssignmentBatchIds,
-        facilitator: FACILITATOR_NAME,
         deadline: newAssignmentDeadline,
         description: newAssignmentDescription,
         file: newAssignmentFile
       });
       setAssignmentModalOpen(false);
       setNewAssignmentTitle('');
+      setNewAssignmentAgenda('');
       setNewAssignmentBatchIds([]);
       setNewAssignmentFile(null);
       setNewAssignmentDeadline('');
@@ -982,6 +1018,7 @@ export default function FacilitatorDashboardPage() {
                   },
                   { key: 'assignment', label: 'Assignment' },
                   { key: 'batch', label: 'Batch' },
+                  { key: 'session', label: 'Related Session' },
                   { key: 'deadline', label: 'Deadline' },
                   { key: 'status', label: 'Status' },
                   { key: 'grading', label: 'Grading Progress' },
@@ -989,7 +1026,7 @@ export default function FacilitatorDashboardPage() {
                 ]}
               >
                 {pagedFacilitatorAssignments.length === 0 && (
-                  <tr><td colSpan={7}><EmptyState title="No assignments match these filters" icon="search" /></td></tr>
+                  <tr><td colSpan={8}><EmptyState title="No assignments match these filters" icon="search" /></td></tr>
                 )}
                 {pagedFacilitatorAssignments.map((a) => {
                   const gradedCount = a.submissions.filter((s) => s.status === 'Completed').length;
@@ -1003,7 +1040,8 @@ export default function FacilitatorDashboardPage() {
                         <AssignmentTitleLink id={a.id} title={a.title} />
                       </td>
                       <td className="px-6 py-4 text-gray-500"><AssignmentBatchesCell batches={a.batches} /></td>
-                      <td className="px-6 py-4 text-gray-500">{formatDateTime(a.deadline)}</td>
+                      <td className="px-6 py-4 text-gray-500">{a.sessionTitle ?? '—'}</td>
+                      <td className="px-6 py-4 text-gray-500">{formatDate(a.deadline)}</td>
                       <td className="px-6 py-4"><StatusBadge status={effectiveStatus(a)} /></td>
                       <td className="px-6 py-4 w-48">
                         <div className="text-[11px] text-gray-500 font-bold mb-1">{gradedCount}/{a.submissions.length} graded</div>
@@ -1047,6 +1085,14 @@ export default function FacilitatorDashboardPage() {
                       <div className="text-sm text-gray-500 mt-1">{session.date} • {session.time}</div>
                       <div className="flex items-center gap-2 mt-2">
                         <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-indigo-50 text-indigo-700">{session.platform}</span>
+                      </div>
+                      <div className="flex items-center gap-3 mt-2 text-[11px] text-gray-500">
+                        <span>Assignment: {session.relatedAssignmentTitle ?? '—'}</span>
+                        <SessionFeedbackCell
+                          session={session}
+                          canManage
+                          onChange={(sessionId, feedbackForm) => updateSession(sessionId, { feedbackForm })}
+                        />
                       </div>
                       {(() => {
                         const total = (session.presentCount ?? 0) + (session.absentCount ?? 0);
@@ -1199,7 +1245,54 @@ export default function FacilitatorDashboardPage() {
 
           {/* Feedback Tab */}
           <div className={hiddenUnless('feedback')}>
-            <h2 className="text-2xl font-bold mb-6">Feedback Management</h2>
+            <h2 className="text-2xl font-bold mb-1">Session Feedback</h2>
+            <p className="text-gray-500 text-sm mb-6">
+              Attach, open, copy, or replace each session's external feedback-form link — and give your own feedback when a form targets facilitators.
+            </p>
+            <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6 mb-10">
+              {mySessions.length === 0 ? (
+                <EmptyState title="No sessions yet" icon="calendar" />
+              ) : (
+                <div className="space-y-2">
+                  {mySessions.map((session) => {
+                    const batch = batches.find((b) => b.id === session.batchId);
+                    const canGiveFeedback =
+                      session.status === 'Completed' && session.feedbackForm && session.feedbackForm.audience !== 'Trainees';
+                    const alreadySubmitted = mySubmittedFeedbackSessionIds.has(session.id);
+                    return (
+                      <div key={session.id} className="flex items-center justify-between px-4 py-3 border border-gray-200 rounded-lg gap-3">
+                        <div>
+                          <div className="text-sm font-medium text-gray-800">{session.title}</div>
+                          <div className="text-xs text-gray-400">{batch?.name ?? session.batchId}</div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <SessionFeedbackCell
+                            session={session}
+                            canManage
+                            onChange={(sessionId, feedbackForm) => updateSession(sessionId, { feedbackForm })}
+                          />
+                          {canGiveFeedback && (
+                            alreadySubmitted ? (
+                              <span className="text-xs font-bold text-green-700 bg-green-50 border border-green-200 px-3 py-1.5 rounded-lg whitespace-nowrap">Submitted</span>
+                            ) : (
+                              <button
+                                onClick={() => handleGiveSessionFeedback(session)}
+                                className="text-xs font-bold text-white bg-green-600 hover:bg-green-700 px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap"
+                              >
+                                Give Feedback
+                              </button>
+                            )
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <h2 className="text-xl font-bold text-gray-500 mb-1">Facilitator Performance Feedback</h2>
+            <p className="text-gray-400 text-sm mb-6">Trainee/facilitator ratings — unrelated to Session Feedback above.</p>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="col-span-1 bg-white border border-gray-200 p-6 rounded-xl shadow-sm h-fit">
                 <h3 className="font-bold text-lg mb-4">Give Feedback to a Trainee</h3>
@@ -1435,6 +1528,17 @@ export default function FacilitatorDashboardPage() {
             <div>
               <label htmlFor="facilitator-assignment-title" className="block text-sm font-medium text-gray-700 mb-1">Title</label>
               <input id="facilitator-assignment-title" type="text" value={newAssignmentTitle} onChange={(e) => setNewAssignmentTitle(e.target.value)} className="w-full px-3 py-2 border rounded-lg outline-none" />
+            </div>
+            <div>
+              <label htmlFor="facilitator-assignment-agenda" className="block text-sm font-medium text-gray-700 mb-1">Agenda / Objective</label>
+              <input
+                id="facilitator-assignment-agenda"
+                type="text"
+                value={newAssignmentAgenda}
+                onChange={(e) => setNewAssignmentAgenda(e.target.value)}
+                placeholder="e.g. Requirement Gathering, SQL Basics"
+                className="w-full px-3 py-2 border rounded-lg outline-none"
+              />
             </div>
             <BatchMultiSelect batches={batches} selectedIds={newAssignmentBatchIds} onChange={setNewAssignmentBatchIds} />
             <div>

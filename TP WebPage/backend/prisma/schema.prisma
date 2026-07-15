@@ -96,6 +96,12 @@ enum FeedbackDirection {
   TraineeToFacilitator
 }
 
+enum SessionFeedbackAudience {
+  Trainees
+  Facilitators
+  Both
+}
+
 // ---------- Auth & identity ----------
 
 model Role {
@@ -145,25 +151,27 @@ model User {
 
   role Role @relation(fields: [roleId], references: [id])
 
-  profile               UserProfile?
-  refreshTokens         RefreshToken[]
-  invitesSent           UserInvite[]        @relation("InviteSentBy")
-  batchesAsFacilitator  Batch[]             @relation("BatchFacilitator")
-  batchEnrollments      BatchTrainee[]
-  assignmentsCreated    Assignment[]
-  submissions           Submission[]
-  sessionsAsFacilitator Session[]
-  attendanceMarked      Attendance[]        @relation("AttendanceMarkedBy")
-  attendanceRecords     Attendance[]        @relation("AttendanceTrainee")
-  resourcesUploaded     Resource[]
-  feedbackAsTrainee     FeedbackEntry[]     @relation("FeedbackTrainee")
-  feedbackAsFacilitator FeedbackEntry[]     @relation("FeedbackFacilitator")
-  announcements         Announcement[]
-  announcementReads     AnnouncementRead[]
-  discussionThreads     DiscussionThread[]
-  discussionMessages    DiscussionMessage[]
-  auditLogEntries       AuditLog[]
-  notificationReads     NotificationRead[]
+  profile                     UserProfile?
+  refreshTokens               RefreshToken[]
+  invitesSent                 UserInvite[]                @relation("InviteSentBy")
+  batchesAsFacilitator        Batch[]                     @relation("BatchFacilitator")
+  batchEnrollments            BatchTrainee[]
+  assignmentsCreated          Assignment[]
+  submissions                 Submission[]
+  sessionsAsFacilitator       Session[]
+  attendanceMarked            Attendance[]                @relation("AttendanceMarkedBy")
+  attendanceRecords           Attendance[]                @relation("AttendanceTrainee")
+  resourcesUploaded           Resource[]
+  feedbackAsTrainee           FeedbackEntry[]             @relation("FeedbackTrainee")
+  feedbackAsFacilitator       FeedbackEntry[]             @relation("FeedbackFacilitator")
+  sessionFeedbackFormsCreated SessionFeedbackForm[]
+  sessionFeedbackSubmissions  SessionFeedbackSubmission[]
+  announcements               Announcement[]
+  announcementReads           AnnouncementRead[]
+  discussionThreads           DiscussionThread[]
+  discussionMessages          DiscussionMessage[]
+  auditLogEntries             AuditLog[]
+  notificationReads           NotificationRead[]
 
   // Matches the admin user-listing endpoint's role filter (GET /users?role=...).
   @@index([roleId])
@@ -223,24 +231,128 @@ model RefreshToken {
   @@map("refresh_tokens")
 }
 
+// ---------- Training plans ----------
+// A TrainingPlan is the org's fixed curriculum template (only "BA BTech" and "BA MBA" exist).
+// Creating a Batch against a plan instantiates copies of its sessions/assignments/resources/
+// announcements onto that batch (see batches.service.ts `create()`); edits to those per-batch
+// copies never mutate the template, they only keep a nullable FK back to it for traceability.
+
+model TrainingPlan {
+  id                              String   @id @default(uuid())
+  code                            String   @unique
+  name                            String
+  description                     String   @default("")
+  durationMonths                  Int      @default(2) @map("duration_months")
+  // Reusable schedule defaults (minutes from midnight) — batch automation and the Admin editing
+  // UI both read these instead of each hardcoding the org's standard timings separately.
+  // Session: 14:30-16:30. Assignment: opens in the morning, due end-of-day (23:59).
+  defaultSessionStartMinute       Int      @default(870) @map("default_session_start_minute")
+  defaultSessionEndMinute         Int      @default(990) @map("default_session_end_minute")
+  defaultAssignmentStartMinute    Int      @default(570) @map("default_assignment_start_minute")
+  defaultAssignmentDeadlineMinute Int      @default(1439) @map("default_assignment_deadline_minute")
+  createdAt                       DateTime @default(now()) @map("created_at")
+  updatedAt                       DateTime @updatedAt @map("updated_at")
+
+  sessions      TrainingPlanSession[]
+  assignments   TrainingPlanAssignment[]
+  resources     TrainingPlanResource[]
+  announcements TrainingPlanAnnouncement[]
+  batches       Batch[]
+
+  @@map("training_plans")
+}
+
+model TrainingPlanSession {
+  id              String          @id @default(uuid())
+  trainingPlanId  String          @map("training_plan_id")
+  title           String
+  // What the session is meant to cover — shown alongside the title in the schedule/calendar.
+  agenda          String          @default("")
+  // Day N of the plan's duration — combined with a batch's startMonth to compute the actual
+  // scheduledAt of the Session instantiated from this template row.
+  dayOffset       Int             @map("day_offset")
+  startMinute     Int             @map("start_minute")
+  endMinute       Int             @map("end_minute")
+  platform        SessionPlatform @default(Other)
+  order           Int
+  // Default feedback-form link copied onto instantiated Sessions; editable per-batch afterward.
+  feedbackFormUrl String?         @map("feedback_form_url")
+
+  trainingPlan TrainingPlan             @relation(fields: [trainingPlanId], references: [id], onDelete: Cascade)
+  assignments  TrainingPlanAssignment[]
+  sessions     Session[]
+
+  @@index([trainingPlanId])
+  @@map("training_plan_sessions")
+}
+
+model TrainingPlanAssignment {
+  id               String  @id @default(uuid())
+  trainingPlanId   String  @map("training_plan_id")
+  title            String
+  // What the assignment is meant to achieve (e.g. "Requirement Gathering", "SQL Basics") —
+  // shown in Assignment Details alongside the free-text description.
+  agenda           String  @default("")
+  description      String  @default("")
+  dueDayOffset     Int     @map("due_day_offset")
+  relatedSessionId String? @map("related_session_id")
+
+  trainingPlan   TrainingPlan         @relation(fields: [trainingPlanId], references: [id], onDelete: Cascade)
+  relatedSession TrainingPlanSession? @relation(fields: [relatedSessionId], references: [id], onDelete: SetNull)
+  assignments    Assignment[]
+
+  @@index([trainingPlanId])
+  @@map("training_plan_assignments")
+}
+
+model TrainingPlanResource {
+  id             String @id @default(uuid())
+  trainingPlanId String @map("training_plan_id")
+  title          String
+  category       String
+  url            String
+
+  trainingPlan TrainingPlan @relation(fields: [trainingPlanId], references: [id], onDelete: Cascade)
+  resources    Resource[]
+
+  @@index([trainingPlanId])
+  @@map("training_plan_resources")
+}
+
+model TrainingPlanAnnouncement {
+  id             String               @id @default(uuid())
+  trainingPlanId String               @map("training_plan_id")
+  title          String
+  message        String
+  priority       AnnouncementPriority @default(Normal)
+
+  trainingPlan  TrainingPlan   @relation(fields: [trainingPlanId], references: [id], onDelete: Cascade)
+  announcements Announcement[]
+
+  @@index([trainingPlanId])
+  @@map("training_plan_announcements")
+}
+
 // ---------- Batches ----------
 
 model Batch {
-  id            String       @id @default(uuid())
-  code          String       @unique
-  name          String
-  program       BatchProgram
-  track         BatchTrack
-  facilitatorId String?      @map("facilitator_id")
-  startMonth    DateTime?    @map("start_month")
-  endDate       DateTime?    @map("end_date")
-  status        BatchStatus  @default(Upcoming)
-  archivedAt    DateTime?    @map("archived_at")
-  createdAt     DateTime     @default(now()) @map("created_at")
-  updatedAt     DateTime     @updatedAt @map("updated_at")
-  deletedAt     DateTime?    @map("deleted_at")
+  id             String       @id @default(uuid())
+  code           String       @unique
+  name           String
+  program        BatchProgram
+  track          BatchTrack
+  trainingPlanId String       @map("training_plan_id")
+  facilitatorId  String?      @map("facilitator_id")
+  startMonth     DateTime?    @map("start_month")
+  endDate        DateTime?    @map("end_date")
+  status         BatchStatus  @default(Upcoming)
+  archivedAt     DateTime?    @map("archived_at")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+  deletedAt      DateTime?    @map("deleted_at")
 
-  facilitator User? @relation("BatchFacilitator", fields: [facilitatorId], references: [id], onDelete: SetNull)
+  trainingPlan TrainingPlan @relation(fields: [trainingPlanId], references: [id])
+  facilitator  User?        @relation("BatchFacilitator", fields: [facilitatorId], references: [id], onDelete: SetNull)
 
   trainees          BatchTrainee[]
   assignments       Assignment[]
@@ -249,9 +361,11 @@ model Batch {
   resources         Resource[]
   feedback          FeedbackEntry[]
   discussions       DiscussionThread[]
+  announcements     Announcement[]
 
   @@index([facilitatorId])
   @@index([status])
+  @@index([trainingPlanId])
   @@map("batches")
 }
 
@@ -276,8 +390,17 @@ model Assignment {
   // Primary/first batch — kept for backward compatibility with existing single-batch reads.
   // The authoritative set of assigned batches is the AssignmentBatch join table below.
   batchId                    String           @map("batch_id")
-  facilitatorId              String           @map("facilitator_id")
+  // Nullable: assignments belong to a Training Plan/batch, not necessarily an individual
+  // facilitator — this is only set when a specific trainer owns/created the assignment.
+  facilitatorId              String?          @map("facilitator_id")
+  // Template this assignment was instantiated from (null for manually-created ad-hoc assignments).
+  trainingPlanAssignmentId   String?          @map("training_plan_assignment_id")
+  // The session this assignment is tied to — drives "Related Session" on the assignment and
+  // "Related Assignment" on the session (via the reverse relation), a single FK for both views.
+  sessionId                  String?          @map("session_id")
   title                      String
+  // What the assignment is meant to achieve (e.g. "Requirement Gathering", "SQL Basics").
+  agenda                     String           @default("")
   description                String           @default("")
   status                     AssignmentStatus @default(Draft)
   deadline                   DateTime
@@ -289,13 +412,16 @@ model Assignment {
   updatedAt                  DateTime         @updatedAt @map("updated_at")
   deletedAt                  DateTime?        @map("deleted_at")
 
-  batch       Batch             @relation(fields: [batchId], references: [id], onDelete: Cascade)
-  facilitator User              @relation(fields: [facilitatorId], references: [id])
-  submissions Submission[]
-  batches     AssignmentBatch[]
+  batch                  Batch                   @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  facilitator            User?                   @relation(fields: [facilitatorId], references: [id])
+  trainingPlanAssignment TrainingPlanAssignment? @relation(fields: [trainingPlanAssignmentId], references: [id], onDelete: SetNull)
+  session                Session?                @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  submissions            Submission[]
+  batches                AssignmentBatch[]
 
   @@index([batchId])
   @@index([deadline])
+  @@index([sessionId])
   @@map("assignments")
 }
 
@@ -358,21 +484,32 @@ model SubmissionAttachment {
 // ---------- Sessions & attendance ----------
 
 model Session {
-  id            String          @id @default(uuid())
-  batchId       String          @map("batch_id")
-  facilitatorId String          @map("facilitator_id")
-  title         String
-  scheduledAt   DateTime        @map("scheduled_at")
-  platform      SessionPlatform @default(Other)
-  meetingLink   String?         @map("meeting_link")
-  status        SessionStatus   @default(Upcoming)
-  createdAt     DateTime        @default(now()) @map("created_at")
-  updatedAt     DateTime        @updatedAt @map("updated_at")
-  deletedAt     DateTime?       @map("deleted_at")
+  id                    String          @id @default(uuid())
+  batchId               String          @map("batch_id")
+  // Nullable: the "Trainer" for a session is optional (per the org's Training Plan workflow) —
+  // most sessions are generated from a template with no specific trainer pre-assigned.
+  facilitatorId         String?         @map("facilitator_id")
+  // Template this session was instantiated from (null for manually-scheduled ad-hoc sessions).
+  trainingPlanSessionId String?         @map("training_plan_session_id")
+  title                 String
+  agenda                String          @default("")
+  scheduledAt           DateTime        @map("scheduled_at")
+  // How long the session runs from scheduledAt (e.g. 120 for the org's standard 2:30-4:30 PM
+  // instructor-led block) — without this the UI has no way to know a session's end time.
+  durationMinutes       Int             @default(120) @map("duration_minutes")
+  platform              SessionPlatform @default(Other)
+  meetingLink           String?         @map("meeting_link")
+  status                SessionStatus   @default(Upcoming)
+  createdAt             DateTime        @default(now()) @map("created_at")
+  updatedAt             DateTime        @updatedAt @map("updated_at")
+  deletedAt             DateTime?       @map("deleted_at")
 
-  batch       Batch        @relation(fields: [batchId], references: [id], onDelete: Cascade)
-  facilitator User         @relation(fields: [facilitatorId], references: [id])
-  attendance  Attendance[]
+  batch               Batch                @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  facilitator         User?                @relation(fields: [facilitatorId], references: [id])
+  trainingPlanSession TrainingPlanSession? @relation(fields: [trainingPlanSessionId], references: [id], onDelete: SetNull)
+  attendance          Attendance[]
+  relatedAssignments  Assignment[]
+  feedbackForm        SessionFeedbackForm?
 
   @@index([batchId])
   @@index([scheduledAt])
@@ -399,23 +536,29 @@ model Attendance {
 // ---------- Resources ----------
 
 model Resource {
-  id            String    @id @default(uuid())
-  batchId       String?   @map("batch_id")
-  title         String
-  category      String
-  version       String    @default("v1.0")
-  storageKey    String    @unique @map("storage_key")
-  mimeType      String    @map("mime_type")
-  sizeBytes     BigInt    @map("size_bytes")
-  downloadCount Int       @default(0) @map("download_count")
-  verified      Boolean   @default(false)
-  uploadedBy    String    @map("uploaded_by")
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt @map("updated_at")
-  deletedAt     DateTime? @map("deleted_at")
+  id                     String    @id @default(uuid())
+  batchId                String?   @map("batch_id")
+  // Template this resource was instantiated from (null for manually-uploaded resources).
+  trainingPlanResourceId String?   @map("training_plan_resource_id")
+  title                  String
+  category               String
+  version                String    @default("v1.0")
+  // Exactly one of storageKey (uploaded file) or externalUrl (shared link — e.g. resources
+  // copied from a Training Plan template) is set; enforced at the application layer, not the DB.
+  storageKey             String?   @unique @map("storage_key")
+  mimeType               String?   @map("mime_type")
+  sizeBytes              BigInt?   @map("size_bytes")
+  externalUrl            String?   @map("external_url")
+  downloadCount          Int       @default(0) @map("download_count")
+  verified               Boolean   @default(false)
+  uploadedBy             String    @map("uploaded_by")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
+  deletedAt              DateTime? @map("deleted_at")
 
-  batch    Batch? @relation(fields: [batchId], references: [id], onDelete: Cascade)
-  uploader User   @relation(fields: [uploadedBy], references: [id])
+  batch                Batch?                @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  uploader             User                  @relation(fields: [uploadedBy], references: [id])
+  trainingPlanResource TrainingPlanResource? @relation(fields: [trainingPlanResourceId], references: [id], onDelete: SetNull)
 
   @@index([batchId])
   @@index([category])
@@ -423,6 +566,44 @@ model Resource {
 }
 
 // ---------- Feedback ----------
+
+// Session Feedback: an external form link (Google/Microsoft Forms) attached to a Session, plus
+// per-trainee submission tracking for stats and the trainee's Pending/Completed status. Distinct
+// from FeedbackEntry (facilitator<->trainee performance ratings) below, which is unrelated.
+model SessionFeedbackForm {
+  id          String                  @id @default(uuid())
+  sessionId   String                  @unique @map("session_id")
+  name        String
+  description String                  @default("")
+  formUrl     String                  @map("form_url")
+  // Who the form is meant for — narrows which role(s) see it attached to their session view.
+  audience    SessionFeedbackAudience @default(Both)
+  createdBy   String                  @map("created_by")
+  createdAt   DateTime                @default(now()) @map("created_at")
+  updatedAt   DateTime                @updatedAt @map("updated_at")
+
+  session     Session                     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  creator     User                        @relation(fields: [createdBy], references: [id])
+  submissions SessionFeedbackSubmission[]
+
+  @@map("session_feedback_forms")
+}
+
+model SessionFeedbackSubmission {
+  id          String   @id @default(uuid())
+  formId      String   @map("form_id")
+  // The trainee OR facilitator who submitted — a form's audience can target either (or both), so
+  // this isn't trainee-only despite the model's name being "session feedback".
+  submitterId String   @map("submitter_id")
+  submittedAt DateTime @default(now()) @map("submitted_at")
+
+  form      SessionFeedbackForm @relation(fields: [formId], references: [id], onDelete: Cascade)
+  submitter User                @relation(fields: [submitterId], references: [id], onDelete: Cascade)
+
+  @@unique([formId, submitterId])
+  @@index([submitterId])
+  @@map("session_feedback_submissions")
+}
 
 model FeedbackEntry {
   id            String            @id @default(uuid())
@@ -451,23 +632,30 @@ model FeedbackEntry {
 // ---------- Announcements & discussions ----------
 
 model Announcement {
-  id           String               @id @default(uuid())
-  authorId     String               @map("author_id")
-  title        String
-  message      String
-  priority     AnnouncementPriority @default(Normal)
-  audience     String
-  pinned       Boolean              @default(false)
-  scheduledFor DateTime?            @map("scheduled_for")
-  expiresAt    DateTime?            @map("expires_at")
-  createdAt    DateTime             @default(now()) @map("created_at")
-  updatedAt    DateTime             @updatedAt @map("updated_at")
-  deletedAt    DateTime?            @map("deleted_at")
+  id                         String               @id @default(uuid())
+  authorId                   String               @map("author_id")
+  // Batch this announcement is scoped to (null = global). Populated automatically when a batch
+  // is created from a Training Plan's default announcements.
+  batchId                    String?              @map("batch_id")
+  trainingPlanAnnouncementId String?              @map("training_plan_announcement_id")
+  title                      String
+  message                    String
+  priority                   AnnouncementPriority @default(Normal)
+  audience                   String
+  pinned                     Boolean              @default(false)
+  scheduledFor               DateTime?            @map("scheduled_for")
+  expiresAt                  DateTime?            @map("expires_at")
+  createdAt                  DateTime             @default(now()) @map("created_at")
+  updatedAt                  DateTime             @updatedAt @map("updated_at")
+  deletedAt                  DateTime?            @map("deleted_at")
 
-  author User               @relation(fields: [authorId], references: [id])
-  reads  AnnouncementRead[]
+  author                   User                      @relation(fields: [authorId], references: [id])
+  batch                    Batch?                    @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  trainingPlanAnnouncement TrainingPlanAnnouncement? @relation(fields: [trainingPlanAnnouncementId], references: [id], onDelete: SetNull)
+  reads                    AnnouncementRead[]
 
   @@index([pinned])
+  @@index([batchId])
   @@map("announcements")
 }
 

@@ -53,5 +53,12 @@ export const deleteResourceHandler = asyncHandler(async (req: Request, res: Resp
 export const downloadResourceHandler = asyncHandler(async (req: Request, res: Response) => {
   const resource = await resourcesService.getForDownload(req.params.id);
   logger.info('file.downloaded', { resourceId: resource.id, downloadedBy: req.user?.id ?? null });
+  // A Training-Plan-sourced resource is a shared external link (e.g. copied from a template),
+  // not an uploaded file — redirect instead of trying to stream a file that doesn't exist here.
+  if (resource.externalUrl) {
+    res.redirect(resource.externalUrl);
+    return;
+  }
+  if (!resource.storageKey) throw ApiError.notFound('This resource has no downloadable file.');
   await getStorageProvider().sendFile(res, resource.storageKey, resource.title);
 });
