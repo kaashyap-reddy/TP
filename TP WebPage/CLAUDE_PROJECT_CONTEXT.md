@@ -1,6 +1,6 @@
 # CLAUDE_PROJECT_CONTEXT — Trainee Portal
 
-Compact, durable context for future Claude CLI sessions. Read this instead of rescanning the repo. Last updated: **2026-07-15** (full verification audit — see `AUDIT_REPORT.md`).
+Compact, durable context for future Claude CLI sessions. Read this instead of rescanning the repo. Last updated: **2026-07-15** (full verification audit, see `AUDIT_REPORT.md`; then a same-day follow-up committed the audited app changes, fixed the demo filename gap, and added assignment-level feedback forms).
 
 ## 1. Purpose
 
@@ -27,7 +27,7 @@ Internal Trainee Management Portal. Core workflow: an Admin onboards a new batch
 - Admin Training Plan editor: stats, full session/assignment lists with View/Edit/Reschedule/Delete, Add Session/Assignment, Assign to Batch.
 - Admin batch onboarding modal (name + plan + start date; trainer optional); expandable batch rosters; trainee names → admin trainee profile with back-context.
 - Admin/Facilitator Sessions & Calendar: 2:30 PM – 4:30 PM timing, `Session Feedback: Open Feedback Form` wording (never "Assignment: …"), attach/edit/remove/copy form links with audience (Trainees/Facilitators/Both), Record Attendance, List/Calendar toggle.
-- Assignments tables: Title · Batch (real names, no `—`) · Related Session · Deadline · Status · progress · Assignment File. No Facilitator or Training Plan columns.
+- Assignments tables: Title · Batch (real names, no `—`) · Related Session · Deadline · Status · progress · Assignment File. No Facilitator or Training Plan columns. Assignment detail page (admin/facilitator) has its own `Assignment Feedback` form link (attach/edit/copy/remove, audience-gated) independent of any related session's form; Trainee Assignments tab shows a per-row "Submit Assignment Feedback" action once attached.
 - Facilitator: own-batches only → `FacilitatorBatchDetailPage` (per-trainee stats) → trainee profile → Back returns to same batch (origin tracked in `facilitatorProfileNav.ts`, safe fallback = Batches tab).
 - Trainee: "MY CURRENT BATCH" highlight (first/earliest enrollment); submit/resubmit with hard post-deadline block + tooltip message; per-completed-session "Submit Session Feedback" (opens URL, records submission, flips to "Feedback Submitted"); "My Session Feedback" tab (pending vs Submitted); Facilitators contacts page.
 - Scoping/security: batch rosters, feedback forms (audience + `withFeedbackFormVisibility`), and metrics are role/batch-scoped on both backend and demo layers.
@@ -35,16 +35,15 @@ Internal Trainee Management Portal. Core workflow: an Admin onboards a new batch
 
 ## 5. Pending / Not Yet Done
 
-- **PostgreSQL not connected** → pending: migrate deploy of 6 new migrations, seed, real login/JWT, S3 file storage, real-mode Playwright pass, live metrics. (Do not install PostgreSQL/Docker or request admin rights without being asked.)
-- Real Microsoft Forms links: manual step (create in forms.office.com, paste into Training Plan session `feedbackFormUrl` or per-session `Session Feedback: Edit`). Demo URLs are labeled placeholders (`forms.gle/...-day-N-feedback`).
-- **Uncommitted work**: as of 2026-07-15, ~70 modified/new application files (entire Training Plan + Session Feedback feature set, 6 prisma migrations, new tests) sit uncommitted on `main` (last commit `340826d`). Committing them is the top recommended action.
+- **PostgreSQL not connected** → pending: migrate deploy of 7 migrations (6 from the audit + `20260716150000_assignment_feedback_forms`), seed, real login/JWT, S3 file storage, real-mode Playwright pass, live metrics. (Do not install PostgreSQL/Docker or request admin rights without being asked.)
+- Real Microsoft Forms links: manual step (create in forms.office.com, paste into Training Plan session `feedbackFormUrl`, per-session `Session Feedback: Edit`, or an assignment's `Assignment Feedback: Edit` on its detail page). Demo URLs are labeled placeholders (`forms.gle/...-day-N-feedback`).
 
-## 6. Known Issues (all minor, none fixed during audit)
+## 6. Known Issues (all minor)
 
-1. Demo Mode: submitted filename blank right after upload (demo `POST /submissions/:id/attachments` returns only `{id}`; real backend returns `originalFilename`). `demoMode.ts:~637`.
-2. Demo Mode: no zod URL validation (backend has `z.string().url()`); no per-trainee attendance fixtures (shows `—`); no assignment instruction-file fixtures (button shows honest "No file uploaded").
-3. Two console 500s per role on the login page when backend is down (`/api/auth/refresh` via Vite proxy) — environmental.
-4. Unknown routes (e.g. `/trainee/discussions`) redirect to login route via `*` catch-all rather than a 404 page.
+1. Demo Mode: no zod URL validation (backend has `z.string().url()`); no per-trainee attendance fixtures (shows `—`); no assignment instruction-file fixtures (button shows honest "No file uploaded").
+2. Two console 500s per role on the login page when backend is down (`/api/auth/refresh` via Vite proxy) — environmental.
+3. Unknown routes (e.g. `/trainee/discussions`) redirect to login route via `*` catch-all rather than a 404 page.
+4. ~~Demo Mode submitted filename blank after upload~~ — **fixed** 2026-07-15 (`demoMode.ts` now returns real attachment metadata, commit `00349f8`).
 
 ## 7. Important Business Rules
 
@@ -66,18 +65,18 @@ Internal Trainee Management Portal. Core workflow: an Admin onboards a new batch
 - Demo Mode degrades honestly (labeled sample files, "not connected" notices) — never fake success.
 - Facilitator trainee-profile Back falls back to **Batches** (never the generic Trainees tab) when origin is unknown.
 
-## 9. Conflicting / Unclear Requirements (need user decision)
+## 9. Conflicting / Unclear Requirements
 
-- **Assignment-level feedback links**: audit prompt asked to "attach a link to an assignment where required"; implementation attaches forms to sessions only (assignments reach a form via their related session). Undecided.
-- Admin nav order deviation (above) — accepted so far, flagged in audit.
+- ~~Assignment-level feedback links~~ — **resolved** 2026-07-15 (user chose "add assignment-level forms" over "keep session-level only"). Assignments now have their own `AssignmentFeedbackForm`/`AssignmentFeedbackSubmission` models, backend routes (`/assignments/:id/feedback-form[...]`), and a `AssignmentFeedbackCell` UI on `AssignmentDetailPage` (manage) + the Trainee Assignments tab (submit). Fully independent of Session Feedback — an assignment can have both a related session's form and its own.
+- Admin nav order deviation (Training Plans sits 3rd, not with role-specific pages at the end) — accepted, flagged in audit, not changed.
 
 ## 10. Tests / Builds Last Run (2026-07-15, all green)
 
-Frontend & backend `tsc` exit 0 · frontend `vite build` OK · backend build OK · `vitest run` **24 files / 115 tests passed** (no DB needed) · `prisma validate` + `format --check` + `generate` OK · Playwright demo-mode audit of all 3 roles (25 screenshots in `audit-screenshots/`).
+Frontend & backend `tsc` exit 0 · frontend `vite build` OK · backend build OK · `vitest run` **25 files / 126 tests passed** (no DB needed) · `prisma validate` + `format` + `generate` OK · Playwright demo-mode audit of all 3 roles (25 screenshots in `audit-screenshots/`) · cross-role Playwright verification of assignment feedback (facilitator attach → trainee submit, confirmed end-to-end).
 
 ## 11. Git
 
-Branch `main`; `origin` = github.com/kaashyap-reddy/TP. Last commit before audit artifacts: `340826d` "Integrate real backend, replace mock services, and polish batch/assignment flows". Application changes remain uncommitted (see §5).
+Branch `main`; `origin` = github.com/kaashyap-reddy/TP. Commits since the audit: `5084bb7` (audit artifacts) → `3fd034c` (committed the previously-uncommitted Training Plan/Session Feedback feature set) → `00349f8` (demo filename fix) → `b732822` (assignment-level feedback forms). Working tree is clean of application changes as of this update (some unrelated scratch files — `USER_FLOWS.md`, `output/`, `tools/`, `tp-check.md`, `sessions-*.md`, `.pnpm-store/`, `tmp/` — remain untracked; not part of this feature, left alone).
 
 ## 12. Demo Accounts (fixtures)
 
