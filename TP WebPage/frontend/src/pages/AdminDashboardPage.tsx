@@ -1,11 +1,10 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Batch, useBatchesStore } from '../store/batchesStore';
 import { effectiveStatus, useAssignmentsStore } from '../store/assignmentsStore';
 import { assignmentAttachmentUrl } from '../services/api/assignmentService';
 import { MeetingPlatform, Session, SessionStatus, useSessionsStore } from '../store/sessionsStore';
 import { useTrainingPlansStore } from '../store/trainingPlansStore';
-import * as sessionFeedbackService from '../services/api/sessionFeedbackService';
 import TrainingPlansPanel from './admin/TrainingPlansPanel';
 import SessionFeedbackCell from '../components/SessionFeedbackCell';
 import { RESOURCE_CATEGORIES, useResourcesStore } from '../store/resourcesStore';
@@ -1015,7 +1014,7 @@ export default function AdminDashboardPage() {
         const matchesBatch = assignmentBatchFilter === 'All Batches' || a.batches.some((b) => b.name === assignmentBatchFilter);
         return matchesSearch && matchesStatus && matchesBatch;
       }),
-    [assignments, assignmentSearch, assignmentStatusFilter, assignmentBatchFilter, batches]
+    [assignments, assignmentSearch, assignmentStatusFilter, assignmentBatchFilter]
   );
   const ASSIGNMENT_PAGE_SIZE = 6;
   const assignmentPageCount = Math.max(1, Math.ceil(filteredAssignments.length / ASSIGNMENT_PAGE_SIZE));

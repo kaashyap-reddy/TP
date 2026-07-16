@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { SessionStatus, MeetingPlatform, Session } from '../types/session';
+import type { Session } from '../types/session';
 import * as sessionService from '../services/api/sessionService';
 
 export type { SessionStatus, MeetingPlatform, Session } from '../types/session';

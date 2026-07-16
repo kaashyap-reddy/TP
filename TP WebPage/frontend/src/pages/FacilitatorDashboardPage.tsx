@@ -133,7 +133,7 @@ export default function FacilitatorDashboardPage() {
     });
   }, [activeTab, announcements, markAnnouncementRead]);
   const [notificationOpen, setNotificationOpen] = useState(false);
-  const { readLogIds, notificationEntries, unreadCount, markNotificationRead, markAllNotificationsRead } = useNotifications(auditEntries);
+  const { readLogIds, unreadCount, markNotificationRead, markAllNotificationsRead } = useNotifications(auditEntries);
   const [announcementModalOpen, setAnnouncementModalOpen] = useState(false);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const [resourceSearch, setResourceSearch] = useState('');
@@ -324,7 +324,7 @@ export default function FacilitatorDashboardPage() {
         const matchesBatch = assignmentBatchFilter === 'All Batches' || a.batches.some((b) => b.name === assignmentBatchFilter);
         return matchesSearch && matchesStatus && matchesBatch;
       }),
-    [facilitatorAssignments, assignmentSearch, assignmentStatusFilter, assignmentBatchFilter, batches]
+    [facilitatorAssignments, assignmentSearch, assignmentStatusFilter, assignmentBatchFilter]
   );
   const ASSIGNMENT_PAGE_SIZE = 6;
   const assignmentPageCount = Math.max(1, Math.ceil(filteredFacilitatorAssignments.length / ASSIGNMENT_PAGE_SIZE));

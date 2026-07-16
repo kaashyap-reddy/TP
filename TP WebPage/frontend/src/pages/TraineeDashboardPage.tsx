@@ -90,7 +90,7 @@ export default function TraineeDashboardPage() {
   const [notificationOpen, setNotificationOpen] = useState(false);
   const notificationMenuRef = useRef<HTMLDivElement>(null);
   useClickOutside(notificationMenuRef, () => setNotificationOpen(false), notificationOpen);
-  const { readLogIds, notificationEntries, unreadCount, markNotificationRead, markAllNotificationsRead } = useNotifications(auditEntries);
+  const { readLogIds, unreadCount, markNotificationRead, markAllNotificationsRead } = useNotifications(auditEntries);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
 
   // Assignments / submission
