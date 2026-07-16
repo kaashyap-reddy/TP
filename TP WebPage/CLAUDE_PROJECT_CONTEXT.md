@@ -1,6 +1,6 @@
 # CLAUDE_PROJECT_CONTEXT — Trainee Portal
 
-Compact, durable context for future Claude CLI sessions. Read this instead of rescanning the repo. Last updated: **2026-07-16** (cleared the minor-known-issues list: demo attendance + instruction-file fixtures, demo URL validation, boot-refresh console noise, real 404 page, favicon, feedback-cell error toasts).
+Compact, durable context for future Claude CLI sessions. Read this instead of rescanning the repo. Last updated: **2026-07-16 (second pass)** — after clearing the minor-known-issues list (demo attendance/file fixtures, demo URL validation, console noise, 404 page), a hardening pass added: ESLint (both packages, `npm run lint` at root), frontend vitest suite (29 tests, `frontend/src/__tests__/`), Playwright e2e (8 demo-mode tests, `frontend/e2e/`, `npm run test:e2e`, dedicated port 5099), GitHub Actions CI (`.github/workflows/ci.yml` at the **repo root**, i.e. the parent `Trainee Portal/` folder), a token-verified password-reset flow replacing the insecure forgot-password contract (new `password_reset_tokens` table + `/reset-password` page; Account Settings now uses `change-password` with a Current Password field), a real `/api/announcements` backend (frontend still renders its mock announcements store until real-mode wiring), and the notification bell now reads `GET /api/notifications` with a demo/offline fallback to client-derived audit entries.
 
 ## 1. Purpose
 
@@ -35,7 +35,7 @@ Internal Trainee Management Portal. Core workflow: an Admin onboards a new batch
 
 ## 5. Pending / Not Yet Done
 
-- **PostgreSQL not connected** → pending: migrate deploy of 7 migrations (6 from the audit + `20260716150000_assignment_feedback_forms`), seed, real login/JWT, S3 file storage, real-mode Playwright pass, live metrics. (Do not install PostgreSQL/Docker or request admin rights without being asked.)
+- **PostgreSQL not connected** → pending: migrate deploy of the 10 migrations (now including `20260716180000_password_reset_tokens`), seed, real login/JWT, S3 file storage, real-mode Playwright pass, live metrics, switching the announcements store off mock data. (Do not install PostgreSQL/Docker or request admin rights without being asked; a free Neon URL is the intended path — see DEPLOYMENT.md.)
 - Real Microsoft Forms links: manual step (create in forms.office.com, paste into Training Plan session `feedbackFormUrl`, per-session `Session Feedback: Edit`, or an assignment's `Assignment Feedback: Edit` on its detail page). Demo URLs are labeled placeholders (`forms.gle/...-day-N-feedback`).
 
 ## 6. Known Issues
@@ -75,13 +75,13 @@ None open. Previously-listed minor issues, all **fixed 2026-07-16** (verified vi
 - ~~Assignment-level feedback links~~ — **resolved** 2026-07-15 (user chose "add assignment-level forms" over "keep session-level only"). Assignments now have their own `AssignmentFeedbackForm`/`AssignmentFeedbackSubmission` models, backend routes (`/assignments/:id/feedback-form[...]`), and a `AssignmentFeedbackCell` UI on `AssignmentDetailPage` (manage) + the Trainee Assignments tab (submit). Fully independent of Session Feedback — an assignment can have both a related session's form and its own.
 - Admin nav order deviation (Training Plans sits 3rd, not with role-specific pages at the end) — accepted, flagged in audit, not changed.
 
-## 10. Tests / Builds Last Run (2026-07-15, all green)
+## 10. Tests / Builds Last Run (2026-07-16, all green)
 
-Frontend & backend `tsc` exit 0 · frontend `vite build` OK · backend build OK · `vitest run` **25 files / 126 tests passed** (no DB needed) · `prisma validate` + `format` + `generate` OK · Playwright demo-mode audit of all 3 roles (25 screenshots in `audit-screenshots/`) · cross-role Playwright verification of assignment feedback (facilitator attach → trainee submit, confirmed end-to-end).
+Frontend & backend `tsc` exit 0 · both `eslint` exit 0 · frontend `vite build` OK · backend build OK · backend `vitest run` **27 files / 140 tests** (no DB) · frontend `vitest run` **3 files / 29 tests** · Playwright e2e **8/8** (`frontend/e2e/demo-flows.spec.ts`) · `prisma validate` OK. CI (`.github/workflows/ci.yml`) runs all of this on push/PR.
 
 ## 11. Git
 
-Branch `main`; `origin` = github.com/kaashyap-reddy/TP. Commits since the audit: `5084bb7` (audit artifacts) → `3fd034c` (committed the previously-uncommitted Training Plan/Session Feedback feature set) → `00349f8` (demo filename fix) → `b732822` (assignment-level feedback forms). Working tree is clean of application changes as of this update (some unrelated scratch files — `USER_FLOWS.md`, `output/`, `tools/`, `tp-check.md`, `sessions-*.md`, `.pnpm-store/`, `tmp/` — remain untracked; not part of this feature, left alone).
+Branch `main`; `origin` = github.com/kaashyap-reddy/TP. Commits since the audit: `5084bb7` (audit artifacts) → `3fd034c` (Training Plan/Session Feedback feature set) → `00349f8` (demo filename fix) → `b732822` (assignment-level feedback forms) → `ebcc4d1` (minor known-issue fixes) → `073b406` (repo hygiene: scratch files gitignored, `USER_FLOWS.md` + `tools/` tracked) → `a2f9ff0` (ESLint) → `c5d271d` (frontend unit tests) → `c34d45f` (Playwright e2e) → `920cf49` (token-verified password reset) → `c5a1a04` (announcements API + notification wiring) → `88a06c2` (CI). Local commits are **not pushed** — push to origin when ready so CI gets its first run.
 
 ## 12. Demo Accounts (fixtures)
 
