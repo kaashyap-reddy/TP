@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { Session } from '../types/session';
 import type { SessionFeedbackAudience } from '../types/sessionFeedback';
 import * as sessionFeedbackService from '../services/api/sessionFeedbackService';
+import { useToastStore } from '../store/toastStore';
 
 interface SessionFeedbackCellProps {
   session: Session;
@@ -25,6 +26,7 @@ export default function SessionFeedbackCell({ session, onChange, canManage }: Se
   const [audience, setAudience] = useState<SessionFeedbackAudience>(session.feedbackForm?.audience ?? 'Both');
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
+  const showToast = useToastStore((s) => s.showToast);
 
   function openEditor() {
     setName(session.feedbackForm?.name ?? `${session.title} Feedback`);
@@ -60,6 +62,8 @@ export default function SessionFeedbackCell({ session, onChange, canManage }: Se
         submittedCount: form.submittedCount
       });
       setEditing(false);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Unable to save the feedback form.', 'error');
     } finally {
       setSaving(false);
     }
@@ -73,6 +77,8 @@ export default function SessionFeedbackCell({ session, onChange, canManage }: Se
       await sessionFeedbackService.removeSessionFeedbackForm(session.id);
       onChange(session.id, null);
       setEditing(false);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Unable to remove the feedback form.', 'error');
     } finally {
       setSaving(false);
     }

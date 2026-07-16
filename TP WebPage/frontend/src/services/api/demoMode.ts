@@ -10,6 +10,7 @@
 import type { Role } from '../../types/role';
 import {
   DEMO_ASSIGNMENTS,
+  DEMO_ATTENDANCE,
   DEMO_BATCHES,
   DEMO_FEEDBACK,
   DEMO_RESOURCES,
@@ -18,6 +19,7 @@ import {
   DEMO_USERS,
   nthWorkingDay,
   type DemoAssignment,
+  type DemoAttendanceRecord,
   type DemoResource,
   type DemoSession,
   type DemoSubmission,
@@ -60,6 +62,7 @@ function currentDemoUser() {
 let batches = clone(DEMO_BATCHES);
 let assignments = clone(DEMO_ASSIGNMENTS);
 let sessions = clone(DEMO_SESSIONS);
+let attendance = clone(DEMO_ATTENDANCE);
 let resources = clone(DEMO_RESOURCES);
 let feedback = clone(DEMO_FEEDBACK);
 const trainingPlans = clone(DEMO_TRAINING_PLANS);
@@ -119,6 +122,26 @@ function notFound(): never {
   const err = new Error('Not found.') as Error & { status?: number };
   err.status = 404;
   throw err;
+}
+
+// Mirrors the real backend's zod `z.string().trim().url()` validators (sessionFeedback/
+// trainingPlans validators) so Demo Mode rejects the same malformed input instead of storing it.
+function assertValidUrl(value: unknown, field: string, { required = false } = {}): void {
+  if (value === undefined || value === null || value === '') {
+    if (required) {
+      const err = new Error(`${field} is required.`) as Error & { status?: number };
+      err.status = 400;
+      throw err;
+    }
+    return;
+  }
+  try {
+    new URL(String(value).trim());
+  } catch {
+    const err = new Error(`Please enter a valid ${field} including the protocol (e.g. https://...).`) as Error & { status?: number };
+    err.status = 400;
+    throw err;
+  }
 }
 
 function matchPath(pattern: string, path: string): Record<string, string> | null {
@@ -315,7 +338,10 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
         status: 'Open',
         deadline,
         session: relatedSession ? { id: relatedSession.id, title: relatedSession.title } : null,
-        submissions: [] as DemoSubmission[]
+        submissions: [] as DemoSubmission[],
+        // Template assignments carry no instructions file, so a batch generated live in the demo
+        // honestly shows "No file uploaded" until one is attached via Edit.
+        attachment: null
       };
       assignments = [...assignments, newAssignment];
       if (relatedSession) relatedSession.relatedAssignments = [{ id: newAssignment.id, title: newAssignment.title }];
@@ -369,6 +395,7 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
     const batch = batches.find((x) => x.id === batchTraineeStatsMatch.id);
     if (!batch) notFound();
     const batchAssignments = assignments.filter((a) => a.batchId === batch.id);
+    const batchSessionIds = new Set(sessions.filter((s) => s.batchId === batch.id).map((s) => s.id));
     const totalAssignments = batchAssignments.length;
     const trainees = batch.members.map((name) => {
       const user = DEMO_USERS.find((u) => u.name === name);
@@ -379,13 +406,15 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
       const latest = [...submissions]
         .filter((s) => s.submittedAt !== null)
         .sort((a, b) => (b.submittedAt as string).localeCompare(a.submittedAt as string))[0];
+      // Same computation as backend batches.service.ts listTraineeStats(): Present records over
+      // all attendance records for this trainee across the batch's sessions.
+      const traineeAttendance = attendance.filter((r) => batchSessionIds.has(r.sessionId) && r.traineeId === user?.id);
+      const present = traineeAttendance.filter((r) => r.status === 'Present').length;
       return {
         id: user?.id ?? nextId('trainee'),
         name,
         email: user?.email ?? '',
-        // Demo Mode's GET /sessions/:id/attendance always returns [] (no per-trainee attendance
-        // fixture data exists), so there's nothing to compute a real percentage from here either.
-        attendancePercentage: null as number | null,
+        attendancePercentage: traineeAttendance.length > 0 ? Math.round((present / traineeAttendance.length) * 10000) / 100 : null,
         assignmentsCompleted: completed,
         assignmentsPending: Math.max(totalAssignments - completed, 0),
         avgGrade,
@@ -448,6 +477,7 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
   if (tpSessionsMatch && method === 'POST') {
     const plan = trainingPlans.find((p) => p.id === tpSessionsMatch.id);
     if (!plan) notFound();
+    assertValidUrl(b.feedbackFormUrl, 'feedback form URL');
     const created = {
       id: nextId('demo-tps'),
       title: String(b.title ?? 'New Session'),
@@ -469,6 +499,7 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
     const session = plan.sessions.find((s) => s.id === tpSessionIdMatch.sessionId);
     if (!session) notFound();
     if (method === 'PATCH') {
+      if (b.feedbackFormUrl !== undefined) assertValidUrl(b.feedbackFormUrl, 'feedback form URL');
       Object.assign(session, b);
       return { session };
     }
@@ -521,6 +552,7 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
   if (tpResourcesMatch && method === 'POST') {
     const plan = trainingPlans.find((p) => p.id === tpResourcesMatch.id);
     if (!plan) notFound();
+    assertValidUrl(b.url, 'resource URL', { required: true });
     const created = { id: nextId('demo-tpr'), title: String(b.title ?? 'New Resource'), category: String(b.category ?? ''), url: String(b.url ?? '') };
     plan.resources = [...plan.resources, created];
     return { resource: created };
@@ -532,6 +564,7 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
     const resource = plan.resources.find((r) => r.id === tpResourceIdMatch.resourceId);
     if (!resource) notFound();
     if (method === 'PATCH') {
+      if (b.url !== undefined) assertValidUrl(b.url, 'resource URL', { required: true });
       Object.assign(resource, b);
       return { resource };
     }
@@ -574,6 +607,7 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
   if (method === 'POST' && path === '/assignments') {
     const { batchId, batches: assignmentBatches } = resolveAssignmentBatches(parseBatchIds(b.batchIds));
     const relatedSession = b.sessionId ? sessions.find((s) => s.id === b.sessionId) : undefined;
+    const file = b.file instanceof File ? b.file : null;
     const created = {
       id: nextId('demo-assignment'),
       batchId,
@@ -584,7 +618,8 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
       status: String(b.status ?? 'Draft'),
       deadline: String(b.deadline ?? new Date().toISOString()),
       session: relatedSession ? { id: relatedSession.id, title: relatedSession.title } : null,
-      submissions: [] as DemoSubmission[]
+      submissions: [] as DemoSubmission[],
+      attachment: file ? { originalFilename: file.name, mimeType: file.type || 'application/octet-stream', sizeBytes: file.size } : null
     };
     assignments = [created, ...assignments];
     return { assignment: created };
@@ -595,8 +630,11 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
     if (!assignment) notFound();
     if (method === 'GET') return { assignment: withAssignmentFeedbackFormVisibility(assignment) };
     if (method === 'PATCH') {
-      const { batchIds, sessionId, ...rest } = b;
+      const { batchIds, sessionId, file, ...rest } = b;
       Object.assign(assignment, rest);
+      if (file instanceof File) {
+        assignment.attachment = { originalFilename: file.name, mimeType: file.type || 'application/octet-stream', sizeBytes: file.size };
+      }
       if (batchIds !== undefined) {
         const parsed = parseBatchIds(batchIds);
         if (parsed.length > 0) Object.assign(assignment, resolveAssignmentBatches(parsed));
@@ -663,6 +701,7 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
         err.status = 409;
         throw err;
       }
+      assertValidUrl(b.formUrl, 'form URL', { required: true });
       assignment.feedbackForm = {
         id: nextId('demo-assignment-feedback-form'),
         name: String(b.name ?? `${assignment.title} Feedback`),
@@ -675,6 +714,7 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
       return { form: { ...assignment.feedbackForm, submittedCount: 0, totalTrainees, mySubmitted: null } };
     }
     if (method === 'PATCH' && assignment.feedbackForm) {
+      if (b.formUrl !== undefined) assertValidUrl(b.formUrl, 'form URL', { required: true });
       if (b.name !== undefined) assignment.feedbackForm.name = String(b.name);
       if (b.description !== undefined) assignment.feedbackForm.description = String(b.description);
       if (b.formUrl !== undefined) assignment.feedbackForm.formUrl = String(b.formUrl);
@@ -782,8 +822,36 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
   }
   const attendanceMatch = matchPath('/sessions/:id/attendance', path);
   if (attendanceMatch) {
-    if (method === 'GET') return { attendance: [] };
-    if (method === 'PUT') return { attendance: [] };
+    const session = sessions.find((x) => x.id === attendanceMatch.id);
+    if (!session) notFound();
+    const forSession = () => attendance.filter((r) => r.sessionId === session.id);
+    if (method === 'GET') return { attendance: forSession() };
+    if (method === 'PUT') {
+      // Mirrors the real backend's bulkMark() upsert: one record per (session, trainee).
+      const records = Array.isArray(b.records) ? (b.records as { traineeId: string; status: 'Present' | 'Absent' }[]) : [];
+      const actor = currentDemoUser();
+      for (const record of records) {
+        const existing = attendance.find((r) => r.sessionId === session.id && r.traineeId === record.traineeId);
+        if (existing) {
+          existing.status = record.status;
+          existing.markedBy = actor.id;
+          existing.markedAt = new Date().toISOString();
+        } else {
+          const trainee = DEMO_USERS.find((u) => u.id === record.traineeId);
+          const created: DemoAttendanceRecord = {
+            id: nextId('demo-att'),
+            sessionId: session.id,
+            traineeId: record.traineeId,
+            status: record.status,
+            markedBy: actor.id,
+            markedAt: new Date().toISOString(),
+            trainee: trainee ? { id: trainee.id, name: trainee.name, email: trainee.email } : { id: record.traineeId, name: '', email: '' }
+          };
+          attendance = [...attendance, created];
+        }
+      }
+      return { attendance: forSession() };
+    }
   }
 
   // ---- session feedback (external form link + submission tracking) ----
@@ -811,6 +879,7 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
       };
     }
     if (method === 'POST') {
+      assertValidUrl(b.formUrl, 'form URL', { required: true });
       session.feedbackForm = {
         id: nextId('demo-feedback-form'),
         name: String(b.name ?? `${session.title} Feedback`),
@@ -823,6 +892,7 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
       return { form: { ...session.feedbackForm, submittedCount: 0, totalTrainees, mySubmitted: null } };
     }
     if (method === 'PATCH' && session.feedbackForm) {
+      if (b.formUrl !== undefined) assertValidUrl(b.formUrl, 'form URL', { required: true });
       if (b.name !== undefined) session.feedbackForm.name = String(b.name);
       if (b.description !== undefined) session.feedbackForm.description = String(b.description);
       if (b.formUrl !== undefined) session.feedbackForm.formUrl = String(b.formUrl);

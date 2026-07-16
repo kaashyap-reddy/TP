@@ -1,6 +1,6 @@
 # CLAUDE_PROJECT_CONTEXT — Trainee Portal
 
-Compact, durable context for future Claude CLI sessions. Read this instead of rescanning the repo. Last updated: **2026-07-15** (full verification audit, see `AUDIT_REPORT.md`; then a same-day follow-up committed the audited app changes, fixed the demo filename gap, and added assignment-level feedback forms).
+Compact, durable context for future Claude CLI sessions. Read this instead of rescanning the repo. Last updated: **2026-07-16** (cleared the minor-known-issues list: demo attendance + instruction-file fixtures, demo URL validation, boot-refresh console noise, real 404 page, favicon, feedback-cell error toasts).
 
 ## 1. Purpose
 
@@ -38,12 +38,17 @@ Internal Trainee Management Portal. Core workflow: an Admin onboards a new batch
 - **PostgreSQL not connected** → pending: migrate deploy of 7 migrations (6 from the audit + `20260716150000_assignment_feedback_forms`), seed, real login/JWT, S3 file storage, real-mode Playwright pass, live metrics. (Do not install PostgreSQL/Docker or request admin rights without being asked.)
 - Real Microsoft Forms links: manual step (create in forms.office.com, paste into Training Plan session `feedbackFormUrl`, per-session `Session Feedback: Edit`, or an assignment's `Assignment Feedback: Edit` on its detail page). Demo URLs are labeled placeholders (`forms.gle/...-day-N-feedback`).
 
-## 6. Known Issues (all minor)
+## 6. Known Issues
 
-1. Demo Mode: no zod URL validation (backend has `z.string().url()`); no per-trainee attendance fixtures (shows `—`); no assignment instruction-file fixtures (button shows honest "No file uploaded").
-2. Two console 500s per role on the login page when backend is down (`/api/auth/refresh` via Vite proxy) — environmental.
-3. Unknown routes (e.g. `/trainee/discussions`) redirect to login route via `*` catch-all rather than a 404 page.
-4. ~~Demo Mode submitted filename blank after upload~~ — **fixed** 2026-07-15 (`demoMode.ts` now returns real attachment metadata, commit `00349f8`).
+None open. Previously-listed minor issues, all **fixed 2026-07-16** (verified via Playwright demo pass + `tsc` + `vite build`):
+
+1. Demo URL validation — `assertValidUrl()` in `demoMode.ts` mirrors backend `z.string().trim().url()` on session/assignment feedback-form POST/PATCH, TP session `feedbackFormUrl`, TP resource `url`. Both `SessionFeedbackCell`/`AssignmentFeedbackCell` also gained catch+toast on save/remove (errors were previously swallowed against the real backend too).
+2. Per-trainee attendance — `DEMO_ATTENDANCE` fixtures (deterministic mostly-Present per completed session) in `demoData.ts`; `/batches/:id/trainee-stats` computes real percentages; `/sessions/:id/attendance` GET/PUT now serve/upsert records mirroring `attendance.service.ts`.
+3. Assignment instruction files — every generated demo assignment carries a labeled `… Case Study Brief (Sample).txt` attachment; demo `POST/PATCH /assignments` honor an uploaded file's real metadata; live-generated batches honestly get `attachment: null`.
+4. Login-page console 500s — `authService.refresh()` skips the network when neither Demo Mode nor a `tp-session-hint` localStorage flag (set on login, cleared on logout/failed refresh) indicates a session could exist.
+5. 404 — `*` catch-all now renders `NotFoundPage.tsx` (shows the bad path; links to role dashboard or sign-in) instead of redirecting to login.
+6. Missing favicon 404 in console — added `frontend/public/favicon.svg` + link tag.
+7. ~~Demo Mode submitted filename blank after upload~~ — fixed 2026-07-15 (commit `00349f8`).
 
 ## 7. Important Business Rules
 

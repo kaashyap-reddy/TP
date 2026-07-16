@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { Assignment } from '../types/assignment';
 import type { AssignmentFeedbackAudience } from '../types/assignmentFeedback';
 import * as assignmentFeedbackService from '../services/api/assignmentFeedbackService';
+import { useToastStore } from '../store/toastStore';
 
 interface AssignmentFeedbackCellProps {
   assignment: Assignment;
@@ -25,6 +26,7 @@ export default function AssignmentFeedbackCell({ assignment, onChange, canManage
   const [audience, setAudience] = useState<AssignmentFeedbackAudience>(assignment.feedbackForm?.audience ?? 'Both');
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
+  const showToast = useToastStore((s) => s.showToast);
 
   function openEditor() {
     setName(assignment.feedbackForm?.name ?? `${assignment.title} Feedback`);
@@ -60,6 +62,8 @@ export default function AssignmentFeedbackCell({ assignment, onChange, canManage
         submittedCount: form.submittedCount
       });
       setEditing(false);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Unable to save the feedback form.', 'error');
     } finally {
       setSaving(false);
     }
@@ -73,6 +77,8 @@ export default function AssignmentFeedbackCell({ assignment, onChange, canManage
       await assignmentFeedbackService.removeAssignmentFeedbackForm(assignment.id);
       onChange(assignment.id, null);
       setEditing(false);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Unable to remove the feedback form.', 'error');
     } finally {
       setSaving(false);
     }

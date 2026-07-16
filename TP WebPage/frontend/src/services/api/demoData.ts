@@ -92,6 +92,18 @@ export interface DemoAssignment {
   session: { id: string; title: string } | null;
   submissions: DemoSubmission[];
   feedbackForm?: DemoAssignmentFeedbackForm | null;
+  /** Instructions-file metadata, same shape the real backend serializes. Demo downloads resolve to a labeled sample file (see apiClient.ts's apiDownload). */
+  attachment?: { originalFilename: string; mimeType: string; sizeBytes: number } | null;
+}
+
+export interface DemoAttendanceRecord {
+  id: string;
+  sessionId: string;
+  traineeId: string;
+  status: 'Present' | 'Absent';
+  markedBy: string;
+  markedAt: string;
+  trainee: PersonRef;
 }
 
 export interface DemoSessionFeedbackForm {
@@ -387,7 +399,14 @@ function instantiateAssignments(
       status: isPast ? 'Open' : 'Draft',
       deadline: deadline.toISOString(),
       session: relatedSession ? { id: relatedSession.id, title: relatedSession.title } : null,
-      submissions
+      submissions,
+      // Openly a sample: the demo download layer serves a labeled plain-text stand-in, so the
+      // filename/type say exactly that rather than pretending to be a real brief.
+      attachment: {
+        originalFilename: `${a.agenda} Case Study Brief (Sample).txt`,
+        mimeType: 'text/plain',
+        sizeBytes: 72
+      }
     };
     if (relatedSession) relatedSession.relatedAssignments = [{ id: assignment.id, title: assignment.title }];
     return assignment;
@@ -690,6 +709,35 @@ const mbaSessions = DEMO_SESSIONS.filter((s) => s.batchId === 'demo-batch-ba-mba
 export const DEMO_ASSIGNMENTS: DemoAssignment[] = [
   ...instantiateAssignments('demo-btech', 'demo-batch-ba-btech', btechBatchRef, btechAssignmentSpecs, btechSessions, BTECH_START, btechMemberRefs),
   ...instantiateAssignments('demo-mba', 'demo-batch-ba-mba', mbaBatchRef, mbaAssignmentSpecs, mbaSessions, MBA_START, mbaMemberRefs)
+];
+
+/**
+ * Per-trainee attendance for every already-completed session — what real Attendance rows hold
+ * once a facilitator marks them. Deterministic mostly-Present pattern with an occasional Absent
+ * so per-trainee percentages land in a realistic low-90s range instead of a uniform 100%.
+ */
+function instantiateAttendance(batchSessions: DemoSession[], members: PersonRef[], markedBy: string): DemoAttendanceRecord[] {
+  const records: DemoAttendanceRecord[] = [];
+  batchSessions.forEach((session, si) => {
+    if (session.status !== 'Completed') return;
+    members.forEach((member, mi) => {
+      records.push({
+        id: `${session.id}-att-${mi}`,
+        sessionId: session.id,
+        traineeId: member.id,
+        status: (si + mi * 5) % 13 === 0 ? 'Absent' : 'Present',
+        markedBy,
+        markedAt: session.scheduledAt,
+        trainee: member
+      });
+    });
+  });
+  return records;
+}
+
+export const DEMO_ATTENDANCE: DemoAttendanceRecord[] = [
+  ...instantiateAttendance(btechSessions, btechMemberRefs, facilitatorJunaid.id),
+  ...instantiateAttendance(mbaSessions, mbaMemberRefs, facilitatorJunaid.id)
 ];
 
 export const DEMO_RESOURCES: DemoResource[] = [

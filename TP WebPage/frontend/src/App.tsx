@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Route, Routes } from 'react-router-dom';
 import LoginPage from './pages/LoginPage';
 import InvitePage from './pages/InvitePage';
 import RequireAuth from './components/RequireAuth';
@@ -16,6 +16,7 @@ const TraineeProfilePage = lazy(() => import('./pages/TraineeProfilePage'));
 const FacilitatorBatchDetailPage = lazy(() => import('./pages/FacilitatorBatchDetailPage'));
 const TrainingPlanDetailPage = lazy(() => import('./pages/admin/TrainingPlanDetailPage'));
 const AdminTraineeProfilePage = lazy(() => import('./pages/admin/AdminTraineeProfilePage'));
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 
 function RouteLoadingFallback() {
   return (
@@ -119,7 +120,7 @@ export default function App() {
               </RequireAuth>
             }
           />
-          <Route path="*" element={<Navigate to={ROUTES.LOGIN} replace />} />
+          <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </Suspense>
       <Toast />
