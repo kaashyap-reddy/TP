@@ -12,3 +12,15 @@ frontend/vite.config.js
 frontend/vite.config.d.ts
 .claude/
 .playwright-mcp/
+.agents/
+
+# Local scratch / generated artifacts (sources for output/ live in tools/ + USER_FLOWS.md)
+.pnpm-store/
+tmp/
+output/
+sessions-*.md
+tp-check.md
+
+# Playwright e2e
+frontend/test-results/
+frontend/playwright-report/
