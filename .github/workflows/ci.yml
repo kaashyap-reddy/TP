@@ -16,6 +16,14 @@ jobs:
   backend:
     name: Backend (lint, typecheck, test, build)
     runs-on: ubuntu-latest
+    # Dummy values so config/env validation and `prisma validate` pass — no step here
+    # ever opens a database connection (tests mock Prisma; validate/generate only parse).
+    env:
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+      DIRECT_URL: postgresql://ci:ci@localhost:5432/ci
+      JWT_ACCESS_SECRET: ci-dummy-access-secret-0123456789
+      JWT_REFRESH_SECRET: ci-dummy-refresh-secret-0123456789
+      COOKIE_SECRET: ci-dummy-cookie-secret-0123456789
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
