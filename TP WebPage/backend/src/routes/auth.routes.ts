@@ -7,7 +7,8 @@ import {
   loginHandler,
   logoutHandler,
   meHandler,
-  refreshHandler
+  refreshHandler,
+  resetPasswordHandler
 } from '../controllers/auth.controller';
 import { forgotPasswordRateLimiter, loginRateLimiter } from '../middleware/rateLimit';
 import { requireAuth } from '../middleware/requireAuth';
@@ -18,7 +19,8 @@ import {
   changePasswordSchema,
   createInviteSchema,
   forgotPasswordSchema,
-  loginSchema
+  loginSchema,
+  resetPasswordSchema
 } from '../validators/auth.validator';
 
 const router = Router();
@@ -133,7 +135,7 @@ router.post('/invite/accept', validate({ body: acceptInviteSchema }), acceptInvi
  * /auth/forgot-password:
  *   post:
  *     tags: [Auth]
- *     summary: Reset a password for an active account by email
+ *     summary: Request a password-reset link by email (always succeeds — no account enumeration)
  *     security: []
  *     requestBody:
  *       required: true
@@ -141,15 +143,36 @@ router.post('/invite/accept', validate({ body: acceptInviteSchema }), acceptInvi
  *         application/json:
  *           schema:
  *             type: object
- *             required: [email, newPassword]
+ *             required: [email]
  *             properties:
  *               email: { type: string, format: email }
- *               newPassword: { type: string, minLength: 8 }
  *     responses:
- *       200: { description: Password reset }
- *       404: { description: No active account found for that email }
+ *       200: { description: If an account exists, a reset link was issued }
  */
 router.post('/forgot-password', forgotPasswordRateLimiter, validate({ body: forgotPasswordSchema }), forgotPasswordHandler);
+
+/**
+ * @openapi
+ * /auth/reset-password:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Set a new password using an emailed single-use reset token
+ *     security: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [token, newPassword]
+ *             properties:
+ *               token: { type: string }
+ *               newPassword: { type: string, minLength: 8 }
+ *     responses:
+ *       200: { description: Password reset; all existing sessions revoked }
+ *       400: { description: Token invalid, expired, or already used }
+ */
+router.post('/reset-password', forgotPasswordRateLimiter, validate({ body: resetPasswordSchema }), resetPasswordHandler);
 
 /**
  * @openapi

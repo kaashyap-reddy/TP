@@ -58,8 +58,21 @@ export const acceptInviteHandler = asyncHandler(async (req: Request, res: Respon
 });
 
 export const forgotPasswordHandler = asyncHandler(async (req: Request, res: Response) => {
-  const { email, newPassword } = req.body;
-  await authService.forgotPassword(email, newPassword);
+  const { email } = req.body;
+  const result = await authService.requestPasswordReset(email);
+  // Identical response whether or not the account exists — no enumeration. The raw token is
+  // exposed only in dev/test (same policy and reason as createInviteHandler above).
+  const body: Record<string, unknown> = { success: true };
+  if (config.exposeAuthTokens && result) {
+    body.token = result.token;
+    body.expiresAt = result.expiresAt;
+  }
+  res.status(200).json(body);
+});
+
+export const resetPasswordHandler = asyncHandler(async (req: Request, res: Response) => {
+  const { token, newPassword } = req.body;
+  await authService.resetPassword(token, newPassword);
   res.status(200).json({ success: true });
 });
 

@@ -213,19 +213,58 @@ export async function acceptInvite(token: string, password: string) {
   return { role: invite.role.name as AppRole, userId: user.id };
 }
 
-// NOTE: unauthenticated by design (matches the existing "forgot password" contract from the mock backend).
-// TODO(production): replace with a token-verified reset flow (emailed link) before real deployment.
-export async function forgotPassword(email: string, newPassword: string): Promise<void> {
+const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+/**
+ * Step 1 of the reset flow: issue a single-use token and email a reset link. Deliberately
+ * succeeds whether or not the email matches an account — a different response for known vs
+ * unknown emails would let anyone enumerate accounts. Like createInvite, the raw token is
+ * returned so the HTTP layer can expose it in dev/test only (config.exposeAuthTokens); with
+ * no email provider connected, that's the only way the link reaches a tester.
+ */
+export async function requestPasswordReset(email: string): Promise<{ token: string; expiresAt: Date } | null> {
   const user = await findUserByEmail(email);
   if (!user || user.deletedAt || !user.isActive) {
-    throw ApiError.notFound('No active account found for that email.');
+    return null;
+  }
+
+  // A newer request invalidates any outstanding link, so only the latest email works.
+  await prisma.passwordResetToken.updateMany({
+    where: { userId: user.id, usedAt: null },
+    data: { usedAt: new Date() }
+  });
+
+  const token = crypto.randomBytes(32).toString('hex');
+  const expiresAt = new Date(Date.now() + PASSWORD_RESET_TTL_MS);
+  await prisma.passwordResetToken.create({
+    data: { userId: user.id, tokenHash: sha256(token), expiresAt }
+  });
+
+  await getEmailProvider().send({
+    to: user.email,
+    subject: 'Reset your Trainee Portal password',
+    text: `A password reset was requested for your account. Use this link to choose a new password: /reset-password?token=${token}\n\nThis link expires ${expiresAt.toISOString()}. If you didn't request this, you can ignore this email.`
+  });
+
+  return { token, expiresAt };
+}
+
+/** Step 2: verify the emailed token and set the new password, revoking all live sessions. */
+export async function resetPassword(token: string, newPassword: string): Promise<void> {
+  const stored = await prisma.passwordResetToken.findUnique({
+    where: { tokenHash: sha256(token) },
+    include: { user: true }
+  });
+  if (!stored || stored.usedAt || stored.expiresAt < new Date() || stored.user.deletedAt || !stored.user.isActive) {
+    throw ApiError.badRequest('This reset link is invalid or has expired. Request a new one.');
   }
 
   const passwordHash = await hashPassword(newPassword);
   await prisma.$transaction([
-    prisma.user.update({ where: { id: user.id }, data: { passwordHash } }),
+    prisma.user.update({ where: { id: stored.userId }, data: { passwordHash } }),
+    prisma.passwordResetToken.update({ where: { id: stored.id }, data: { usedAt: new Date() } }),
     prisma.refreshToken.updateMany({
-      where: { userId: user.id, revokedAt: null },
+      where: { userId: stored.userId, revokedAt: null },
       data: { revokedAt: new Date() }
     })
   ]);

@@ -1,6 +1,6 @@
 import { ChangeEvent, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { forgotPassword } from '../services/api/authService';
+import { changePassword } from '../services/api/authService';
 import { updateMe } from '../services/api/userService';
 import { useAuthStore } from '../store/authStore';
 import { useProfileStore } from '../store/profileStore';
@@ -45,6 +45,7 @@ interface FormState {
   email: string;
   phone: string;
   location: string;
+  currentPassword: string;
   newPassword: string;
   confirmPassword: string;
 }
@@ -66,6 +67,7 @@ export default function AccountSettingsPage() {
     email: authEmail ?? '',
     phone: profile.phone,
     location: profile.location,
+    currentPassword: '',
     newPassword: '',
     confirmPassword: ''
   });
@@ -102,6 +104,7 @@ export default function AccountSettingsPage() {
     if (!/^[0-9+()\-\s]{7,15}$/.test(form.phone.trim())) errs.phone = 'Enter a valid phone number.';
     if (!form.location.trim()) errs.location = 'Location is required.';
     if (form.newPassword || form.confirmPassword) {
+      if (!form.currentPassword) errs.currentPassword = 'Enter your current password to change it.';
       if (form.newPassword.length < 8) errs.newPassword = 'Password must be at least 8 characters.';
       else if (form.newPassword !== form.confirmPassword) errs.confirmPassword = 'Passwords do not match.';
     }
@@ -117,13 +120,13 @@ export default function AccountSettingsPage() {
     setSaving(true);
     try {
       if (form.newPassword) {
-        await forgotPassword(form.email.trim(), form.newPassword);
+        await changePassword(form.currentPassword, form.newPassword);
       }
       await updateMe({ name: form.name.trim(), email: form.email.trim() });
       await updateProfile(role, { phone: form.phone.trim(), location: form.location.trim(), avatarDataUrl: avatarPreview });
       updateDisplayName(form.name.trim());
       updateEmail(form.email.trim());
-      setForm((f) => ({ ...f, newPassword: '', confirmPassword: '' }));
+      setForm((f) => ({ ...f, currentPassword: '', newPassword: '', confirmPassword: '' }));
       showToast('Account settings updated');
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Unable to save changes.', 'error');
@@ -218,6 +221,16 @@ export default function AccountSettingsPage() {
         <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
           <h2 className="font-bold text-gray-800 mb-4">Change Password</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Field label="Current Password" error={errors.currentPassword}>
+              <input
+                type="password"
+                value={form.currentPassword}
+                onChange={(e) => setField('currentPassword', e.target.value)}
+                placeholder="••••••••"
+                className={inputClass(!!errors.currentPassword, meta.ring)}
+              />
+            </Field>
+            <div className="hidden sm:block" />
             <Field label="New Password" error={errors.newPassword}>
               <input
                 type="password"

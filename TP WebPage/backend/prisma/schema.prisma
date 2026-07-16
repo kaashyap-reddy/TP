@@ -153,6 +153,7 @@ model User {
 
   profile                        UserProfile?
   refreshTokens                  RefreshToken[]
+  passwordResetTokens            PasswordResetToken[]
   invitesSent                    UserInvite[]                   @relation("InviteSentBy")
   batchesAsFacilitator           Batch[]                        @relation("BatchFacilitator")
   batchEnrollments               BatchTrainee[]
@@ -231,6 +232,23 @@ model RefreshToken {
 
   @@index([userId])
   @@map("refresh_tokens")
+}
+
+// Single-use, short-lived token backing the emailed password-reset flow
+// (auth.service.ts requestPasswordReset/resetPassword). Only the SHA-256
+// hash is stored, same as invites — a DB leak alone can't reset passwords.
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
 }
 
 // ---------- Training plans ----------

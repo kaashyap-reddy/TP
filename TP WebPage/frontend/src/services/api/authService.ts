@@ -70,8 +70,14 @@ export async function acceptInvite(token: string, password: string): Promise<{ r
   return api.post('/auth/invite/accept', { token, password });
 }
 
-export async function forgotPassword(email: string, newPassword: string): Promise<void> {
-  await api.post('/auth/forgot-password', { email, newPassword });
+/** Requests an emailed reset link. Always resolves, whether or not the account exists. */
+export async function requestPasswordReset(email: string): Promise<void> {
+  await api.post('/auth/forgot-password', { email });
+}
+
+/** Completes the reset using the single-use token from the emailed link. */
+export async function resetPassword(token: string, newPassword: string): Promise<void> {
+  await api.post('/auth/reset-password', { token, newPassword });
 }
 
 export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {

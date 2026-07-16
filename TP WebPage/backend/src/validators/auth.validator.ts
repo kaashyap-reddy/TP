@@ -26,7 +26,11 @@ export const acceptInviteSchema = z.object({
 });
 
 export const forgotPasswordSchema = z.object({
-  email: z.string().trim().email(),
+  email: z.string().trim().email()
+});
+
+export const resetPasswordSchema = z.object({
+  token: z.string().min(1, 'Reset token is required.'),
   newPassword: passwordPolicy
 });
 

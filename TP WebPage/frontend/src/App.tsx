@@ -17,6 +17,7 @@ const FacilitatorBatchDetailPage = lazy(() => import('./pages/FacilitatorBatchDe
 const TrainingPlanDetailPage = lazy(() => import('./pages/admin/TrainingPlanDetailPage'));
 const AdminTraineeProfilePage = lazy(() => import('./pages/admin/AdminTraineeProfilePage'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
+const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'));
 
 function RouteLoadingFallback() {
   return (
@@ -39,6 +40,7 @@ export default function App() {
         <Routes>
           <Route path={ROUTES.LOGIN} element={<LoginPage />} />
           <Route path={ROUTES.INVITE} element={<InvitePage />} />
+          <Route path={ROUTES.RESET_PASSWORD} element={<ResetPasswordPage />} />
           <Route
             path={ROUTES.ADMIN}
             element={

@@ -1,6 +1,6 @@
 import { FormEvent, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { forgotPassword, login } from '../services/api/authService';
+import { login, requestPasswordReset } from '../services/api/authService';
 import { startDemoSession } from '../services/api/demoMode';
 import { useAuthStore } from '../store/authStore';
 import { useToastStore } from '../store/toastStore';
@@ -29,8 +29,6 @@ export default function LoginPage() {
 
   const [forgotOpen, setForgotOpen] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
-  const [forgotPass, setForgotPass] = useState('');
-  const [forgotConfirm, setForgotConfirm] = useState('');
   const [forgotError, setForgotError] = useState('');
   const [isResetting, setIsResetting] = useState(false);
 
@@ -61,25 +59,15 @@ export default function LoginPage() {
   async function handleForgotPassword(event: FormEvent) {
     event.preventDefault();
     setForgotError('');
-    if (forgotPass !== forgotConfirm) {
-      setForgotError('Passwords do not match.');
-      return;
-    }
-    if (forgotPass.length < 8) {
-      setForgotError('Password must be at least 8 characters.');
-      return;
-    }
     setIsResetting(true);
     try {
-      await forgotPassword(forgotEmail, forgotPass);
-      showToast('Password reset. You can now sign in with your new password.');
+      await requestPasswordReset(forgotEmail);
+      // Same message whether or not the account exists — the backend deliberately doesn't say.
+      showToast('If an account exists for that email, a password reset link has been sent.');
       setForgotOpen(false);
       setForgotEmail('');
-      setForgotPass('');
-      setForgotConfirm('');
     } catch (err) {
-      setForgotError(err instanceof Error ? err.message : 'Unable to reset password.');
-      showToast(err instanceof Error ? err.message : 'Unable to reset password.', 'error');
+      setForgotError(err instanceof Error ? err.message : 'Unable to request a reset link.');
     } finally {
       setIsResetting(false);
     }
@@ -183,7 +171,7 @@ export default function LoginPage() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true" onClick={() => setForgotOpen(false)}>
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
             <h2 className="text-lg font-bold text-gray-800 mb-1">Reset Password</h2>
-            <p className="text-sm text-gray-500 mb-4">Enter your account email and choose a new password.</p>
+            <p className="text-sm text-gray-500 mb-4">Enter your account email and we'll send you a link to choose a new password.</p>
             <form onSubmit={handleForgotPassword} className="space-y-4">
               {forgotError && (
                 <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-2">{forgotError}</div>
@@ -200,31 +188,6 @@ export default function LoginPage() {
                   placeholder="you@company.com"
                 />
               </div>
-              <div>
-                <label htmlFor="forgot-new-password" className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
-                <input
-                  id="forgot-new-password"
-                  type="password"
-                  required
-                  value={forgotPass}
-                  onChange={(e) => setForgotPass(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none"
-                  placeholder="••••••••"
-                />
-                <p className="text-xs text-gray-400 mt-1">At least 8 characters.</p>
-              </div>
-              <div>
-                <label htmlFor="forgot-confirm-password" className="block text-sm font-medium text-gray-700 mb-1">Confirm New Password</label>
-                <input
-                  id="forgot-confirm-password"
-                  type="password"
-                  required
-                  value={forgotConfirm}
-                  onChange={(e) => setForgotConfirm(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none"
-                  placeholder="••••••••"
-                />
-              </div>
               <div className="flex gap-3 pt-2">
                 <button
                   type="button"
@@ -236,8 +199,8 @@ export default function LoginPage() {
                 <SavingButton
                   onClick={() => {}}
                   isSaving={isResetting}
-                  label="Reset Password"
-                  savingLabel="Resetting…"
+                  label="Send Reset Link"
+                  savingLabel="Sending…"
                   className="flex-1 py-2 rounded-lg bg-blue-600 text-white font-semibold hover:bg-blue-700"
                 />
               </div>

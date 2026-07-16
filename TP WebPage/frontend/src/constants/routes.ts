@@ -3,6 +3,7 @@ import type { Role } from '../types/role';
 export const ROUTES = {
   LOGIN: '/',
   INVITE: '/invite',
+  RESET_PASSWORD: '/reset-password',
   ADMIN: '/admin',
   ADMIN_ACCOUNT_SETTINGS: '/admin/account-settings',
   ADMIN_TRAINING_PLAN_DETAIL: (planId: string) => `/admin/training-plans/${encodeURIComponent(planId)}`,
