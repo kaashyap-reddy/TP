@@ -58,12 +58,15 @@ export default function TraineeDashboardPage() {
     fetchSessions();
   }, [fetchSessions]);
   const { showToast } = useToastStore();
-  const { announcements, markRead } = useAnnouncementsStore();
+  const { announcements, fetchAnnouncements, markRead } = useAnnouncementsStore();
   const { batches, fetchBatches } = useBatchesStore();
   useEffect(() => {
     // Scoped to the trainee's own batch(es) — a trainee must not see other batches' rosters.
     if (currentUserId) fetchBatches({ traineeId: currentUserId });
   }, [fetchBatches, currentUserId]);
+  useEffect(() => {
+    fetchAnnouncements(batches);
+  }, [fetchAnnouncements, batches]);
   const { assignments, fetchAssignments, submitOwnAssignment, uploadSubmissionAttachment } = useAssignmentsStore();
   useEffect(() => {
     fetchAssignments();

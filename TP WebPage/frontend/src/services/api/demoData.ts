@@ -146,6 +146,23 @@ export interface DemoResource {
   batch: { id: string; name: string; code: string } | null;
 }
 
+export interface DemoAnnouncement {
+  id: string;
+  authorId: string;
+  /** null = global (every role/batch sees it) — mirrors the real Announcement model. */
+  batchId: string | null;
+  title: string;
+  message: string;
+  priority: 'Normal' | 'Important' | 'Critical';
+  audience: string;
+  pinned: boolean;
+  scheduledFor: string | null;
+  expiresAt: string | null;
+  createdAt: string;
+  author: PersonRef;
+  batch: { id: string; name: string; code: string } | null;
+}
+
 export interface DemoFeedback {
   id: string;
   batchId: string;
@@ -813,5 +830,53 @@ export const DEMO_FEEDBACK: DemoFeedback[] = [
     createdAt: '2026-08-20T00:00:00.000Z',
     trainee: t.sarahConnor,
     facilitator: facilitatorJunaid
+  }
+];
+
+export const DEMO_ANNOUNCEMENTS: DemoAnnouncement[] = [
+  {
+    id: 'demo-announcement-101',
+    authorId: adminAlex.id,
+    batchId: null,
+    title: 'Critical: Server Maintenance',
+    message: 'The portal will be down for maintenance from 12 AM to 4 AM this Saturday.',
+    priority: 'Critical',
+    audience: 'All Users',
+    pinned: true,
+    scheduledFor: null,
+    expiresAt: null,
+    createdAt: '2026-07-01T00:00:00.000Z',
+    author: adminAlex,
+    batch: null
+  },
+  {
+    id: 'demo-announcement-102',
+    authorId: facilitatorJunaid.id,
+    batchId: 'demo-batch-ba-btech',
+    title: 'Mock Assessment Tomorrow',
+    message: 'Please ensure your environment is set up. Join 10 minutes early.',
+    priority: 'Important',
+    audience: 'BA BTech - July 2026',
+    pinned: false,
+    scheduledFor: null,
+    expiresAt: null,
+    createdAt: '2026-07-10T09:00:00.000Z',
+    author: facilitatorJunaid,
+    batch: { id: 'demo-batch-ba-btech', name: 'BA BTech - July 2026', code: 'ba-btech-jul-2026' }
+  },
+  {
+    id: 'demo-announcement-103',
+    authorId: adminAlex.id,
+    batchId: null,
+    title: 'Reminder: Assignment Deadlines',
+    message: 'Case study assignments are due by 11:59 PM the same day each session.',
+    priority: 'Normal',
+    audience: 'All Active Batches',
+    pinned: false,
+    scheduledFor: null,
+    expiresAt: null,
+    createdAt: '2026-07-05T00:00:00.000Z',
+    author: adminAlex,
+    batch: null
   }
 ];

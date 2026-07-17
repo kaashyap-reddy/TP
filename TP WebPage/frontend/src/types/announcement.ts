@@ -11,4 +11,5 @@ export interface Announcement {
   expiresAt: string | null;
   readByCount: number;
   audienceCount: number;
+  isRead: boolean;
 }

@@ -138,7 +138,10 @@ export default function AdminDashboardPage() {
   }, [fetchTrainingPlans]);
   const { entries: auditEntries, logEvent } = useAuditLogStore();
   const { showToast } = useToastStore();
-  const { announcements, postAnnouncement } = useAnnouncementsStore();
+  const { announcements, fetchAnnouncements, postAnnouncement } = useAnnouncementsStore();
+  useEffect(() => {
+    fetchAnnouncements(batches);
+  }, [fetchAnnouncements, batches]);
 
   const dashboardLoadTime = useRef(new Date()).current;
   const notificationMenuRef = useRef<HTMLDivElement>(null);
@@ -596,46 +599,40 @@ export default function AdminDashboardPage() {
   }
 
   // ---- Announcements ----
-  function computeAudienceCount(audience: string): number {
-    if (audience === 'All Users' || audience === 'All Active Batches') {
-      return batches.reduce((sum, b) => sum + b.traineeCount, 0);
-    }
-    if (audience === 'Facilitators Only') {
-      return Array.from(new Set(batches.map((b) => b.poc))).length;
-    }
-    if (audience === 'Trainees Only') {
-      return batches.reduce((sum, b) => sum + b.traineeCount, 0);
-    }
-    const batch = batches.find((b) => b.name === audience);
-    return batch?.traineeCount ?? 0;
-  }
-
-  function postNewAnnouncement() {
+  async function postNewAnnouncement() {
     if (!announcementForm.title.trim() || !announcementForm.message.trim()) {
       setAnnouncementFormError('Please enter both a title and a message.');
       return;
     }
     setAnnouncementFormError('');
     setAnnouncementFormSaving(true);
-    setTimeout(() => {
-      postAnnouncement({
-        title: announcementForm.title,
-        message: announcementForm.message,
-        priority: announcementForm.priority,
-        audience: announcementForm.audience,
-        author: 'Admin',
-        date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-        pinned: announcementForm.pinned,
-        scheduledFor: announcementForm.scheduledFor || null,
-        expiresAt: announcementForm.expiresAt || null,
-        audienceCount: computeAudienceCount(announcementForm.audience)
-      });
+    try {
+      // A real Announcement row is scoped by batchId (null = global); the generic labels
+      // ("All Users", "Facilitators Only", etc.) all mean global, only a specific batch's
+      // name in the dropdown resolves to a real batchId.
+      const batchId = batches.find((b) => b.name === announcementForm.audience)?.id ?? null;
+      await postAnnouncement(
+        {
+          title: announcementForm.title,
+          message: announcementForm.message,
+          priority: announcementForm.priority,
+          audience: announcementForm.audience,
+          batchId,
+          pinned: announcementForm.pinned,
+          scheduledFor: announcementForm.scheduledFor || null,
+          expiresAt: announcementForm.expiresAt || null
+        },
+        batches
+      );
       logEvent('Announcement', `"${announcementForm.title}" was broadcast to ${announcementForm.audience}.`, { module: 'Announcements', newValue: announcementForm.title });
       showToast('Broadcasted to all users!');
       setCreateAnnouncementModalOpen(false);
       setAnnouncementForm({ title: '', priority: 'Normal', audience: 'All Users', message: '', pinned: false, scheduledFor: '', expiresAt: '' });
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Unable to post announcement.', 'error');
+    } finally {
       setAnnouncementFormSaving(false);
-    }, 400);
+    }
   }
 
   // ---- Reports ----

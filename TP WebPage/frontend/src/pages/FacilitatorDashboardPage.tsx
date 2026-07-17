@@ -114,8 +114,12 @@ export default function FacilitatorDashboardPage() {
   const logEvent = useAuditLogStore((s) => s.logEvent);
   const showToast = useToastStore((s) => s.showToast);
   const announcements = useAnnouncementsStore((s) => s.announcements);
+  const fetchAnnouncements = useAnnouncementsStore((s) => s.fetchAnnouncements);
   const markAnnouncementRead = useAnnouncementsStore((s) => s.markRead);
   const postAnnouncement = useAnnouncementsStore((s) => s.postAnnouncement);
+  useEffect(() => {
+    fetchAnnouncements(batches);
+  }, [fetchAnnouncements, batches]);
 
   const [activeTab, setActiveTab] = useState<TabId>(initialTab ?? 'dashboard');
   const markedAnnouncementsReadRef = useRef<Set<string>>(new Set());
@@ -454,34 +458,44 @@ export default function FacilitatorDashboardPage() {
     window.location.href = `mailto:${email}`;
   }
 
-  function handlePostAnnouncement() {
+  async function handlePostAnnouncement() {
     if (!announcementTitle.trim() || !announcementMessage.trim()) {
       setAnnouncementFormError('Please enter both a title and a message.');
       return;
     }
     setAnnouncementFormError('');
     setAnnouncementFormSaving(true);
-    setTimeout(() => {
-      postAnnouncement({
-        title: announcementTitle,
-        message: announcementMessage,
-        priority: announcementPriority,
-        audience: 'All Active Batches',
-        author: `${FACILITATOR_NAME} (Facilitator)`,
-        date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-        pinned: false,
-        scheduledFor: null,
-        expiresAt: null,
-        audienceCount: batches.reduce((sum, b) => sum + b.traineeCount, 0)
-      });
+    try {
+      // A real Announcement row can only target one batchId (facilitators can't post global) —
+      // "All Active Batches" here means every batch this facilitator runs, so post one per batch.
+      await Promise.all(
+        myBatches.map((batch) =>
+          postAnnouncement(
+            {
+              title: announcementTitle,
+              message: announcementMessage,
+              priority: announcementPriority,
+              audience: 'All Active Batches',
+              batchId: batch.id,
+              pinned: false,
+              scheduledFor: null,
+              expiresAt: null
+            },
+            batches
+          )
+        )
+      );
       logEvent('Announcement', `"${announcementTitle}" was posted by ${FACILITATOR_NAME}.`);
       showToast('Announcement Posted!');
       setAnnouncementModalOpen(false);
       setAnnouncementTitle('');
       setAnnouncementPriority('Normal');
       setAnnouncementMessage('');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Unable to post announcement.', 'error');
+    } finally {
       setAnnouncementFormSaving(false);
-    }, 400);
+    }
   }
 
   function startEditSession(sessionId: string, date: string, time: string) {

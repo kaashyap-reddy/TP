@@ -1,6 +1,6 @@
 # CLAUDE_PROJECT_CONTEXT — Trainee Portal
 
-Compact, durable context for future Claude CLI sessions. Read this instead of rescanning the repo. Last updated: **2026-07-16 (second pass)** — after clearing the minor-known-issues list (demo attendance/file fixtures, demo URL validation, console noise, 404 page), a hardening pass added: ESLint (both packages, `npm run lint` at root), frontend vitest suite (29 tests, `frontend/src/__tests__/`), Playwright e2e (8 demo-mode tests, `frontend/e2e/`, `npm run test:e2e`, dedicated port 5099), GitHub Actions CI (`.github/workflows/ci.yml` at the **repo root**, i.e. the parent `Trainee Portal/` folder), a token-verified password-reset flow replacing the insecure forgot-password contract (new `password_reset_tokens` table + `/reset-password` page; Account Settings now uses `change-password` with a Current Password field), a real `/api/announcements` backend (frontend still renders its mock announcements store until real-mode wiring), and the notification bell now reads `GET /api/notifications` with a demo/offline fallback to client-derived audit entries.
+Compact, durable context for future Claude CLI sessions. Read this instead of rescanning the repo. Last updated: **2026-07-17** — **PostgreSQL is now connected on this machine** (local install, no admin rights needed — see §2b) and real login/JWT/announcements have been verified end-to-end against it, on top of the 2026-07-16 hardening pass (ESLint, frontend vitest, Playwright e2e, CI, token-verified password reset, `/api/announcements` backend — all still current, see §10/§11 for exact state).
 
 ## 1. Purpose
 
@@ -12,6 +12,14 @@ Internal Trainee Management Portal. Core workflow: an Admin onboards a new batch
 - `backend/` — Express + TS + Prisma (PostgreSQL) + zod validators + vitest (tests run **without** a DB). Dev :4000.
 - **Demo Mode**: `frontend/src/services/api/demoMode.ts` intercepts every API call at `apiClient.ts` when entered via the login page's "View as Admin/Facilitator/Trainee" buttons. Fixtures in `demoData.ts` mirror `backend/prisma/seed.ts` exactly (same curriculum constants). Demo session survives reload (sessionStorage); fixture data resets on reload by design.
 - Git repo root is the **parent** folder (`Trainee Portal/`); app lives in `TP WebPage/`.
+
+## 2b. Local PostgreSQL (connected 2026-07-17)
+
+- Installed via `winget install --id PostgreSQL.PostgreSQL.17` — no admin rights were needed (ran cleanly unelevated on this machine). Runs as Windows service `postgresql-x64-17` on `localhost:5432`, superuser `postgres` / password `postgres` (winget's unattended install default — **dev-only, never reuse in a real deployment**).
+- Database `trainee_portal` created manually (`CREATE DATABASE trainee_portal;`); `backend/.env`'s `DATABASE_URL`/`DIRECT_URL` already pointed at exactly this connection string before the install (pre-staged for this moment).
+- All 10 migrations applied (`npm run prisma:deploy` from `backend/`) and seeded (`npm run prisma:seed`) — 6 real accounts, 2 training plans, 5 batches, 210 real sessions. Same emails/passwords as the demo fixtures (`admin@company.com` / `password123`, `trainee@company.com` / `trainee123`, etc. — see §12) but now backed by real Postgres rows, not Demo Mode's client-side interception.
+- **Gotcha hit during setup, now resolved**: the `20260716180000_password_reset_tokens` migration file had silently been saved as UTF-16 (this environment's `Write` tool defaults to UTF-16 on this machine, not just "preserves existing encoding" as elsewhere) — Prisma's Rust migration engine can't parse that and fails with a misleading `P3015 "Could not find the migration file"`. Fixed by deleting and rewriting the file via a tool that forces real UTF-8. If a future migration file mysteriously 404s to Prisma despite `Test-Path`/`fs.existsSync` confirming it exists, check its encoding (`xxd file | head` — UTF-16 shows a `00` byte after every ASCII char) before assuming anything else is wrong.
+- To run locally: `npm run dev` in `backend/` (port 4000) and `npm run dev` in `frontend/` (Vite picks an open port from 5173 up, proxies `/api`). `GET /api/health` should report `"database":"ok"`.
 
 ## 3. Roles & Navigation (standardized order, `frontend/src/constants/navigation.ts`)
 
@@ -35,12 +43,18 @@ Internal Trainee Management Portal. Core workflow: an Admin onboards a new batch
 
 ## 5. Pending / Not Yet Done
 
-- **PostgreSQL not connected** → pending: migrate deploy of the 10 migrations (now including `20260716180000_password_reset_tokens`), seed, real login/JWT, S3 file storage, real-mode Playwright pass, live metrics, switching the announcements store off mock data. (Do not install PostgreSQL/Docker or request admin rights without being asked; a free Neon URL is the intended path — see DEPLOYMENT.md.)
+- ~~PostgreSQL not connected~~ — **connected locally 2026-07-17** (§2b). Real login/JWT, real announcements CRUD + per-user read tracking, and live (initially-empty/null) metrics are all verified working end-to-end. Still pending: **S3 file storage** (local `STORAGE_PROVIDER` works fine for dev; S3 needs an AWS account), **a real email provider** (invite/reset-link emails still just log to console — see `backend/src/services/email/`), **a deployed/hosted Postgres** (this is a local dev instance only; Neon is still the intended production path per DEPLOYMENT.md), and **a real-mode Playwright pass committed to the repo** (verified manually this session, see §10, but `frontend/e2e/` still only covers Demo Mode).
+- The frontend's announcements *rendering* on the three dashboards now calls the real API (`announcementsStore.ts` → `announcements.service.ts` → `/api/announcements`), with full Demo Mode parity (`DEMO_ANNOUNCEMENTS` fixtures + scoped handlers in `demoMode.ts`). Not yet done: nothing — this was the last known mock-data holdout and it's now wired both ways.
 - Real Microsoft Forms links: manual step (create in forms.office.com, paste into Training Plan session `feedbackFormUrl`, per-session `Session Feedback: Edit`, or an assignment's `Assignment Feedback: Edit` on its detail page). Demo URLs are labeled placeholders (`forms.gle/...-day-N-feedback`).
 
 ## 6. Known Issues
 
-None open. Previously-listed minor issues, all **fixed 2026-07-16** (verified via Playwright demo pass + `tsc` + `vite build`):
+None open. Two real bugs surfaced 2026-07-17 by the first-ever real-backend test pass (both invisible in Demo Mode, which never validates query params) — both **fixed**:
+
+- **`pageSize` cap too low for real usage**: `sessionService.ts`/`assignmentService.ts`/`resourceService.ts`/`feedbackService.ts` all request `pageSize: 200` (deliberate "fetch everything, no server pagination" design), but the backend's `paginationQuerySchema` capped at 100 — every one of those real API calls 400'd on first real login. Raised the cap to 500 (`backend/src/utils/pagination.ts`) and bumped the four frontend call sites to match (500 comfortably covers today's 5 batches × 42 sessions = 210, with headroom).
+- UTF-16-encoded migration file — see §2b.
+
+Previously-listed minor issues, all **fixed 2026-07-16** (verified via Playwright demo pass + `tsc` + `vite build`):
 
 1. Demo URL validation — `assertValidUrl()` in `demoMode.ts` mirrors backend `z.string().trim().url()` on session/assignment feedback-form POST/PATCH, TP session `feedbackFormUrl`, TP resource `url`. Both `SessionFeedbackCell`/`AssignmentFeedbackCell` also gained catch+toast on save/remove (errors were previously swallowed against the real backend too).
 2. Per-trainee attendance — `DEMO_ATTENDANCE` fixtures (deterministic mostly-Present per completed session) in `demoData.ts`; `/batches/:id/trainee-stats` computes real percentages; `/sessions/:id/attendance` GET/PUT now serve/upsert records mirroring `attendance.service.ts`.
@@ -75,14 +89,18 @@ None open. Previously-listed minor issues, all **fixed 2026-07-16** (verified vi
 - ~~Assignment-level feedback links~~ — **resolved** 2026-07-15 (user chose "add assignment-level forms" over "keep session-level only"). Assignments now have their own `AssignmentFeedbackForm`/`AssignmentFeedbackSubmission` models, backend routes (`/assignments/:id/feedback-form[...]`), and a `AssignmentFeedbackCell` UI on `AssignmentDetailPage` (manage) + the Trainee Assignments tab (submit). Fully independent of Session Feedback — an assignment can have both a related session's form and its own.
 - Admin nav order deviation (Training Plans sits 3rd, not with role-specific pages at the end) — accepted, flagged in audit, not changed.
 
-## 10. Tests / Builds Last Run (2026-07-16, all green)
+## 10. Tests / Builds Last Run (2026-07-17, all green)
 
-Frontend & backend `tsc` exit 0 · both `eslint` exit 0 · frontend `vite build` OK · backend build OK · backend `vitest run` **27 files / 140 tests** (no DB) · frontend `vitest run` **3 files / 29 tests** · Playwright e2e **8/8** (`frontend/e2e/demo-flows.spec.ts`) · `prisma validate` OK. CI (`.github/workflows/ci.yml`) runs all of this on push/PR.
+Frontend & backend `tsc` exit 0 · both `eslint` exit 0 · frontend `vite build` OK · backend build OK · backend `vitest run` **27 files / 140 tests** (mocked Prisma, no DB needed for CI) · frontend `vitest run` **3 files / 29 tests** · Playwright e2e (Demo Mode) **8/8** · `prisma migrate deploy` **against a real local Postgres, all 10 migrations applied** · `GET /api/health` → `"database":"ok"`. CI (`.github/workflows/ci.yml`) runs the DB-free subset of this on push/PR (real-Postgres verification is manual, this session, see below).
+
+**Manual real-backend verification this session** (Playwright driving the actual dev servers, not CI): fresh login as `admin@company.com` issues a real JWT + httpOnly signed refresh cookie; session survives a hard page reload; `/api/announcements` list/create/mark-read all round-trip correctly with real role/batch scoping (admin sees all 5 batches' announcements; a trainee enrolled in all 5 sees the same; `readByCount` genuinely increments in Postgres when a different user views them); real seeded batch/session/assignment data renders with honest `—` placeholders for not-yet-computed stats (avgScore, completion) rather than demo's curated fake numbers.
 
 ## 11. Git
 
-Branch `main`; `origin` = github.com/kaashyap-reddy/TP. Commits since the audit: `5084bb7` (audit artifacts) → `3fd034c` (Training Plan/Session Feedback feature set) → `00349f8` (demo filename fix) → `b732822` (assignment-level feedback forms) → `ebcc4d1` (minor known-issue fixes) → `073b406` (repo hygiene: scratch files gitignored, `USER_FLOWS.md` + `tools/` tracked) → `a2f9ff0` (ESLint) → `c5d271d` (frontend unit tests) → `c34d45f` (Playwright e2e) → `920cf49` (token-verified password reset) → `c5a1a04` (announcements API + notification wiring) → `88a06c2` (CI). Local commits are **not pushed** — push to origin when ready so CI gets its first run.
+Branch `main`; `origin` = github.com/kaashyap-reddy/TP. Commits since the audit: `5084bb7` (audit artifacts) → `3fd034c` (Training Plan/Session Feedback feature set) → `00349f8` (demo filename fix) → `b732822` (assignment-level feedback forms) → `ebcc4d1` (minor known-issue fixes) → `073b406` (repo hygiene) → `a2f9ff0` (ESLint) → `c5d271d` (frontend unit tests) → `c34d45f` (Playwright e2e) → `920cf49` (token-verified password reset) → `c5a1a04` (announcements API + notification wiring) → `88a06c2` (CI) → `a6a0eab` (CI fixes: Node 24, dummy backend env) — **pushed and CI green** as of 2026-07-17. Plus this session's uncommitted-as-of-writing work: pagination cap fix, announcements frontend wired to real API + Demo Mode parity, migration UTF-8 fix — commit these before ending the session if not already done.
 
-## 12. Demo Accounts (fixtures)
+## 12. Demo Accounts (fixtures) — also now real seeded backend accounts
 
 Admin: Alex Morgan (admin@company.com) · Facilitators: Junaid Mohammed (facilitator@company.com, runs both main batches), Srikar Kulkarni, Dinesh Paraman, Kaashyap Reddy · Trainee: Priya Sharma (trainee@company.com, in BA BTech - July 2026 + 3 lightweight cohort batches so all 4 facilitators appear as contacts). Batches: `BA BTech - July 2026` (Jul 1–Aug 27 2026, Active), `BA MBA - August 2026`, + 3 lightweight cohorts.
+
+**Real backend note**: `backend/prisma/seed.ts` creates the real-DB equivalent under the name "Admin User" not "Alex Morgan" (author name differs from the demo fixture; same email/password) and enrolls Priya in **all 5** real batches (confirmed via `SELECT` — not just the 1 + 3-lightweight split the demo fixtures use), so real per-trainee/announcement scoping tests should expect her to see all 5 batches' worth of data, not a subset.

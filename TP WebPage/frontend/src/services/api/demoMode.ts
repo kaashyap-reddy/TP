@@ -9,6 +9,7 @@
 // layer: don't rely on edits made during a demo surviving a refresh.
 import type { Role } from '../../types/role';
 import {
+  DEMO_ANNOUNCEMENTS,
   DEMO_ASSIGNMENTS,
   DEMO_ATTENDANCE,
   DEMO_BATCHES,
@@ -18,6 +19,7 @@ import {
   DEMO_TRAINING_PLANS,
   DEMO_USERS,
   nthWorkingDay,
+  type DemoAnnouncement,
   type DemoAssignment,
   type DemoAttendanceRecord,
   type DemoResource,
@@ -65,6 +67,8 @@ let sessions = clone(DEMO_SESSIONS);
 let attendance = clone(DEMO_ATTENDANCE);
 let resources = clone(DEMO_RESOURCES);
 let feedback = clone(DEMO_FEEDBACK);
+let announcements = clone(DEMO_ANNOUNCEMENTS);
+let announcementReads: { announcementId: string; userId: string }[] = [];
 const trainingPlans = clone(DEMO_TRAINING_PLANS);
 // submitterId — the trainee OR facilitator who submitted (a form's audience can target either).
 let sessionFeedbackSubmissions: { formId: string; submitterId: string }[] = [];
@@ -992,6 +996,76 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
     };
     feedback = [created, ...feedback];
     return { feedback: created };
+  }
+
+  // ---- announcements ---- (mirrors backend/src/services/announcements.service.ts's scoping)
+  if (method === 'GET' && path === '/announcements') {
+    const currentUser = currentDemoUser();
+    let results = announcements;
+    if (currentUser.role !== 'admin') {
+      const ownedOrEnrolledBatchIds = new Set(
+        batches
+          .filter((b) => (currentUser.role === 'facilitator' ? b.facilitator?.id === currentUser.id : b.members.includes(currentUser.name)))
+          .map((b) => b.id)
+      );
+      results = results.filter((a) => a.batchId === null || ownedOrEnrolledBatchIds.has(a.batchId));
+    }
+    if (query?.batchId) results = results.filter((a) => a.batchId === query.batchId);
+    const serialized = results.map((a) => ({
+      ...a,
+      readByCount: announcementReads.filter((r) => r.announcementId === a.id).length,
+      isRead: announcementReads.some((r) => r.announcementId === a.id && r.userId === currentUser.id)
+    }));
+    return paginated(serialized);
+  }
+  if (method === 'POST' && path === '/announcements') {
+    const currentUser = currentDemoUser();
+    const batchId = (b.batchId as string | null) ?? null;
+    if (batchId) {
+      const batch = batches.find((bt) => bt.id === batchId);
+      if (!batch) {
+        const err = new Error('No such batch.') as Error & { status?: number };
+        err.status = 400;
+        throw err;
+      }
+      if (currentUser.role === 'facilitator' && batch.facilitator?.id !== currentUser.id) {
+        const err = new Error('You may only post announcements to your own batches.') as Error & { status?: number };
+        err.status = 403;
+        throw err;
+      }
+    } else if (currentUser.role !== 'admin') {
+      const err = new Error('Only admins may post global announcements.') as Error & { status?: number };
+      err.status = 403;
+      throw err;
+    }
+    const batchRef = batchId ? batches.find((bt) => bt.id === batchId) : undefined;
+    const created: DemoAnnouncement = {
+      id: nextId('demo-announcement'),
+      authorId: currentUser.id,
+      batchId,
+      title: String(b.title ?? 'New Announcement'),
+      message: String(b.message ?? ''),
+      priority: (b.priority as DemoAnnouncement['priority']) ?? 'Normal',
+      audience: String(b.audience ?? 'All Users'),
+      pinned: Boolean(b.pinned ?? false),
+      scheduledFor: (b.scheduledFor as string) || null,
+      expiresAt: (b.expiresAt as string) || null,
+      createdAt: new Date().toISOString(),
+      author: { id: currentUser.id, name: currentUser.name, email: currentUser.email },
+      batch: batchRef ? { id: batchRef.id, name: batchRef.name, code: batchRef.code } : null
+    };
+    announcements = [created, ...announcements];
+    return { announcement: { ...created, readByCount: 0, isRead: false } };
+  }
+  const announcementReadMatch = matchPath('/announcements/:id/read', path);
+  if (method === 'POST' && announcementReadMatch) {
+    const announcement = announcements.find((a) => a.id === announcementReadMatch.id);
+    if (!announcement) notFound();
+    const currentUser = currentDemoUser();
+    if (!announcementReads.some((r) => r.announcementId === announcement.id && r.userId === currentUser.id)) {
+      announcementReads = [...announcementReads, { announcementId: announcement.id, userId: currentUser.id }];
+    }
+    return undefined;
   }
 
   // ---- calendar (normalized sessions + assignment deadlines, mirrors the real /calendar shape) ----
