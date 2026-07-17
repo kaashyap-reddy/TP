@@ -78,7 +78,7 @@ function toFrontendAssignment(apiAssignment: ApiAssignment): Assignment {
 }
 
 export async function listAssignments(filters?: { batchId?: string }): Promise<Assignment[]> {
-  const res = await api.get<PaginatedResponse<ApiAssignment>>('/assignments', { ...filters, pageSize: 200 });
+  const res = await api.get<PaginatedResponse<ApiAssignment>>('/assignments', { ...filters, pageSize: 500 });
   return res.data.map(toFrontendAssignment);
 }
 

@@ -52,7 +52,7 @@ function toFrontendResource(apiResource: ApiResource): Resource {
 }
 
 export async function listResources(filters?: { batchId?: string; category?: string; verified?: boolean }): Promise<Resource[]> {
-  const res = await api.get<PaginatedResponse<ApiResource>>('/resources', { ...filters, pageSize: 200 });
+  const res = await api.get<PaginatedResponse<ApiResource>>('/resources', { ...filters, pageSize: 500 });
   return res.data.map(toFrontendResource);
 }
 

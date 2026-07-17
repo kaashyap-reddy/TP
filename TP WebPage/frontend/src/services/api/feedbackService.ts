@@ -41,7 +41,7 @@ export async function listFeedback(filters?: {
   facilitatorId?: string;
   direction?: FeedbackDirection;
 }): Promise<FeedbackEntry[]> {
-  const res = await api.get<PaginatedResponse<ApiFeedback>>('/feedback', { ...filters, pageSize: 200 });
+  const res = await api.get<PaginatedResponse<ApiFeedback>>('/feedback', { ...filters, pageSize: 500 });
   return res.data.map(toFrontendFeedback);
 }
 

@@ -98,7 +98,7 @@ function toFrontendSession(apiSession: ApiSession): Session {
 }
 
 export async function listSessions(filters?: { batchId?: string }): Promise<Session[]> {
-  const res = await api.get<PaginatedResponse<ApiSession>>('/sessions', { ...filters, pageSize: 200 });
+  const res = await api.get<PaginatedResponse<ApiSession>>('/sessions', { ...filters, pageSize: 500 });
   return res.data.map(toFrontendSession);
 }
 
