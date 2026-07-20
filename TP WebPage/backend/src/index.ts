@@ -1,6 +1,15 @@
+import * as Sentry from '@sentry/node';
 import { createApp } from './app';
+import { config } from './config';
 import { prisma } from './prisma/client';
 import { logger } from './utils/logger';
+import { reportError } from './utils/monitoring';
+
+// Must run before createApp()/anything else that could throw, and only when a DSN is actually
+// configured — with none set this is skipped entirely, matching every environment's behavior today.
+if (config.monitoring.sentryDsn) {
+  Sentry.init({ dsn: config.monitoring.sentryDsn, environment: config.env });
+}
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 
@@ -34,9 +43,14 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 // fail fast rather than continue running with potentially corrupted state.
 process.on('unhandledRejection', (reason) => {
   logger.error('process.unhandled_rejection', { message: reason instanceof Error ? reason.message : String(reason) });
+  reportError(reason, { event: 'unhandledRejection' });
 });
 
-process.on('uncaughtException', (err) => {
+process.on('uncaughtException', async (err) => {
   logger.error('process.uncaught_exception', { message: err.message, stack: err.stack });
+  reportError(err, { event: 'uncaughtException' });
+  // Sentry.captureException only enqueues the event — without this, the process can exit
+  // before it's actually sent, silently losing the one report that matters most.
+  if (config.monitoring.sentryDsn) await Sentry.flush(2000).catch(() => undefined);
   shutdown('uncaughtException');
 });

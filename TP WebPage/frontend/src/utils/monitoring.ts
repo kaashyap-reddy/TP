@@ -1,15 +1,12 @@
+import * as Sentry from '@sentry/react';
+
 /**
- * Error-tracking integration point — disabled by default, no SDK installed.
- *
- * Every uncaught render error already flows through here (see components/ErrorBoundary.tsx), so
- * wiring up a real provider later is a one-function change, not a hunt through the codebase.
- *
- * To connect Sentry (or another provider) once you have a DSN:
- *   1. `npm install @sentry/react` (only then — not installed today, so it costs nothing until used)
- *   2. Call `Sentry.init({ dsn: import.meta.env.VITE_SENTRY_DSN })` once in main.tsx, guarded by
- *      `if (import.meta.env.VITE_SENTRY_DSN)`.
- *   3. Replace the body of `reportError` below with `Sentry.captureException(error, { extra: context })`.
+ * Error-tracking integration point. `Sentry.init()` runs once at startup (see main.tsx), guarded
+ * by `VITE_SENTRY_DSN` — with no DSN set, `init` never runs and `captureException` is a documented
+ * no-op, so this stays inert in every environment until a real DSN is provided. Every uncaught
+ * render error already flows through here (see components/ErrorBoundary.tsx).
  */
-export function reportError(_error: unknown, _context?: Record<string, unknown>): void {
-  // No-op: no error-tracking provider is configured (VITE_SENTRY_DSN is unset). See comment above.
+export function reportError(error: unknown, context?: Record<string, unknown>): void {
+  if (!import.meta.env.VITE_SENTRY_DSN) return;
+  Sentry.captureException(error, { extra: context });
 }
