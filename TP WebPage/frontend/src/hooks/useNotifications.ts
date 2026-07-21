@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { AuditLogEntry } from '../store/auditLogStore';
 import * as notificationService from '../services/api/notificationService';
+import { usePolling } from './usePolling';
 
 /**
  * Notification-bell state. Backed by the real GET /api/notifications (audit-log-derived,
@@ -12,20 +13,18 @@ export function useNotifications(auditEntries: AuditLogEntry[]) {
   const [apiEntries, setApiEntries] = useState<AuditLogEntry[] | null>(null);
   const [readLogIds, setReadLogIds] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
-    let cancelled = false;
-    notificationService
+  function refreshNotifications() {
+    return notificationService
       .listNotifications()
       .then(({ entries, readIds }) => {
-        if (cancelled || entries.length === 0) return;
+        if (entries.length === 0) return;
         setApiEntries(entries);
         setReadLogIds(readIds);
       })
       .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  }
+
+  usePolling(refreshNotifications, 30_000);
 
   const source = apiEntries ?? auditEntries;
   const notificationEntries = source.slice(0, 8);
