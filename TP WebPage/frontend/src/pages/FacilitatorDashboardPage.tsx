@@ -20,6 +20,7 @@ import { formatDate, formatDateTime } from '../utils/dateUtils';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useNotifications } from '../hooks/useNotifications';
+import { useBaseline } from '../hooks/useBaseline';
 import { downloadTextFile } from '../utils/downloadFile';
 import TrendIndicator from '../components/TrendIndicator';
 import { average } from '../utils/mathUtils';
@@ -71,6 +72,7 @@ export default function FacilitatorDashboardPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const initialTab = (location.state as { tab?: TabId } | null)?.tab;
+  const dashboardLoadTime = useRef(new Date()).current;
 
   const { id: currentUserId, displayName, clearSession } = useAuthStore();
 
@@ -403,8 +405,8 @@ export default function FacilitatorDashboardPage() {
   const facilitatorAvgScore = average(facilitatorAssignments.flatMap((a) => a.submissions.filter((s) => s.grade !== null).map((s) => s.grade as number)));
   const facilitatorPendingReviews = facilitatorAssignments.reduce((sum, a) => sum + a.submissions.filter((s) => s.status === 'Under Review').length, 0);
   const facilitatorAttendance = average(myBatches.map((b) => b.attendanceRate));
-  const baselineAvgScore = useRef(facilitatorAvgScore).current;
-  const baselineAttendance = useRef(facilitatorAttendance).current;
+  const baselineAvgScore = useBaseline(facilitatorAvgScore);
+  const baselineAttendance = useBaseline(facilitatorAttendance);
 
   function openQuickGrade(assignmentId: string, traineeName: string, current: { grade: number | null; status: SubmissionStatus }) {
     setQuickGradeTarget({ assignmentId, traineeName });
@@ -656,7 +658,6 @@ export default function FacilitatorDashboardPage() {
       activeTab={activeTab}
       onTabChange={setActiveTab}
       onLogout={() => setLogoutConfirmOpen(true)}
-      logoutButtonClassName="flex items-center px-4 py-2 text-gray-600 hover:text-red-600 transition-colors w-full text-left"
       headerTitle={HEADER_TITLES[activeTab]}
       headerRight={
         <>
@@ -693,6 +694,12 @@ export default function FacilitatorDashboardPage() {
         <div className="flex-1 overflow-y-auto p-8 relative">
           {/* Dashboard Tab */}
           <div className={hiddenUnless('dashboard')}>
+            <Breadcrumbs trail={['Facilitator', 'Dashboard']} />
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-xs text-gray-400 font-medium">
+                Last updated {dashboardLoadTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              </span>
+            </div>
             <div className="flex justify-between items-center mb-8">
               <h2 className="text-2xl font-bold">Welcome, {displayName ?? 'Junaid'}</h2>
               <div className="flex space-x-3 relative" ref={quickActionMenuRef}>
@@ -851,6 +858,7 @@ export default function FacilitatorDashboardPage() {
 
           {/* Resource Library Tab */}
           <div className={hiddenUnless('resources')}>
+            <Breadcrumbs trail={['Facilitator', 'Resources']} />
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-bold">Digital Resource Library</h2>
               <button onClick={() => setResourceModalOpen(true)} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700">+ Upload Resource</button>
@@ -1074,6 +1082,7 @@ export default function FacilitatorDashboardPage() {
 
           {/* Sessions & Calendar Tab */}
           <div className={hiddenUnless('sessions')}>
+            <Breadcrumbs trail={['Facilitator', 'Sessions & Calendar']} />
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-bold">Sessions & Calendar</h2>
               <div className="flex items-center gap-3">
@@ -1236,9 +1245,10 @@ export default function FacilitatorDashboardPage() {
 
           {/* Announcements Tab */}
           <div className={hiddenUnless('announcements')}>
+            <Breadcrumbs trail={['Facilitator', 'Announcements']} />
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-bold">Announcements</h2>
-              <button onClick={() => setAnnouncementModalOpen(true)} className="px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700">+ New Announcement</button>
+              <button onClick={() => setAnnouncementModalOpen(true)} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700">+ New Announcement</button>
             </div>
             <div className="space-y-4">
               {announcements.length === 0 && (
@@ -1259,6 +1269,7 @@ export default function FacilitatorDashboardPage() {
 
           {/* Feedback Tab */}
           <div className={hiddenUnless('feedback')}>
+            <Breadcrumbs trail={['Facilitator', 'Feedback']} />
             <h2 className="text-2xl font-bold mb-1">Session Feedback</h2>
             <p className="text-gray-500 text-sm mb-6">
               Attach, open, copy, or replace each session's external feedback-form link — and give your own feedback when a form targets facilitators.
@@ -1399,6 +1410,7 @@ export default function FacilitatorDashboardPage() {
 
           {/* Trainee Directory Tab */}
           <div className={hiddenUnless('trainees')}>
+            <Breadcrumbs trail={['Facilitator', 'Trainees']} />
             <PageHeader title="Trainee Directory" wrap={false}>
               <SearchInput value={traineeSearch} onChange={setTraineeSearch} placeholder="Search trainees..." />
             </PageHeader>

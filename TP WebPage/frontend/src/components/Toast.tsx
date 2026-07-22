@@ -24,7 +24,7 @@ export default function Toast() {
     <div
       role="status"
       aria-live="polite"
-      className={`fixed bottom-6 right-6 z-[100] flex items-center gap-2 ${style.bg} text-white text-sm font-medium px-4 py-3 rounded-xl shadow-2xl transition-opacity`}
+      className={`fixed top-6 right-6 z-[100] flex items-center gap-2 ${style.bg} text-white text-sm font-medium px-4 py-3 rounded-xl shadow-2xl transition-opacity`}
     >
       <svg className={`w-5 h-5 ${style.icon} flex-shrink-0`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={style.path} />

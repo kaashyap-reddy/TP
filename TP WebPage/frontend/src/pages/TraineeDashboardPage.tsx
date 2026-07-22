@@ -20,6 +20,7 @@ import { average } from '../utils/mathUtils';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useNotifications } from '../hooks/useNotifications';
+import { useBaseline } from '../hooks/useBaseline';
 import ConfirmDialog from '../components/ConfirmDialog';
 import Modal from '../components/Modal';
 import NotificationPanel from '../components/NotificationPanel';
@@ -38,6 +39,7 @@ import FileViewButton from '../components/FileViewButton';
 import FeedbackCard from '../components/FeedbackCard';
 import SessionsCalendarView from '../components/SessionsCalendarView';
 import DashboardLayout from '../layouts/DashboardLayout';
+import Breadcrumbs from '../components/Breadcrumbs';
 import type { TraineeTabId } from '../constants/navigation';
 import { TRAINEE_HEADER_TITLES, TRAINEE_BRAND_LABEL, TRAINEE_NAV_ITEMS } from '../constants/navigation';
 import { PRIORITY_STYLES } from '../constants/announcements';
@@ -48,6 +50,7 @@ const HEADER_TITLES = TRAINEE_HEADER_TITLES;
 
 export default function TraineeDashboardPage() {
   const navigate = useNavigate();
+  const dashboardLoadTime = useRef(new Date()).current;
   const { id: currentUserId, displayName, clearSession } = useAuthStore();
   const { resources, fetchResources, downloadResource } = useResourcesStore();
   useEffect(() => {
@@ -136,9 +139,9 @@ export default function TraineeDashboardPage() {
   const avgAttendance = average(batches.map((b) => b.attendanceRate));
   const pendingCount = assignments.reduce((sum, a) => sum + a.submissions.filter((s) => s.status === 'Not Started').length, 0);
 
-  const baselineCompletion = useRef(avgCompletion).current;
-  const baselineScore = useRef(avgScoreAll).current;
-  const baselineAttendance = useRef(avgAttendance).current;
+  const baselineCompletion = useBaseline(avgCompletion);
+  const baselineScore = useBaseline(avgScoreAll);
+  const baselineAttendance = useBaseline(avgAttendance);
 
   const batchScoreChartData: BarChartDatum[] = useMemo(
     () =>
@@ -343,7 +346,6 @@ export default function TraineeDashboardPage() {
       navItems={TRAINEE_NAV_ITEMS}
       activeTab={activeTab}
       onTabChange={setActiveTab}
-      activeNavExtraClass="shadow-sm"
       onLogout={() => setLogoutConfirmOpen(true)}
       headerTitle={HEADER_TITLES[activeTab]}
       headerRight={
@@ -381,6 +383,12 @@ export default function TraineeDashboardPage() {
         <div className="flex-1 overflow-y-auto p-8 bg-slate-50">
           {/* Individual Trainee Progress Dashboard */}
           <div className={hiddenUnless('dashboard')}>
+            <Breadcrumbs trail={['Trainee', 'Dashboard']} />
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-xs text-gray-400 font-medium">
+                Last updated {dashboardLoadTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              </span>
+            </div>
             <h2 className="text-2xl font-bold mb-6">Hello, {displayName ?? 'Trainee'}</h2>
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
@@ -430,6 +438,7 @@ export default function TraineeDashboardPage() {
 
           {/* Assignments Tab */}
           <div className={hiddenUnless('assignments')}>
+            <Breadcrumbs trail={['Trainee', 'Assignments']} />
             <PageHeader title="Online Assignment Tracking">
               <div className="flex items-center gap-3">
                 <SearchInput value={assignmentSearch} onChange={setAssignmentSearch} placeholder="Search assignments..." ariaLabel="Search assignments" clearable />
@@ -540,6 +549,7 @@ export default function TraineeDashboardPage() {
 
           {/* Batches Tab */}
           <div className={hiddenUnless('batches')}>
+            <Breadcrumbs trail={['Trainee', 'My Batch']} />
             <h2 className="text-2xl font-bold mb-6">My Batch</h2>
             {batches.length === 0 ? (
               <EmptyState title="You're not enrolled in a batch yet" message="Once you're added to a batch, it will show up here." icon="inbox" />
@@ -615,6 +625,7 @@ export default function TraineeDashboardPage() {
 
           {/* Announcements Tab */}
           <div className={hiddenUnless('announcements')}>
+            <Breadcrumbs trail={['Trainee', 'Announcements']} />
             <h2 className="text-2xl font-bold mb-6">Announcements</h2>
             <div className="space-y-4">
               {announcements.length === 0 && (
@@ -635,6 +646,7 @@ export default function TraineeDashboardPage() {
 
           {/* Sessions & Calendar Tab */}
           <div className={hiddenUnless('sessions')}>
+            <Breadcrumbs trail={['Trainee', 'Sessions & Calendar']} />
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-bold">Sessions & Calendar</h2>
               <div className="flex rounded-lg border border-gray-300 overflow-hidden text-sm font-medium">
@@ -709,6 +721,7 @@ export default function TraineeDashboardPage() {
 
           {/* Facilitators Directory Tab */}
           <div className={hiddenUnless('facilitators')}>
+            <Breadcrumbs trail={['Trainee', 'Facilitators']} />
             <PageHeader title="Facilitator Contacts" wrap={false}>
               <SearchInput value={facilitatorSearch} onChange={setFacilitatorSearch} placeholder="Search facilitators..." />
             </PageHeader>
@@ -732,6 +745,7 @@ export default function TraineeDashboardPage() {
 
           {/* Digital Resource Library Tab */}
           <div className={hiddenUnless('resources')}>
+            <Breadcrumbs trail={['Trainee', 'Resources']} />
             <PageHeader title="Learning Repository">
               <div className="flex items-center gap-3">
                 <SearchInput value={resourceSearch} onChange={setResourceSearch} placeholder="Search materials..." ariaLabel="Search materials" clearable />
@@ -786,6 +800,7 @@ export default function TraineeDashboardPage() {
 
           {/* Grades & Feedback Tab */}
           <div className={hiddenUnless('grades')}>
+            <Breadcrumbs trail={['Trainee', 'My Session Feedback']} />
             <PageHeader title="My Session Feedback" wrap={false} />
 
             <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden mb-10">

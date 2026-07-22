@@ -23,27 +23,27 @@ interface ProfileDropdownProps {
 const ROLE_STYLES: Record<Role, { label: string; buttonBg: string; buttonRing: string; focusRing: string; gradient: string; accentText: string }> = {
   admin: {
     label: 'System Administrator',
-    buttonBg: 'bg-blue-600',
-    buttonRing: 'hover:ring-blue-300',
-    focusRing: 'focus:ring-blue-500',
-    gradient: 'from-blue-600 via-blue-700 to-indigo-800',
-    accentText: 'text-blue-100'
-  },
-  facilitator: {
-    label: 'Facilitator',
     buttonBg: 'bg-purple-600',
     buttonRing: 'hover:ring-purple-300',
     focusRing: 'focus:ring-purple-500',
     gradient: 'from-purple-600 via-purple-700 to-indigo-800',
     accentText: 'text-purple-100'
   },
-  trainee: {
-    label: 'Trainee',
+  facilitator: {
+    label: 'Facilitator',
     buttonBg: 'bg-blue-600',
     buttonRing: 'hover:ring-blue-300',
     focusRing: 'focus:ring-blue-500',
     gradient: 'from-blue-600 via-blue-700 to-indigo-800',
     accentText: 'text-blue-100'
+  },
+  trainee: {
+    label: 'Trainee',
+    buttonBg: 'bg-green-600',
+    buttonRing: 'hover:ring-green-300',
+    focusRing: 'focus:ring-green-500',
+    gradient: 'from-green-600 via-green-700 to-emerald-800',
+    accentText: 'text-green-100'
   }
 };
 

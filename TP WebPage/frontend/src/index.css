@@ -5,3 +5,30 @@
 body {
   font-family: 'Inter', sans-serif;
 }
+
+/* Every <select> in the app is styled here in one place rather than per call site --
+   swaps the browser's native arrow for a custom chevron and adds a hover state so
+   filter/sort dropdowns match the rest of the app's polish. The !important on
+   padding-right is intentional: dozens of call sites set px-2/px-3 inline and this is
+   the one property that must win uniformly so the chevron never overlaps the text. */
+select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2.5'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.6rem center;
+  background-size: 13px 13px;
+  padding-right: 2rem !important;
+  cursor: pointer;
+  transition: border-color 150ms ease-out, box-shadow 150ms ease-out;
+}
+
+select:hover {
+  border-color: #94a3b8;
+}
+
+select:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}

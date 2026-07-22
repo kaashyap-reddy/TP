@@ -18,16 +18,14 @@ import { logout } from '../services/api/authService';
 import { useAuthStore } from '../store/authStore';
 import { createInvite } from '../services/api/authService';
 import { dateStrToIso, formatTimeRange, isoToDateStr, minutesToLabel, parseTimeRange } from '../utils/sessionTime';
-import QuickActionsBar from '../components/admin/QuickActionsBar';
-import RecentActivityWidget from '../components/admin/RecentActivityWidget';
-import UpcomingDeadlinesWidget from '../components/admin/UpcomingDeadlinesWidget';
+import AdminDashboardHome from '../components/admin/AdminDashboardHome';
 import SessionsCalendarView from '../components/SessionsCalendarView';
 import BatchMultiSelect from '../components/BatchMultiSelect';
 import AssignmentBatchesCell from '../components/AssignmentBatchesCell';
 import AssignmentTitleLink from '../components/AssignmentTitleLink';
 import FileViewButton from '../components/FileViewButton';
 import FeedbackCard from '../components/FeedbackCard';
-import NotificationPanel, { categorize } from '../components/NotificationPanel';
+import NotificationPanel from '../components/NotificationPanel';
 import ProfileDropdown from '../components/ProfileDropdown';
 import BatchRow from '../components/admin/BatchRow';
 import { formatDate, formatDateTime, isRecentlyUpdated } from '../utils/dateUtils';
@@ -36,6 +34,7 @@ import { average } from '../utils/mathUtils';
 import GlobalSearch, { SearchItem } from '../components/GlobalSearch';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { useEscapeKey } from '../hooks/useEscapeKey';
+import { useBaseline } from '../hooks/useBaseline';
 import TrendIndicator from '../components/TrendIndicator';
 import ProgressBar from '../components/ProgressBar';
 import StatusBadge from '../components/StatusBadge';
@@ -48,7 +47,7 @@ import SavingButton from '../components/SavingButton';
 import Table from '../components/Table';
 import DashboardLayout from '../layouts/DashboardLayout';
 import type { AdminTabId } from '../constants/navigation';
-import { ADMIN_HEADER_TITLES, ADMIN_BRAND_LABEL, ADMIN_NAV_ITEMS } from '../constants/navigation';
+import { ADMIN_HEADER_TITLES, ADMIN_BRAND_LABEL, ADMIN_NAV_ITEMS, ADMIN_NAV_GROUPS } from '../constants/navigation';
 import { PRIORITY_STYLES } from '../constants/announcements';
 import { ROUTES } from '../constants/routes';
 
@@ -145,8 +144,8 @@ export default function AdminDashboardPage() {
 
   const dashboardLoadTime = useRef(new Date()).current;
   const notificationMenuRef = useRef<HTMLDivElement>(null);
-  const baselineAvgScore = useRef(average(batches.map((b) => b.avgScore))).current;
-  const baselineCompletion = useRef(average(batches.map((b) => b.completion))).current;
+  const baselineAvgScore = useBaseline(average(batches.map((b) => b.avgScore)));
+  const baselineCompletion = useBaseline(average(batches.map((b) => b.completion)));
 
   const [activeTab, setActiveTab] = useState<TabId>(initialTab ?? 'analytics');
   const [tabLoading, setTabLoading] = useState(false);
@@ -959,34 +958,43 @@ export default function AdminDashboardPage() {
   const LOG_PAGE_SIZE = 8;
   const logPageCount = Math.max(1, Math.ceil(filteredAuditEntries.length / LOG_PAGE_SIZE));
   const pagedAuditEntries = paginate(filteredAuditEntries, logPage, LOG_PAGE_SIZE);
-  const globalSearchItems: SearchItem[] = useMemo(
-    () => [
+  const globalSearchItems: SearchItem[] = useMemo(() => {
+    const facilitatorNames = Array.from(new Set(batches.map((b) => b.poc).filter(Boolean)));
+    const traineeNames = Array.from(new Set(batches.flatMap((b) => b.members)));
+    return [
       ...batches.map((b): SearchItem => ({ id: b.id, category: 'Batch', title: b.name, subtitle: `${b.poc} • ${b.status}` })),
+      ...trainingPlans.map((p): SearchItem => ({ id: p.id, category: 'Training Plan', title: p.name, subtitle: `${p.durationMonths} month${p.durationMonths === 1 ? '' : 's'} • ${p.counts.batches} batches` })),
       ...assignments.map((a): SearchItem => ({ id: a.id, category: 'Assignment', title: a.title, subtitle: `Due ${formatDateTime(a.deadline)}` })),
       ...resources.map((r): SearchItem => ({ id: r.id, category: 'Resource', title: r.title, subtitle: r.category })),
       ...announcements.map((a): SearchItem => ({ id: a.id, category: 'Announcement', title: a.title, subtitle: a.audience })),
-      ...sessions.map((s): SearchItem => ({ id: s.id, category: 'Session', title: s.title, subtitle: `${s.date} • ${s.time}` }))
-    ],
-    [batches, assignments, resources, announcements, sessions]
-  );
+      ...sessions.map((s): SearchItem => ({ id: s.id, category: 'Session', title: s.title, subtitle: `${s.date} • ${s.time}` })),
+      ...facilitatorNames.map((name): SearchItem => ({ id: name, category: 'Facilitator', title: name, subtitle: 'Facilitator / POC' })),
+      ...traineeNames.map((name): SearchItem => ({ id: name, category: 'Trainee', title: name, subtitle: 'Trainee' }))
+    ];
+  }, [batches, trainingPlans, assignments, resources, announcements, sessions]);
 
   function handleGlobalSearchSelect(item: SearchItem) {
+    if (item.category === 'Trainee') {
+      navigate(ROUTES.ADMIN_TRAINEE_PROFILE(item.title));
+      return;
+    }
+    if (item.category === 'Training Plan') {
+      navigate(ROUTES.ADMIN_TRAINING_PLAN_DETAIL(item.id));
+      return;
+    }
     const tabMap: Record<string, TabId> = {
       Batch: 'batches',
       Assignment: 'assignments',
       Resource: 'resources',
       Announcement: 'announcements',
-      Session: 'sessions'
+      Session: 'sessions',
+      Facilitator: 'batches'
     };
     setActiveTab(tabMap[item.category] ?? 'analytics');
   }
 
   const globalAvgScore = average(batches.map((b) => b.avgScore));
   const globalCompletion = average(batches.map((b) => b.completion));
-  const nextSession = sessions
-    .filter((s) => s.status === 'Upcoming')
-    .slice()
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
 
   const announcementAudiences = Array.from(new Set(announcements.map((a) => a.audience)));
   const filteredAnnouncements = useMemo(
@@ -1102,6 +1110,7 @@ export default function AdminDashboardPage() {
     <DashboardLayout
       brandLabel={ADMIN_BRAND_LABEL}
       navItems={ADMIN_NAV_ITEMS}
+      navGroups={ADMIN_NAV_GROUPS}
       activeTab={activeTab}
       onTabChange={setActiveTab}
       onLogout={() => setLogoutConfirmOpen(true)}
@@ -1164,172 +1173,19 @@ export default function AdminDashboardPage() {
             </div>
           )}
 
-          {/* Real-time Analytics Dashboard Tab */}
+          {/* Admin Dashboard Home -- control-center landing page; detailed analytics live in Reports */}
           <div className={hiddenUnless('analytics')}>
-            <Breadcrumbs trail={['Admin', 'Dashboard']} />
-            <div className="flex items-center justify-between mb-4">
-              <span className="text-xs text-gray-400 font-medium">
-                Last updated {dashboardLoadTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-              </span>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md hover:-translate-y-0.5 transition-all duration-150">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">Total Active Trainees</div>
-                    <div className="text-3xl font-extrabold text-gray-800 mt-1">{batches.reduce((sum, b) => sum + b.traineeCount, 0)}</div>
-                  </div>
-                  <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
-                  </div>
-                </div>
-                <div className="mt-4 text-xs text-gray-500 font-medium">
-                  Across {batches.length} active batches
-                </div>
-              </div>
-
-              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md hover:-translate-y-0.5 transition-all duration-150">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">Global Avg Score</div>
-                    <div className="text-3xl font-extrabold text-blue-600 mt-1">{globalAvgScore !== null ? `${globalAvgScore}%` : '—'}</div>
-                  </div>
-                  <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-lg flex items-center justify-center flex-shrink-0">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                  </div>
-                </div>
-                <div className="mt-4 flex items-center justify-between">
-                  <span className="text-xs text-gray-500 font-medium">Across {batches.length} Active Batches</span>
-                  <TrendIndicator current={globalAvgScore} baseline={baselineAvgScore} />
-                </div>
-              </div>
-
-              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between hover:shadow-md hover:-translate-y-0.5 transition-all duration-150">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">Avg Completion Rate</div>
-                    <div className="text-3xl font-extrabold text-gray-800 mt-1">{globalCompletion !== null ? `${globalCompletion}%` : '—'}</div>
-                  </div>
-                  <div className="w-10 h-10 bg-green-50 text-green-600 rounded-lg flex items-center justify-center flex-shrink-0">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
-                  </div>
-                </div>
-                <div className="mt-4 w-full bg-gray-100 rounded-full h-1.5">
-                  <div className="bg-green-500 h-1.5 rounded-full transition-all duration-300" style={{ width: `${globalCompletion ?? 0}%` }}></div>
-                </div>
-                <div className="mt-2">
-                  <TrendIndicator current={globalCompletion} baseline={baselineCompletion} />
-                </div>
-              </div>
-
-              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-between cursor-pointer hover:border-purple-200 transition-colors" onClick={() => setActiveTab('sessions')}>
-                <div className="flex items-start justify-between">
-                  <div>
-                    <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">Next Session</div>
-                    <div className="text-lg font-extrabold text-gray-800 mt-1 leading-tight">{nextSession?.date ?? 'None scheduled'}</div>
-                  </div>
-                  <div className="w-10 h-10 bg-purple-50 text-purple-600 rounded-lg flex items-center justify-center flex-shrink-0">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                  </div>
-                </div>
-                <div className="mt-4 text-xs text-gray-500 font-medium">
-                  {nextSession
-                    ? `${nextSession.title} • ${batches.find((b) => b.id === nextSession.batchId)?.name ?? nextSession.batchId} • ${nextSession.time}`
-                    : 'No upcoming sessions scheduled'}
-                </div>
-              </div>
-            </div>
-
-            <QuickActionsBar
-              actions={[
-                {
-                  label: 'Create Assignment',
-                  icon: <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>,
-                  onClick: () => { setActiveTab('assignments'); setCreateAssignmentModalOpen(true); }
-                },
-                {
-                  label: 'Schedule Session',
-                  icon: <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>,
-                  onClick: () => { setActiveTab('sessions'); setCreateSessionModalOpen(true); }
-                },
-                {
-                  label: 'Broadcast Announcement',
-                  icon: <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" /></svg>,
-                  onClick: () => { setActiveTab('announcements'); setCreateAnnouncementModalOpen(true); }
-                },
-                {
-                  label: 'Upload Resource',
-                  icon: <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>,
-                  onClick: () => { setActiveTab('resources'); setResourceUploadModalOpen(true); }
-                },
-                {
-                  label: 'Invite Trainee',
-                  icon: <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /></svg>,
-                  onClick: () => { setActiveTab('batches'); setInviteModalOpen(true); }
-                },
-                {
-                  label: 'Export Report',
-                  icon: <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>,
-                  onClick: () => setActiveTab('reports')
-                }
-              ]}
+            <AdminDashboardHome
+              batches={batches}
+              sessions={sessions}
+              assignments={assignments}
+              auditEntries={auditEntries}
+              dashboardLoadTime={dashboardLoadTime}
+              onNavigateTab={setActiveTab}
+              onOpenCreateBatch={() => setBulkUploadModalOpen(true)}
+              onOpenInviteTrainee={() => { setActiveTab('batches'); setInviteModalOpen(true); }}
+              onOpenBatch={(batchId) => { setActiveTab('batches'); setExpandedBatchId(batchId); }}
             />
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-              <RecentActivityWidget
-                entries={auditEntries.slice(0, 8)}
-                onViewAll={() => setActiveTab('logs')}
-                onItemClick={(entry) => {
-                  const cat = categorize(entry.type);
-                  const tabMap: Record<string, TabId> = {
-                    Assignment: 'assignments',
-                    Session: 'sessions',
-                    Announcement: 'announcements',
-                    Resource: 'resources',
-                    Feedback: 'feedback',
-                    Batch: 'batches'
-                  };
-                  setActiveTab(tabMap[cat] ?? 'logs');
-                }}
-              />
-              <UpcomingDeadlinesWidget
-                assignments={assignments}
-                sessions={sessions}
-                batches={batches}
-                onViewAssignments={() => setActiveTab('assignments')}
-                onItemClick={(item) => setActiveTab(item.kind === 'Assignment' ? 'assignments' : 'sessions')}
-              />
-            </div>
-
-            <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6 mb-8">
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="font-bold text-lg text-gray-800">Batch Performance Comparison</h3>
-                <select value={chartParameter} onChange={(e) => setChartParameter(e.target.value)} className="px-3 py-1.5 border rounded-lg text-sm outline-none bg-gray-50 focus:ring-2 focus:ring-blue-500">
-                  <option value="completion">Completion Rate</option>
-                  <option value="avgscore">Average Score</option>
-                  <option value="attendance">Attendance Rate</option>
-                  <option value="submissions">Assignment Submissions</option>
-                  <option value="feedback">Feedback Rating</option>
-                </select>
-              </div>
-              <div className="h-80 w-full bg-gray-50 border border-dashed border-gray-300 rounded flex flex-col items-center justify-center text-gray-400 p-6 text-center">
-                <div className="text-sm font-medium text-gray-500 mb-4">{CHART_LABEL_MAP[chartParameter]} - All {batches.length} Active Batches</div>
-                <div className="w-full max-w-2xl space-y-3">
-                  {batches.map((b, i) => {
-                    const { percent, label } = getChartBarValue(b, chartParameter);
-                    return (
-                      <div className="flex items-center gap-3" key={b.id}>
-                        <span className="w-36 text-xs text-gray-600 text-right">{b.name}</span>
-                        <div className="flex-1 bg-gray-200 rounded-full h-4">
-                          <div className={`${CHART_BAR_COLORS[i % CHART_BAR_COLORS.length]} h-4 rounded-full transition-all duration-300`} style={{ width: `${percent}%` }}></div>
-                        </div>
-                        <span className="text-xs font-bold text-gray-700 w-12">{label}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
           </div>
 
           {/* Batch Management Tab */}
@@ -1341,7 +1197,7 @@ export default function AdminDashboardPage() {
                 <button onClick={() => setInviteModalOpen(true)} className="bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 px-5 py-2.5 rounded-lg font-bold transition-colors shadow-sm hover:-translate-y-0.5">
                   + Invite Trainee
                 </button>
-                <button onClick={() => setBulkUploadModalOpen(true)} className="bg-slate-900 hover:bg-slate-800 text-white px-5 py-2.5 rounded-lg font-bold transition-colors shadow-md hover:-translate-y-0.5">
+                <button onClick={() => setBulkUploadModalOpen(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg font-bold transition-colors shadow-md hover:-translate-y-0.5">
                   + Create Batch
                 </button>
               </div>
@@ -1463,9 +1319,60 @@ export default function AdminDashboardPage() {
           {/* Automated Report Generation Tab */}
           <div className={hiddenUnless('reports')}>
             <Breadcrumbs trail={['Admin', 'Reports']} />
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-bold tracking-tight">Automated Report Generation</h2>
+
+            <h2 className="text-lg font-bold tracking-tight text-gray-800 mb-3">Analytics</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">Global Avg Score</div>
+                <div className="text-3xl font-extrabold text-blue-600 mt-1">{globalAvgScore !== null ? `${globalAvgScore}%` : '—'}</div>
+                <div className="mt-3 flex items-center justify-between">
+                  <span className="text-xs text-gray-500 font-medium">Across {batches.length} active batches</span>
+                  <TrendIndicator current={globalAvgScore} baseline={baselineAvgScore} />
+                </div>
+              </div>
+              <div className="bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
+                <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">Avg Completion Rate</div>
+                <div className="text-3xl font-extrabold text-gray-800 mt-1">{globalCompletion !== null ? `${globalCompletion}%` : '—'}</div>
+                <div className="mt-3 w-full bg-gray-100 rounded-full h-1.5">
+                  <div className="bg-green-500 h-1.5 rounded-full transition-all duration-300" style={{ width: `${globalCompletion ?? 0}%` }}></div>
+                </div>
+                <div className="mt-2">
+                  <TrendIndicator current={globalCompletion} baseline={baselineCompletion} />
+                </div>
+              </div>
             </div>
+
+            <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6 mb-8">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="font-bold text-lg text-gray-800">Batch Performance Comparison</h3>
+                <select value={chartParameter} onChange={(e) => setChartParameter(e.target.value)} className="px-3 py-1.5 border rounded-lg text-sm outline-none bg-gray-50 focus:ring-2 focus:ring-blue-500">
+                  <option value="completion">Completion Rate</option>
+                  <option value="avgscore">Average Score</option>
+                  <option value="attendance">Attendance Rate</option>
+                  <option value="submissions">Assignment Submissions</option>
+                  <option value="feedback">Feedback Rating</option>
+                </select>
+              </div>
+              <div className="h-80 w-full bg-gray-50 border border-dashed border-gray-300 rounded flex flex-col items-center justify-center text-gray-400 p-6 text-center">
+                <div className="text-sm font-medium text-gray-500 mb-4">{CHART_LABEL_MAP[chartParameter]} - All {batches.length} Active Batches</div>
+                <div className="w-full max-w-2xl space-y-3">
+                  {batches.map((b, i) => {
+                    const { percent, label } = getChartBarValue(b, chartParameter);
+                    return (
+                      <div className="flex items-center gap-3" key={b.id}>
+                        <span className="w-36 text-xs text-gray-600 text-right">{b.name}</span>
+                        <div className="flex-1 bg-gray-200 rounded-full h-4">
+                          <div className={`${CHART_BAR_COLORS[i % CHART_BAR_COLORS.length]} h-4 rounded-full transition-all duration-300`} style={{ width: `${percent}%` }}></div>
+                        </div>
+                        <span className="text-xs font-bold text-gray-700 w-12">{label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <h2 className="text-lg font-bold tracking-tight text-gray-800 mb-3">Automated Report Generation</h2>
 
             <div className="flex flex-wrap items-end gap-4 bg-white border border-gray-200 rounded-xl p-4 shadow-sm mb-6">
               <div>
@@ -1779,7 +1686,7 @@ export default function AdminDashboardPage() {
             <Breadcrumbs trail={['Admin', 'Announcements']} />
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-bold">Global Announcements</h2>
-              <button onClick={() => setCreateAnnouncementModalOpen(true)} className="px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 hover:-translate-y-0.5 transition-all duration-150">+ Broadcast Announcement</button>
+              <button onClick={() => setCreateAnnouncementModalOpen(true)} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 hover:-translate-y-0.5 transition-all duration-150">+ Broadcast Announcement</button>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -2035,10 +1942,10 @@ export default function AdminDashboardPage() {
             )}
           </div>
 
-          {/* Feedback Tab (Global Read View) */}
-          <div className={hiddenUnless('feedback')}>
-            <Breadcrumbs trail={['Admin', 'Feedback']} />
-            <h2 className="text-2xl font-bold mb-1">Session Feedback</h2>
+          {/* Feedback Forms Tab -- attach/edit each session's external feedback-form link */}
+          <div className={hiddenUnless('feedbackForms')}>
+            <Breadcrumbs trail={['Admin', 'Feedback Forms']} />
+            <h2 className="text-2xl font-bold mb-1">Session Feedback Forms</h2>
             <p className="text-gray-500 text-sm mb-6">Attach, copy, and edit each session's external feedback-form link, and track submissions.</p>
 
             <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6 mb-10">
@@ -2061,9 +1968,13 @@ export default function AdminDashboardPage() {
                 </div>
               )}
             </div>
+          </div>
 
-            <h2 className="text-xl font-bold text-gray-500 mb-1">Facilitator Performance Feedback</h2>
-            <p className="text-gray-400 text-sm mb-6">Trainee/facilitator ratings — unrelated to Session Feedback above.</p>
+          {/* Feedback Overview Tab (Global Read View) -- ratings/reviews, unrelated to the form links above */}
+          <div className={hiddenUnless('feedbackOverview')}>
+            <Breadcrumbs trail={['Admin', 'Feedback Overview']} />
+            <h2 className="text-2xl font-bold mb-1">Facilitator Performance Feedback</h2>
+            <p className="text-gray-500 text-sm mb-6">Trainee/facilitator ratings and reviews across the org.</p>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
               <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-150">

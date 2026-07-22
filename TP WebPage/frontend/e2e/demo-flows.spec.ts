@@ -11,6 +11,19 @@ async function enterDemo(page: Page, role: 'Admin' | 'Facilitator' | 'Trainee'):
   await expect(page.getByText('Demo Mode', { exact: false }).first()).toBeVisible();
 }
 
+// Everything past the Dashboard/Settings rows lives inside one of the sidebar's named
+// dropdowns (Facilitator/Trainee use "Me"/"Global"; Admin has its own group names). The
+// dropdown stays expanded after a child is selected, so only toggle it open if it isn't
+// already -- clicking an already-open toggle collapses it instead.
+async function openSidebarItem(page: Page, groupLabel: string, itemName: string): Promise<void> {
+  const sidebar = page.getByRole('complementary');
+  const groupButton = sidebar.getByRole('button', { name: groupLabel, exact: true });
+  if ((await groupButton.getAttribute('aria-expanded')) !== 'true') {
+    await groupButton.click();
+  }
+  await sidebar.getByRole('button', { name: itemName, exact: true }).click();
+}
+
 test('login page loads without console errors (backend down)', async ({ page }) => {
   const errors: string[] = [];
   page.on('console', (msg) => {
@@ -43,7 +56,7 @@ test('unknown routes render the 404 page, not a login redirect', async ({ page }
 
 test('admin sees both training plans with full curricula', async ({ page }) => {
   await enterDemo(page, 'Admin');
-  await page.getByRole('link', { name: 'Training Plans' }).click();
+  await openSidebarItem(page, 'Programs & Batches', 'Training Plans');
   await expect(page.getByRole('heading', { name: 'BA BTech' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'BA MBA' })).toBeVisible();
   await expect(page.getByText('42 sessions').first()).toBeVisible();
@@ -81,8 +94,8 @@ test('assignment detail exposes the sample instructions file', async ({ page }) 
 
 test('trainee sees own batch and assignments', async ({ page }) => {
   await enterDemo(page, 'Trainee');
-  await page.getByRole('link', { name: 'My Batch' }).click();
+  await openSidebarItem(page, 'Me', 'My Batch');
   await expect(page.getByText('BA BTech - July 2026').filter({ visible: true }).first()).toBeVisible();
-  await page.getByRole('link', { name: 'Assignments' }).click();
+  await openSidebarItem(page, 'Me', 'Assignments');
   await expect(page.getByText(/Case Study/).first()).toBeVisible();
 });
