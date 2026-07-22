@@ -21,6 +21,8 @@ import { useClickOutside } from '../hooks/useClickOutside';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { useNotifications } from '../hooks/useNotifications';
 import { useBaseline } from '../hooks/useBaseline';
+import { useReassignmentRequestsStore } from '../store/reassignmentRequestsStore';
+import { canRequestReassignment } from '../constants/permissions';
 import { downloadTextFile } from '../utils/downloadFile';
 import TrendIndicator from '../components/TrendIndicator';
 import { average } from '../utils/mathUtils';
@@ -256,6 +258,19 @@ export default function FacilitatorDashboardPage() {
     const myBatchIds = new Set(myBatches.map((b) => b.id));
     return sessions.filter((s) => myBatchIds.has(s.batchId));
   }, [sessions, myBatches]);
+
+  const { createRequest: createReassignmentRequest } = useReassignmentRequestsStore();
+  const [reassignRequestSessionId, setReassignRequestSessionId] = useState<string | null>(null);
+  const [reassignReason, setReassignReason] = useState('');
+
+  async function submitReassignmentRequest(sessionId: string) {
+    if (!canRequestReassignment('facilitator') || !reassignReason.trim()) return;
+    await createReassignmentRequest({ sessionId, reason: reassignReason.trim() });
+    logEvent('Session', 'Requested reassignment for a session.', { module: 'Sessions' });
+    showToast('Reassignment request sent to your coordinator/Admin');
+    setReassignRequestSessionId(null);
+    setReassignReason('');
+  }
 
   // Which of my completed sessions' Facilitator/Both-audience feedback forms I've already
   // submitted my own response to — mirrors the trainee dashboard's equivalent tracking, since a
@@ -1176,6 +1191,40 @@ export default function FacilitatorDashboardPage() {
                     </div>
                     <div className="flex items-center gap-3 relative" ref={isEditing ? sessionEditPopoverRef : undefined}>
                       <StatusBadge status={session.status} />
+                      {session.status === 'Upcoming' &&
+                        (session.primaryTrainerId === currentUserId || session.coTrainers.some((c) => c.id === currentUserId)) &&
+                        session.trainerAssignmentStatus !== 'Reassignment Requested' &&
+                        (reassignRequestSessionId === session.id ? (
+                          <div className="absolute right-0 top-full mt-2 w-72 bg-white rounded-xl shadow-xl border border-gray-200 z-50 p-4 text-left space-y-2">
+                            <div className="text-xs font-bold text-gray-400 uppercase tracking-wide">Request Reassignment</div>
+                            <textarea
+                              value={reassignReason}
+                              onChange={(e) => setReassignReason(e.target.value)}
+                              placeholder="Why can't you deliver this session?"
+                              rows={3}
+                              className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                            <div className="flex justify-end gap-2">
+                              <button onClick={() => { setReassignRequestSessionId(null); setReassignReason(''); }} className="text-xs font-medium text-gray-500 hover:text-gray-700 px-2 py-1.5">
+                                Cancel
+                              </button>
+                              <button
+                                onClick={() => submitReassignmentRequest(session.id)}
+                                disabled={!reassignReason.trim()}
+                                className="text-xs font-bold bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                              >
+                                Submit
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setReassignRequestSessionId(session.id)}
+                            className="text-xs font-bold rounded-full px-3 py-1.5 border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 transition-all duration-150"
+                          >
+                            Request Reassignment
+                          </button>
+                        ))}
                       <button
                         onClick={() => (isEditing ? setEditingSessionId(null) : startEditSession(session.id, session.date, session.time))}
                         className={`text-xs font-bold rounded-full px-3 py-1.5 border transition-all duration-150 hover:scale-105 active:scale-95 ${

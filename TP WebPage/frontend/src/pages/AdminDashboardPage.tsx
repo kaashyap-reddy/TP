@@ -23,6 +23,7 @@ import { useFacilitatorAssignmentsStore } from '../store/facilitatorAssignmentsS
 import FacilitatorTeamDrawer from '../components/admin/FacilitatorTeamDrawer';
 import { useReassignmentRequestsStore } from '../store/reassignmentRequestsStore';
 import TrainerAssignmentModal, { TrainerAssignmentResult } from '../components/admin/TrainerAssignmentModal';
+import { canAssignSessionTrainer, canBulkAssignTrainers, canReviewReassignmentRequest } from '../constants/permissions';
 import SessionsCalendarView from '../components/SessionsCalendarView';
 import BatchMultiSelect from '../components/BatchMultiSelect';
 import AssignmentBatchesCell from '../components/AssignmentBatchesCell';
@@ -114,6 +115,7 @@ export default function AdminDashboardPage() {
   const initialTab = locationState?.tab;
   const initialExpandBatchId = locationState?.expandBatchId;
   const clearSession = useAuthStore((s) => s.clearSession);
+  const currentRole = useAuthStore((s) => s.role);
   const { batches, fetchBatches, updateBatch, deleteBatch, createBatch } = useBatchesStore();
 
   useEffect(() => {
@@ -595,6 +597,11 @@ export default function AdminDashboardPage() {
 
   async function handleAssignTrainerSave(result: TrainerAssignmentResult) {
     if (!assignTrainerTarget) return;
+    const isBulk = assignTrainerTarget.length > 1;
+    if (!canAssignSessionTrainer(currentRole) || (isBulk && !canBulkAssignTrainers(currentRole))) {
+      showToast('You do not have permission to assign trainers.', 'error');
+      return;
+    }
     for (const s of assignTrainerTarget) {
       if (result.skipAlreadyAssigned && (s.primaryTrainerId || s.guestTrainer)) continue;
       await assignSessionTrainer(s.id, { primaryTrainerId: result.primaryTrainerId, guestTrainer: result.guestTrainer });
@@ -1829,26 +1836,28 @@ export default function AdminDashboardPage() {
                             <div className="text-sm font-medium text-gray-800 truncate">{rSession?.title ?? r.sessionId}</div>
                             <div className="text-xs text-gray-500 mt-0.5">{r.reason}</div>
                           </div>
-                          <div className="flex gap-2 flex-shrink-0">
-                            <button
-                              onClick={async () => {
-                                await reviewReassignmentRequest(r.id, { status: 'Approved' });
-                                showToast('Reassignment approved');
-                              }}
-                              className="text-xs font-bold text-green-700 bg-green-50 hover:bg-green-100 px-3 py-1.5 rounded-lg"
-                            >
-                              Approve
-                            </button>
-                            <button
-                              onClick={async () => {
-                                await reviewReassignmentRequest(r.id, { status: 'Rejected' });
-                                showToast('Reassignment rejected');
-                              }}
-                              className="text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg"
-                            >
-                              Reject
-                            </button>
-                          </div>
+                          {canReviewReassignmentRequest(currentRole) && (
+                            <div className="flex gap-2 flex-shrink-0">
+                              <button
+                                onClick={async () => {
+                                  await reviewReassignmentRequest(r.id, { status: 'Approved' });
+                                  showToast('Reassignment approved');
+                                }}
+                                className="text-xs font-bold text-green-700 bg-green-50 hover:bg-green-100 px-3 py-1.5 rounded-lg"
+                              >
+                                Approve
+                              </button>
+                              <button
+                                onClick={async () => {
+                                  await reviewReassignmentRequest(r.id, { status: 'Rejected' });
+                                  showToast('Reassignment rejected');
+                                }}
+                                className="text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg"
+                              >
+                                Reject
+                              </button>
+                            </div>
+                          )}
                         </div>
                       );
                     })}

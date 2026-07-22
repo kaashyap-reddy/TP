@@ -380,13 +380,20 @@ function toTemplateAssignments(
 }
 
 /** Instantiates a curriculum's sessions onto a real batch — the same transform batches.service.ts's create() does server-side. */
+// Deterministic (reproducible across reloads) but not visibly sequential -- avoids both "every
+// session has the same trainer" and an obvious 0,1,2,0,1,2 cycling pattern.
+function pickTrainer(pool: PersonRef[], index: number): PersonRef | null {
+  if (pool.length === 0) return null;
+  return pool[(index * 5 + 3) % pool.length];
+}
+
 function instantiateSessions(
   batchPrefix: string,
   batchId: string,
   days: CurriculumDay[],
   platform: string,
   meetingBase: string,
-  facilitator: PersonRef | null,
+  facilitatorPool: PersonRef[],
   startDate: Date,
   memberCount: number
 ): DemoSession[] {
@@ -394,6 +401,7 @@ function instantiateSessions(
   return days.map((d, i) => {
     const scheduledAt = addMinutes(nthWorkingDay(startDate, d.dayOffset), SESSION_START_MINUTE);
     const isPast = scheduledAt.getTime() < now.getTime();
+    const facilitator = pickTrainer(facilitatorPool, i);
     return {
       id: `${batchPrefix}-session-${i}`,
       batchId,
@@ -841,6 +849,7 @@ export const DEMO_FACILITATOR_ASSIGNMENTS: DemoFacilitatorAssignment[] = [
   // independently coordinates his own cohort -- the many-to-many relationship in both directions.
   facilitatorAssignment('demo-fa-12', 'demo-batch-ba-mba', facilitatorJunaid, 'Primary Coordinator', true, 'Active'),
   facilitatorAssignment('demo-fa-13', 'demo-batch-ba-mba', facilitatorSrikar, 'Trainer', false, 'Active'),
+  facilitatorAssignment('demo-fa-17', 'demo-batch-ba-mba', facilitatorDinesh, 'Trainer', false, 'Active'),
 
   facilitatorAssignment('demo-fa-14', 'demo-batch-ba-btech-cohort2', facilitatorSrikar, 'Primary Coordinator', true, 'Active'),
   facilitatorAssignment('demo-fa-15', 'demo-batch-ba-mba-cohort2', facilitatorDinesh, 'Primary Coordinator', true, 'Active'),
@@ -878,9 +887,16 @@ function batchRefs(...batchIds: string[]): { id: string; name: string; code: str
 const btechBatchRef = batchRefs('demo-batch-ba-btech')[0];
 const mbaBatchRef = batchRefs('demo-batch-ba-mba')[0];
 
+// Who actually delivers this curriculum's sessions day to day -- distributed across the team's
+// Trainers/Lead/Coordinator, not one fixed person. Deliberately excludes Lakshmi (Temporarily
+// Unavailable -- she only appears via the hand-authored historical override below), Vivek
+// (status Upcoming -- hasn't started yet), and the non-teaching roles (Backup, Reviewer).
+const BTECH_TRAINER_POOL = [facilitatorJunaid, facilitatorSrikar, facilitatorDinesh, facilitatorKaashyap, facilitatorPriyanka, facilitatorArvind, facilitatorNandini];
+const MBA_TRAINER_POOL = [facilitatorJunaid, facilitatorSrikar, facilitatorDinesh];
+
 export const DEMO_SESSIONS: DemoSession[] = [
-  ...instantiateSessions('demo-btech', 'demo-batch-ba-btech', btechDays, 'GoogleMeet', 'https://meet.example.com', facilitatorJunaid, BTECH_START, btechMembers.length),
-  ...instantiateSessions('demo-mba', 'demo-batch-ba-mba', mbaDays, 'Zoom', 'https://zoom.example.com', facilitatorJunaid, MBA_START, mbaMembers.length)
+  ...instantiateSessions('demo-btech', 'demo-batch-ba-btech', btechDays, 'GoogleMeet', 'https://meet.example.com', BTECH_TRAINER_POOL, BTECH_START, btechMembers.length),
+  ...instantiateSessions('demo-mba', 'demo-batch-ba-mba', mbaDays, 'Zoom', 'https://zoom.example.com', MBA_TRAINER_POOL, MBA_START, mbaMembers.length)
 ];
 
 const btechSessions = DEMO_SESSIONS.filter((s) => s.batchId === 'demo-batch-ba-btech');

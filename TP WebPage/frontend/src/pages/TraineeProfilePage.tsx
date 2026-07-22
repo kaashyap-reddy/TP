@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useBatchesStore } from '../store/batchesStore';
 import { useAuthStore } from '../store/authStore';
+import { useFacilitatorAssignmentsStore } from '../store/facilitatorAssignmentsStore';
 import { useAssignmentsStore } from '../store/assignmentsStore';
 import { useFeedbackStore } from '../store/feedbackStore';
 import { MeetingPlatform, useSessionsStore } from '../store/sessionsStore';
@@ -21,25 +22,31 @@ export default function TraineeProfilePage() {
   const navigate = useNavigate();
   const location = useLocation();
   const backTarget = resolveFacilitatorProfileBack(location.state);
-  const displayName = useAuthStore((s) => s.displayName);
-  // Was hardcoded to 'Junaid Mohammed' -- broke for any other facilitator. Note this still scopes
-  // "my batches" to ones where the current user is Primary Coordinator (poc); a facilitator who's
-  // only a Lead Facilitator/Trainer on a batch's team won't see it here yet -- see Known
-  // Limitations in the facilitator-allocation report.
-  const FACILITATOR_NAME = displayName ?? 'Facilitator';
+  const { id: currentUserId } = useAuthStore();
 
   const batches = useBatchesStore((s) => s.batches);
   const fetchBatches = useBatchesStore((s) => s.fetchBatches);
   useEffect(() => {
     fetchBatches();
   }, [fetchBatches]);
+  const { assignments: myTeamAssignments, fetchAssignments: fetchMyTeamAssignments } = useFacilitatorAssignmentsStore();
+  useEffect(() => {
+    if (currentUserId) fetchMyTeamAssignments({ facilitatorId: currentUserId });
+  }, [fetchMyTeamAssignments, currentUserId]);
   const assignments = useAssignmentsStore((s) => s.assignments);
   const feedback = useFeedbackStore((s) => s.feedback);
   const createSession = useSessionsStore((s) => s.createSession);
   const logEvent = useAuditLogStore((s) => s.logEvent);
   const showToast = useToastStore((s) => s.showToast);
 
-  const myBatches = useMemo(() => batches.filter((b) => b.poc === FACILITATOR_NAME), [batches, FACILITATOR_NAME]);
+  // "My batches" now means every batch this facilitator is actively on the team for -- Primary
+  // Coordinator, Lead Facilitator, Trainer, whatever role -- not just batches where they happen to
+  // be the Primary Coordinator (poc). Fixes a real gap: a Lead Facilitator/Trainer couldn't
+  // previously open a trainee's profile in a batch they were genuinely assigned to.
+  const myBatches = useMemo(() => {
+    const myBatchIds = new Set(myTeamAssignments.filter((a) => a.status !== 'Removed').map((a) => a.batchId));
+    return batches.filter((b) => myBatchIds.has(b.id));
+  }, [batches, myTeamAssignments]);
   const batch = useMemo(() => myBatches.find((b) => b.members.includes(traineeName)), [myBatches, traineeName]);
   // Assignments belong to a Training Plan, not an individual facilitator — scope to "my batches'
   // assignments" via batch membership instead of a facilitator-name match.

@@ -5,6 +5,8 @@ import EmptyState from '../EmptyState';
 import { useFacilitatorAssignmentsStore, FacilitatorAssignmentStatus } from '../../store/facilitatorAssignmentsStore';
 import type { FacilitatorRole } from '../../types/facilitatorAssignment';
 import { listUsers, ApiUser } from '../../services/api/userService';
+import { useAuthStore } from '../../store/authStore';
+import { canManageFacilitatorTeam, canRemoveFacilitator, canSetPrimaryCoordinator } from '../../constants/permissions';
 
 const ROLE_OPTIONS: FacilitatorRole[] = ['Primary Coordinator', 'Lead Facilitator', 'Trainer', 'Guest Trainer', 'Assignment Reviewer', 'Backup Facilitator'];
 const STATUS_STYLE: Record<FacilitatorAssignmentStatus, string> = {
@@ -32,6 +34,7 @@ interface FacilitatorTeamDrawerProps {
 // intentionally not manageable here: they're a session-level, no-portal-access concept (see
 // Phase 5/6), not a batch-team membership.
 export default function FacilitatorTeamDrawer({ open, onClose, batchId, batchName }: FacilitatorTeamDrawerProps) {
+  const role = useAuthStore((s) => s.role);
   const { assignments, fetchAssignments, addAssignment, updateAssignment, setPrimaryCoordinator, removeAssignment } = useFacilitatorAssignmentsStore();
   const [addOpen, setAddOpen] = useState(false);
   const [candidates, setCandidates] = useState<ApiUser[]>([]);
@@ -58,6 +61,10 @@ export default function FacilitatorTeamDrawer({ open, onClose, batchId, batchNam
 
   async function handleAdd() {
     if (!selectedCandidateId) return;
+    if (!canManageFacilitatorTeam(role)) {
+      setError('You do not have permission to manage this batch\'s facilitator team.');
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -74,6 +81,11 @@ export default function FacilitatorTeamDrawer({ open, onClose, batchId, batchNam
   }
 
   async function handleSetPrimary(id: string) {
+    if (!canSetPrimaryCoordinator(role)) {
+      setError('Only Admin can change a batch\'s Primary Coordinator.');
+      setConfirmPrimaryId(null);
+      return;
+    }
     setBusy(true);
     try {
       await setPrimaryCoordinator(id);
@@ -84,6 +96,11 @@ export default function FacilitatorTeamDrawer({ open, onClose, batchId, batchNam
   }
 
   async function handleRemove(id: string) {
+    if (!canRemoveFacilitator(role)) {
+      setError('Only Admin can remove a facilitator from a batch.');
+      setConfirmRemoveId(null);
+      return;
+    }
     setBusy(true);
     try {
       await removeAssignment(id);
