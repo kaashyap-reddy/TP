@@ -13,7 +13,9 @@ import {
   DEMO_ASSIGNMENTS,
   DEMO_ATTENDANCE,
   DEMO_BATCHES,
+  DEMO_FACILITATOR_ASSIGNMENTS,
   DEMO_FEEDBACK,
+  DEMO_REASSIGNMENT_REQUESTS,
   DEMO_RESOURCES,
   DEMO_SESSIONS,
   DEMO_TRAINING_PLANS,
@@ -22,6 +24,9 @@ import {
   type DemoAnnouncement,
   type DemoAssignment,
   type DemoAttendanceRecord,
+  type DemoFacilitatorAssignment,
+  type DemoGuestTrainer,
+  type DemoReassignmentRequest,
   type DemoResource,
   type DemoSession,
   type DemoSubmission,
@@ -69,6 +74,8 @@ let resources = clone(DEMO_RESOURCES);
 let feedback = clone(DEMO_FEEDBACK);
 let announcements = clone(DEMO_ANNOUNCEMENTS);
 let announcementReads: { announcementId: string; userId: string }[] = [];
+let facilitatorAssignments = clone(DEMO_FACILITATOR_ASSIGNMENTS);
+let reassignmentRequests = clone(DEMO_REASSIGNMENT_REQUESTS);
 const trainingPlans = clone(DEMO_TRAINING_PLANS);
 // submitterId — the trainee OR facilitator who submitted (a form's audience can target either).
 let sessionFeedbackSubmissions: { formId: string; submitterId: string }[] = [];
@@ -251,7 +258,14 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
   // ---- batches ----
   if (method === 'GET' && path === '/batches') {
     let results = batches;
-    if (query?.facilitatorId) results = results.filter((b) => b.facilitator?.id === query.facilitatorId);
+    if (query?.facilitatorId) {
+      // A facilitator can see every batch they're actively on the team for, not just batches
+      // where they happen to be the Primary Coordinator (Batch.facilitator is only that cache).
+      const teamBatchIds = new Set(
+        facilitatorAssignments.filter((a) => a.facilitatorId === query.facilitatorId && a.status !== 'Removed').map((a) => a.batchId)
+      );
+      results = results.filter((b) => b.facilitator?.id === query.facilitatorId || teamBatchIds.has(b.id));
+    }
     if (query?.traineeId) {
       const trainee = DEMO_USERS.find((u) => u.id === query.traineeId);
       results = results.filter((b) => (trainee ? b.members.includes(trainee.name) : false));
@@ -294,6 +308,28 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
     };
     batches = [created, ...batches];
 
+    // Keep the facilitator-assignment team in sync: a coordinator picked at creation time becomes
+    // this batch's first team row (Primary Coordinator), the same single source of truth every
+    // other batch uses -- see DEMO_FACILITATOR_ASSIGNMENTS.
+    if (facilitator) {
+      facilitatorAssignments = [
+        ...facilitatorAssignments,
+        {
+          id: nextId('demo-fa'),
+          batchId: created.id,
+          facilitatorId: facilitator.id,
+          facilitatorName: facilitator.name,
+          facilitatorEmail: facilitator.email,
+          role: 'Primary Coordinator',
+          isPrimaryCoordinator: true,
+          status: 'Active',
+          assignedAt: new Date().toISOString(),
+          assignedBy: actor.name,
+          notes: null
+        }
+      ];
+    }
+
     // Mirrors the real Training Plan automation: instantiate the plan's ~42 sessions (skipping
     // weekends), assignment schedule, resources, and feedback links onto this new batch
     // immediately — the same behavior backend's batches.service.ts create() transaction produces.
@@ -311,6 +347,10 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
         meetingLink: null,
         status: 'Upcoming',
         facilitator,
+        coTrainers: [],
+        trainerAssignmentStatus: facilitator ? 'Assigned' : 'Unassigned',
+        trainerNotes: null,
+        guestTrainer: null,
         relatedAssignments: [],
         feedbackForm: templateSession.feedbackFormUrl
           ? {
@@ -379,7 +419,7 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
     if (!batch) notFound();
     if (method === 'GET') return { batch };
     if (method === 'PATCH') {
-      if (b.facilitatorId !== undefined) batch.facilitator = facilitatorRefFor(b.facilitatorId as string | undefined);
+      if (b.facilitatorId !== undefined) setPrimaryCoordinatorViaLegacyEdit(batch.id, b.facilitatorId as string | undefined);
       Object.assign(batch, { ...b, facilitatorId: undefined });
       return { batch };
     }
@@ -803,7 +843,13 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
       platform: String(b.platform ?? 'Other'),
       meetingLink: (b.meetingLink as string) ?? null,
       status: String(b.status ?? 'Upcoming'),
-      facilitator: facilitatorRefFor(undefined),
+      // Ad-hoc sessions start unassigned rather than silently defaulting to some arbitrary
+      // facilitator -- the Admin assigns a trainer explicitly afterward (see Phase 5).
+      facilitator: null,
+      coTrainers: [],
+      trainerAssignmentStatus: 'Unassigned',
+      trainerNotes: null,
+      guestTrainer: null,
       relatedAssignments: [],
       feedbackForm: null
     };
@@ -816,7 +862,10 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
     if (!session) notFound();
     if (method === 'GET') return { session: withFeedbackFormVisibility(session) };
     if (method === 'PATCH') {
-      Object.assign(session, b);
+      const trainerKeys = ['primaryTrainerId', 'coTrainerIds', 'guestTrainer', 'trainerNotes'];
+      if (trainerKeys.some((k) => k in b)) applyTrainerAssignmentPatch(session, b);
+      const rest = Object.fromEntries(Object.entries(b).filter(([k]) => !trainerKeys.includes(k)));
+      Object.assign(session, rest);
       return { session };
     }
     if (method === 'DELETE') {
@@ -1003,9 +1052,10 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
     const currentUser = currentDemoUser();
     let results = announcements;
     if (currentUser.role !== 'admin') {
+      const teamBatchIds = new Set(facilitatorAssignments.filter((a) => a.facilitatorId === currentUser.id && a.status !== 'Removed').map((a) => a.batchId));
       const ownedOrEnrolledBatchIds = new Set(
         batches
-          .filter((b) => (currentUser.role === 'facilitator' ? b.facilitator?.id === currentUser.id : b.members.includes(currentUser.name)))
+          .filter((b) => (currentUser.role === 'facilitator' ? b.facilitator?.id === currentUser.id || teamBatchIds.has(b.id) : b.members.includes(currentUser.name)))
           .map((b) => b.id)
       );
       results = results.filter((a) => a.batchId === null || ownedOrEnrolledBatchIds.has(a.batchId));
@@ -1068,6 +1118,132 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
     return undefined;
   }
 
+  // ---- facilitator assignments (the batch-facilitator many-to-many team) ----
+  if (method === 'GET' && path === '/facilitator-assignments') {
+    let results = facilitatorAssignments;
+    if (query?.batchId) results = results.filter((a) => a.batchId === query.batchId);
+    if (query?.facilitatorId) results = results.filter((a) => a.facilitatorId === query.facilitatorId);
+    return paginated(results.map((a) => ({ ...a, ...sessionCountsFor(a.batchId, a.facilitatorId) })));
+  }
+  if (method === 'POST' && path === '/facilitator-assignments') {
+    const batchId = String(b.batchId ?? '');
+    const facilitatorId = String(b.facilitatorId ?? '');
+    const batch = batches.find((x) => x.id === batchId);
+    if (!batch) notFound();
+    const duplicate = facilitatorAssignments.some((a) => a.batchId === batchId && a.facilitatorId === facilitatorId && a.status !== 'Removed');
+    if (duplicate) {
+      const err = new Error('This facilitator is already on the batch\'s team.') as Error & { status?: number };
+      err.status = 409;
+      throw err;
+    }
+    const facilitatorUser = DEMO_USERS.find((u) => u.id === facilitatorId);
+    if (!facilitatorUser) {
+      const err = new Error('No such facilitator.') as Error & { status?: number };
+      err.status = 400;
+      throw err;
+    }
+    const actor = currentDemoUser();
+    const created: DemoFacilitatorAssignment = {
+      id: nextId('demo-fa'),
+      batchId,
+      facilitatorId,
+      facilitatorName: facilitatorUser.name,
+      facilitatorEmail: facilitatorUser.email,
+      role: String(b.role ?? 'Trainer'),
+      isPrimaryCoordinator: false,
+      status: 'Active',
+      assignedAt: new Date().toISOString(),
+      assignedBy: actor.name,
+      notes: (b.notes as string) || null
+    };
+    facilitatorAssignments = [...facilitatorAssignments, created];
+    return { assignment: { ...created, ...sessionCountsFor(batchId, facilitatorId) } };
+  }
+  const facilitatorAssignmentSetPrimaryMatch = matchPath('/facilitator-assignments/:id/set-primary', path);
+  if (method === 'POST' && facilitatorAssignmentSetPrimaryMatch) {
+    const target = facilitatorAssignments.find((a) => a.id === facilitatorAssignmentSetPrimaryMatch.id);
+    if (!target) notFound();
+    for (const a of facilitatorAssignments) {
+      if (a.batchId !== target.batchId) continue;
+      if (a.isPrimaryCoordinator && a.id !== target.id) {
+        a.isPrimaryCoordinator = false;
+        a.role = 'Lead Facilitator';
+      }
+    }
+    target.isPrimaryCoordinator = true;
+    target.role = 'Primary Coordinator';
+    syncBatchPrimaryCoordinator(target.batchId);
+    return { assignment: { ...target, ...sessionCountsFor(target.batchId, target.facilitatorId) } };
+  }
+  const facilitatorAssignmentIdMatch = matchPath('/facilitator-assignments/:id', path);
+  if (facilitatorAssignmentIdMatch) {
+    const assignment = facilitatorAssignments.find((a) => a.id === facilitatorAssignmentIdMatch.id);
+    if (!assignment) notFound();
+    if (method === 'PATCH') {
+      Object.assign(assignment, b);
+      return { assignment: { ...assignment, ...sessionCountsFor(assignment.batchId, assignment.facilitatorId) } };
+    }
+    if (method === 'DELETE') {
+      // Soft-remove: keeps the row (and any already-delivered sessions' historical trainer
+      // association) intact for audit purposes, rather than erasing the relationship outright.
+      assignment.status = 'Removed';
+      assignment.isPrimaryCoordinator = false;
+      syncBatchPrimaryCoordinator(assignment.batchId);
+      return undefined;
+    }
+  }
+
+  // ---- reassignment requests (simple demo-mode workflow -- see Phase 11) ----
+  if (method === 'GET' && path === '/reassignment-requests') {
+    let results = reassignmentRequests;
+    if (query?.batchId) results = results.filter((r) => r.batchId === query.batchId);
+    if (query?.status) results = results.filter((r) => r.status === query.status);
+    return paginated(results);
+  }
+  if (method === 'POST' && path === '/reassignment-requests') {
+    const session = sessions.find((s) => s.id === b.sessionId);
+    if (!session) notFound();
+    const actor = currentDemoUser();
+    const created: DemoReassignmentRequest = {
+      id: nextId('demo-rr'),
+      sessionId: session.id,
+      batchId: session.batchId,
+      requestedById: actor.id,
+      reason: String(b.reason ?? ''),
+      suggestedReplacementId: (b.suggestedReplacementId as string) || null,
+      status: 'Pending',
+      createdAt: new Date().toISOString(),
+      reviewedBy: null,
+      reviewNotes: null
+    };
+    reassignmentRequests = [created, ...reassignmentRequests];
+    session.trainerAssignmentStatus = 'Reassignment Requested';
+    return { request: created };
+  }
+  const reassignmentRequestIdMatch = matchPath('/reassignment-requests/:id', path);
+  if (method === 'PATCH' && reassignmentRequestIdMatch) {
+    const request = reassignmentRequests.find((r) => r.id === reassignmentRequestIdMatch.id);
+    if (!request) notFound();
+    const actor = currentDemoUser();
+    const nextStatus = String(b.status ?? request.status);
+    request.status = nextStatus;
+    request.reviewedBy = actor.name;
+    request.reviewNotes = (b.reviewNotes as string) || request.reviewNotes;
+    const session = sessions.find((s) => s.id === request.sessionId);
+    if (session) {
+      if (nextStatus === 'Approved' && request.suggestedReplacementId) {
+        const replacement = DEMO_USERS.find((u) => u.id === request.suggestedReplacementId);
+        session.facilitator = replacement ? { id: replacement.id, name: replacement.name, email: replacement.email } : null;
+        session.trainerAssignmentStatus = replacement ? 'Assigned' : 'Unassigned';
+      } else if (nextStatus === 'Approved' || nextStatus === 'Resolved') {
+        session.trainerAssignmentStatus = session.facilitator ? 'Assigned' : 'Unassigned';
+      } else if (nextStatus === 'Rejected' || nextStatus === 'Cancelled') {
+        session.trainerAssignmentStatus = session.facilitator ? 'Confirmed' : 'Unassigned';
+      }
+    }
+    return { request };
+  }
+
   // ---- calendar (normalized sessions + assignment deadlines, mirrors the real /calendar shape) ----
   if (method === 'GET' && path === '/calendar') {
     const wantType = (query?.type as string | undefined) ?? 'all';
@@ -1126,4 +1302,91 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
 function facilitatorRefFor(id: string | undefined) {
   const user = (id && DEMO_USERS.find((u) => u.id === id)) || DEMO_USERS.find((u) => u.role === 'facilitator')!;
   return { id: user.id, name: user.name, email: user.email };
+}
+
+/** How many of this batch's sessions this facilitator is primary or a co-trainer on -- computed
+ * live from `sessions` rather than stored, so it's always accurate after any reassignment. */
+function sessionCountsFor(batchId: string, facilitatorId: string): { sessionCount: number; upcomingSessionCount: number } {
+  const now = Date.now();
+  const involved = sessions.filter(
+    (s) => s.batchId === batchId && (s.facilitator?.id === facilitatorId || s.coTrainers.some((c) => c.id === facilitatorId))
+  );
+  return {
+    sessionCount: involved.length,
+    upcomingSessionCount: involved.filter((s) => new Date(s.scheduledAt).getTime() > now).length
+  };
+}
+
+/** Batch.facilitator is a denormalized cache of whichever facilitatorAssignments row for this
+ * batch has isPrimaryCoordinator === true -- this is the one place that cache gets written. */
+function syncBatchPrimaryCoordinator(batchId: string): void {
+  const batch = batches.find((x) => x.id === batchId);
+  if (!batch) return;
+  const primary = facilitatorAssignments.find((a) => a.batchId === batchId && a.isPrimaryCoordinator && a.status !== 'Removed');
+  batch.facilitator = primary ? { id: primary.facilitatorId, name: primary.facilitatorName, email: primary.facilitatorEmail } : null;
+}
+
+/** The older "Edit Batch" flow (PATCH /batches/:id with a bare facilitatorId) still needs to
+ * route through the same assignment-table source of truth, not write batch.facilitator directly. */
+function setPrimaryCoordinatorViaLegacyEdit(batchId: string, facilitatorId: string | undefined): void {
+  for (const a of facilitatorAssignments) {
+    if (a.batchId === batchId && a.isPrimaryCoordinator) {
+      a.isPrimaryCoordinator = false;
+      a.role = 'Lead Facilitator';
+    }
+  }
+  if (facilitatorId) {
+    const existing = facilitatorAssignments.find((a) => a.batchId === batchId && a.facilitatorId === facilitatorId && a.status !== 'Removed');
+    if (existing) {
+      existing.isPrimaryCoordinator = true;
+      existing.role = 'Primary Coordinator';
+      existing.status = 'Active';
+    } else {
+      const user = DEMO_USERS.find((u) => u.id === facilitatorId);
+      if (user) {
+        facilitatorAssignments = [
+          ...facilitatorAssignments,
+          {
+            id: nextId('demo-fa'),
+            batchId,
+            facilitatorId: user.id,
+            facilitatorName: user.name,
+            facilitatorEmail: user.email,
+            role: 'Primary Coordinator',
+            isPrimaryCoordinator: true,
+            status: 'Active',
+            assignedAt: new Date().toISOString(),
+            assignedBy: currentDemoUser().name,
+            notes: null
+          }
+        ];
+      }
+    }
+  }
+  syncBatchPrimaryCoordinator(batchId);
+}
+
+/** Resolves primaryTrainerId/coTrainerIds/guestTrainer patch fields into the DemoSession shape --
+ * kept separate from the generic Object.assign in the /sessions/:id PATCH handler because these
+ * three need id -> PersonRef resolution, not a raw pass-through. */
+function applyTrainerAssignmentPatch(session: DemoSession, patch: Record<string, unknown>): void {
+  if ('primaryTrainerId' in patch) {
+    const id = patch.primaryTrainerId as string | null | undefined;
+    session.facilitator = id ? facilitatorRefFor(id) : null;
+  }
+  if ('coTrainerIds' in patch) {
+    const ids = Array.isArray(patch.coTrainerIds) ? (patch.coTrainerIds as string[]) : [];
+    session.coTrainers = ids.map((id) => facilitatorRefFor(id));
+  }
+  if ('guestTrainer' in patch) {
+    session.guestTrainer = (patch.guestTrainer as DemoGuestTrainer | null) ?? null;
+    if (session.guestTrainer) session.facilitator = null;
+  }
+  if ('trainerNotes' in patch) {
+    session.trainerNotes = (patch.trainerNotes as string) || null;
+  }
+  if (session.guestTrainer) session.trainerAssignmentStatus = 'Assigned';
+  else if (session.facilitator) session.trainerAssignmentStatus = session.coTrainers.length > 0 ? 'Confirmed' : 'Assigned';
+  else if (session.coTrainers.length > 0) session.trainerAssignmentStatus = 'Partially Assigned';
+  else session.trainerAssignmentStatus = 'Unassigned';
 }

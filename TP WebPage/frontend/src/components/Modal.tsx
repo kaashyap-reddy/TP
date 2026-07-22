@@ -6,18 +6,20 @@ interface ModalProps {
   onClose: () => void;
   title?: string;
   subtitle?: ReactNode;
-  maxWidth?: 'sm' | 'md';
+  maxWidth?: 'sm' | 'md' | 'lg';
   children: ReactNode;
 }
 
-const TITLE_CLASS: Record<'sm' | 'md', string> = {
+const TITLE_CLASS: Record<'sm' | 'md' | 'lg', string> = {
   sm: 'text-lg font-bold',
-  md: 'text-xl font-bold'
+  md: 'text-xl font-bold',
+  lg: 'text-xl font-bold'
 };
 
-const MAX_WIDTH_CLASS: Record<'sm' | 'md', string> = {
+const MAX_WIDTH_CLASS: Record<'sm' | 'md' | 'lg', string> = {
   sm: 'max-w-sm',
-  md: 'max-w-md'
+  md: 'max-w-md',
+  lg: 'max-w-2xl'
 };
 
 export default function Modal({ open, onClose, title, subtitle, maxWidth = 'sm', children }: ModalProps) {

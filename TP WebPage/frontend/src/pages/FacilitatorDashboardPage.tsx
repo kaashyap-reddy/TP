@@ -66,8 +66,6 @@ function resourceIconStyle(category: string) {
   }
 }
 
-const FACILITATOR_NAME = 'Junaid Mohammed';
-
 export default function FacilitatorDashboardPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -75,6 +73,11 @@ export default function FacilitatorDashboardPage() {
   const dashboardLoadTime = useRef(new Date()).current;
 
   const { id: currentUserId, displayName, clearSession } = useAuthStore();
+  // Was hardcoded to 'Junaid Mohammed' -- broke the moment any other facilitator logged in
+  // (misattributed announcements, session ownership, etc. to the wrong person). Derived from the
+  // authenticated user now, consistent with the rest of this feature's "no single fixed
+  // facilitator" fix.
+  const FACILITATOR_NAME = displayName ?? 'Facilitator';
 
   const batches = useBatchesStore((s) => s.batches);
   const fetchBatches = useBatchesStore((s) => s.fetchBatches);
@@ -230,7 +233,7 @@ export default function FacilitatorDashboardPage() {
         const q = feedbackSearch.trim().toLowerCase();
         return q === '' || f.trainee.toLowerCase().includes(q) || f.category.toLowerCase().includes(q);
       }),
-    [feedback, feedbackSearch]
+    [feedback, feedbackSearch, FACILITATOR_NAME]
   );
   // Batches are already scoped to this facilitator by the fetchBatches({ facilitatorId }) call above.
   const aimlBatch = batches[0];
@@ -548,7 +551,6 @@ export default function FacilitatorDashboardPage() {
       await createSession({
         title,
         batchId: newSessionBatchId || batches[0]?.id || '',
-        facilitator: FACILITATOR_NAME,
         date: newSessionDate,
         time: newSessionTime,
         link: newSessionLink,

@@ -11,6 +11,7 @@ interface SessionsState {
   fetchSessions: (filters?: { batchId?: string }) => Promise<void>;
   createSession: (input: sessionService.CreateSessionInput) => Promise<Session>;
   updateSession: (id: string, changes: Partial<Session>) => Promise<void>;
+  assignSessionTrainer: (id: string, input: sessionService.TrainerAssignmentInput) => Promise<Session>;
   deleteSession: (id: string) => Promise<void>;
 }
 
@@ -35,6 +36,11 @@ export const useSessionsStore = create<SessionsState>()((set, get) => ({
   updateSession: async (id, changes) => {
     const updated = await sessionService.updateSession(id, changes);
     set({ sessions: get().sessions.map((s) => (s.id === id ? { ...s, ...updated } : s)) });
+  },
+  assignSessionTrainer: async (id, input) => {
+    const updated = await sessionService.assignSessionTrainer(id, input);
+    set({ sessions: get().sessions.map((s) => (s.id === id ? updated : s)) });
+    return updated;
   },
   deleteSession: async (id) => {
     await sessionService.deleteSession(id);

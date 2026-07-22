@@ -1,6 +1,8 @@
 import { useMemo } from 'react';
 import { Batch } from '../../store/batchesStore';
 import { Session } from '../../store/sessionsStore';
+import type { ReassignmentRequest } from '../../store/reassignmentRequestsStore';
+import { findAllTrainerConflicts } from '../../utils/trainerConflicts';
 import EmptyState from '../EmptyState';
 
 type Priority = 'high' | 'medium' | 'low';
@@ -30,15 +32,25 @@ function daysUntil(dateStr: string | null): number {
 interface RequiresAttentionWidgetProps {
   batches: Batch[];
   sessions: Session[];
+  reassignmentRequests: ReassignmentRequest[];
   onOpenBatch: (batchId: string) => void;
   onOpenSessions: () => void;
   onOpenFeedbackForms: () => void;
+  onOpenReassignmentRequests: () => void;
 }
 
 // Every item here is derived from real store data (batch.poc, session.facilitator,
-// session.feedbackForm, batch.startDate/attendanceRate) -- nothing here is fabricated for
-// visual effect, per the "keep Demo Mode honest" constraint.
-export default function RequiresAttentionWidget({ batches, sessions, onOpenBatch, onOpenSessions, onOpenFeedbackForms }: RequiresAttentionWidgetProps) {
+// session.feedbackForm, batch.startDate/attendanceRate, trainer overlap) -- nothing here is
+// fabricated for visual effect, per the "keep Demo Mode honest" constraint.
+export default function RequiresAttentionWidget({
+  batches,
+  sessions,
+  reassignmentRequests,
+  onOpenBatch,
+  onOpenSessions,
+  onOpenFeedbackForms,
+  onOpenReassignmentRequests
+}: RequiresAttentionWidgetProps) {
   const items = useMemo(() => {
     const result: AttentionItem[] = [];
 
@@ -75,7 +87,9 @@ export default function RequiresAttentionWidget({ batches, sessions, onOpenBatch
       }
     }
 
-    const untrained = sessions.filter((s) => s.status === 'Upcoming' && !s.facilitator);
+    // Not "missing" if a guest trainer is covering it -- guestTrainer is a deliberate, filled
+    // assignment, just not a registered facilitator (see Phase 6).
+    const untrained = sessions.filter((s) => s.status === 'Upcoming' && !s.primaryTrainerId && s.coTrainers.length === 0 && !s.guestTrainer);
     if (untrained.length > 0) {
       result.push({
         id: 'sessions-no-trainer',
@@ -100,8 +114,34 @@ export default function RequiresAttentionWidget({ batches, sessions, onOpenBatch
       });
     }
 
+    const conflicts = findAllTrainerConflicts(sessions);
+    if (conflicts.length > 0) {
+      const first = conflicts[0];
+      result.push({
+        id: 'trainer-conflicts',
+        title: `${conflicts.length} scheduling conflict${conflicts.length === 1 ? '' : 's'} detected`,
+        description: `${first.trainerName} is double-booked: "${first.sessionA.title}" and "${first.sessionB.title}" overlap.`,
+        priority: 'high',
+        onClick: onOpenSessions
+      });
+    }
+
+    const pendingRequests = reassignmentRequests.filter((r) => r.status === 'Pending');
+    if (pendingRequests.length > 0) {
+      result.push({
+        id: 'reassignment-requests-pending',
+        title: `${pendingRequests.length} reassignment request${pendingRequests.length === 1 ? '' : 's'} awaiting review`,
+        description: pendingRequests
+          .slice(0, 2)
+          .map((r) => r.reason)
+          .join(' • '),
+        priority: 'medium',
+        onClick: onOpenReassignmentRequests
+      });
+    }
+
     return result.sort((a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]).slice(0, 6);
-  }, [batches, sessions, onOpenBatch, onOpenSessions, onOpenFeedbackForms]);
+  }, [batches, sessions, reassignmentRequests, onOpenBatch, onOpenSessions, onOpenFeedbackForms, onOpenReassignmentRequests]);
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden flex flex-col">

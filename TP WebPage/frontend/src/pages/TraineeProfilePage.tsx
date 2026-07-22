@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useBatchesStore } from '../store/batchesStore';
+import { useAuthStore } from '../store/authStore';
 import { useAssignmentsStore } from '../store/assignmentsStore';
 import { useFeedbackStore } from '../store/feedbackStore';
 import { MeetingPlatform, useSessionsStore } from '../store/sessionsStore';
@@ -14,14 +15,18 @@ import StatusBadge from '../components/StatusBadge';
 import SavingButton from '../components/SavingButton';
 import { resolveFacilitatorProfileBack } from '../utils/facilitatorProfileNav';
 
-const FACILITATOR_NAME = 'Junaid Mohammed';
-
 export default function TraineeProfilePage() {
   const { traineeName: encodedName } = useParams();
   const traineeName = decodeURIComponent(encodedName ?? '');
   const navigate = useNavigate();
   const location = useLocation();
   const backTarget = resolveFacilitatorProfileBack(location.state);
+  const displayName = useAuthStore((s) => s.displayName);
+  // Was hardcoded to 'Junaid Mohammed' -- broke for any other facilitator. Note this still scopes
+  // "my batches" to ones where the current user is Primary Coordinator (poc); a facilitator who's
+  // only a Lead Facilitator/Trainer on a batch's team won't see it here yet -- see Known
+  // Limitations in the facilitator-allocation report.
+  const FACILITATOR_NAME = displayName ?? 'Facilitator';
 
   const batches = useBatchesStore((s) => s.batches);
   const fetchBatches = useBatchesStore((s) => s.fetchBatches);
@@ -34,7 +39,7 @@ export default function TraineeProfilePage() {
   const logEvent = useAuditLogStore((s) => s.logEvent);
   const showToast = useToastStore((s) => s.showToast);
 
-  const myBatches = useMemo(() => batches.filter((b) => b.poc === FACILITATOR_NAME), [batches]);
+  const myBatches = useMemo(() => batches.filter((b) => b.poc === FACILITATOR_NAME), [batches, FACILITATOR_NAME]);
   const batch = useMemo(() => myBatches.find((b) => b.members.includes(traineeName)), [myBatches, traineeName]);
   // Assignments belong to a Training Plan, not an individual facilitator — scope to "my batches'
   // assignments" via batch membership instead of a facilitator-name match.
@@ -103,7 +108,6 @@ export default function TraineeProfilePage() {
       await createSession({
         title: title.trim(),
         batchId: batchId || batches[0]?.id || '',
-        facilitator: FACILITATOR_NAME,
         date,
         time,
         link,

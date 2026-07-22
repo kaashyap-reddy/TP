@@ -1,19 +1,34 @@
 import { Fragment, memo } from 'react';
 import { Batch } from '../../store/batchesStore';
+import type { FacilitatorAssignment } from '../../store/facilitatorAssignmentsStore';
 import ProgressBar from '../ProgressBar';
 import StatusBadge from '../StatusBadge';
 
 interface BatchRowProps {
   batch: Batch;
+  /** This batch's active/upcoming team rows -- pre-filtered by the caller so this component stays presentational. */
+  facilitatorTeam: FacilitatorAssignment[];
   isExpanded: boolean;
   isSelected: boolean;
   onToggleExpand: () => void;
   onToggleSelect: () => void;
   onManage: () => void;
+  onManageFacilitators: () => void;
   onSelectTrainee: (traineeName: string) => void;
 }
 
-function BatchRow({ batch: b, isExpanded, isSelected, onToggleExpand, onToggleSelect, onManage, onSelectTrainee }: BatchRowProps) {
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  return ((parts[0]?.[0] ?? '') + (parts[1]?.[0] ?? '')).toUpperCase();
+}
+
+const MAX_VISIBLE_AVATARS = 3;
+
+function BatchRow({ batch: b, facilitatorTeam, isExpanded, isSelected, onToggleExpand, onToggleSelect, onManage, onManageFacilitators, onSelectTrainee }: BatchRowProps) {
+  const primary = facilitatorTeam.find((a) => a.isPrimaryCoordinator);
+  const visible = facilitatorTeam.slice(0, MAX_VISIBLE_AVATARS);
+  const extraCount = Math.max(0, facilitatorTeam.length - visible.length);
+
   return (
     <Fragment>
       <tr className="hover:bg-slate-50 transition-colors">
@@ -36,7 +51,40 @@ function BatchRow({ batch: b, isExpanded, isSelected, onToggleExpand, onToggleSe
           </div>
         </td>
         <td className="px-6 py-4"><span className="px-2.5 py-1 bg-blue-100 text-blue-700 text-xs rounded-full font-bold">{b.program}</span></td>
-        <td className="px-6 py-4 font-medium text-gray-700">{b.poc || '—'}</td>
+        <td className="px-6 py-4 w-44">
+          {facilitatorTeam.length === 0 ? (
+            <div className="flex items-center gap-1 text-amber-700 text-xs font-bold">
+              <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" /></svg>
+              No coordinator
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <div className="flex -space-x-2 flex-shrink-0">
+                {visible.map((a) => (
+                  <span
+                    key={a.id}
+                    title={`${a.facilitatorName} — ${a.role}${a.status === 'Temporarily Unavailable' ? ' (unavailable)' : ''}`}
+                    className={`w-7 h-7 rounded-full text-[10px] font-bold flex items-center justify-center ring-2 ring-white ${
+                      a.status === 'Temporarily Unavailable' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'
+                    }`}
+                  >
+                    {initials(a.facilitatorName)}
+                  </span>
+                ))}
+                {extraCount > 0 && (
+                  <span className="w-7 h-7 rounded-full bg-gray-200 text-gray-600 text-[10px] font-bold flex items-center justify-center ring-2 ring-white">+{extraCount}</span>
+                )}
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-bold text-gray-800 truncate">{primary?.facilitatorName ?? 'No coordinator'}</div>
+                <div className="text-[10px] text-gray-400">{facilitatorTeam.length} facilitator{facilitatorTeam.length === 1 ? '' : 's'}</div>
+              </div>
+            </div>
+          )}
+          <button onClick={onManageFacilitators} className="mt-1 text-[11px] font-bold text-blue-600 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 rounded">
+            Manage Facilitators
+          </button>
+        </td>
         <td className="px-6 py-4 w-48">
           <div className="flex items-center gap-4">
             <div className="text-[10px] text-gray-400 uppercase font-bold flex-shrink-0">Avg Score <span className="text-blue-600 text-xs normal-case font-bold ml-1">{b.avgScore !== null ? `${b.avgScore}%` : '—'}</span></div>

@@ -2,6 +2,7 @@ import { Batch } from '../../store/batchesStore';
 import { Session } from '../../store/sessionsStore';
 import { Assignment } from '../../store/assignmentsStore';
 import { AuditLogEntry } from '../../store/auditLogStore';
+import type { ReassignmentRequest } from '../../store/reassignmentRequestsStore';
 import type { AdminTabId } from '../../constants/navigation';
 import Breadcrumbs from '../Breadcrumbs';
 import RequiresAttentionWidget from './RequiresAttentionWidget';
@@ -25,6 +26,7 @@ interface AdminDashboardHomeProps {
   sessions: Session[];
   assignments: Assignment[];
   auditEntries: AuditLogEntry[];
+  reassignmentRequests: ReassignmentRequest[];
   dashboardLoadTime: Date;
   onNavigateTab: (tab: AdminTabId) => void;
   onOpenCreateBatch: () => void;
@@ -40,6 +42,7 @@ export default function AdminDashboardHome({
   sessions,
   assignments,
   auditEntries,
+  reassignmentRequests,
   dashboardLoadTime,
   onNavigateTab,
   onOpenCreateBatch,
@@ -111,9 +114,11 @@ export default function AdminDashboardHome({
         <RequiresAttentionWidget
           batches={batches}
           sessions={sessions}
+          reassignmentRequests={reassignmentRequests}
           onOpenBatch={onOpenBatch}
           onOpenSessions={() => onNavigateTab('sessions')}
           onOpenFeedbackForms={() => onNavigateTab('feedbackForms')}
+          onOpenReassignmentRequests={() => onNavigateTab('sessions')}
         />
       </div>
 

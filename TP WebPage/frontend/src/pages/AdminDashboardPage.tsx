@@ -19,6 +19,10 @@ import { useAuthStore } from '../store/authStore';
 import { createInvite } from '../services/api/authService';
 import { dateStrToIso, formatTimeRange, isoToDateStr, minutesToLabel, parseTimeRange } from '../utils/sessionTime';
 import AdminDashboardHome from '../components/admin/AdminDashboardHome';
+import { useFacilitatorAssignmentsStore } from '../store/facilitatorAssignmentsStore';
+import FacilitatorTeamDrawer from '../components/admin/FacilitatorTeamDrawer';
+import { useReassignmentRequestsStore } from '../store/reassignmentRequestsStore';
+import TrainerAssignmentModal, { TrainerAssignmentResult } from '../components/admin/TrainerAssignmentModal';
 import SessionsCalendarView from '../components/SessionsCalendarView';
 import BatchMultiSelect from '../components/BatchMultiSelect';
 import AssignmentBatchesCell from '../components/AssignmentBatchesCell';
@@ -115,11 +119,22 @@ export default function AdminDashboardPage() {
   useEffect(() => {
     fetchBatches();
   }, [fetchBatches]);
+  const { assignments: facilitatorAssignments, fetchAssignments: fetchFacilitatorAssignments } = useFacilitatorAssignmentsStore();
+  useEffect(() => {
+    fetchFacilitatorAssignments();
+  }, [fetchFacilitatorAssignments]);
+  const [facilitatorDrawerBatch, setFacilitatorDrawerBatch] = useState<{ id: string; name: string } | null>(null);
   const { assignments, fetchAssignments, createAssignment, bulkDelete, bulkClose, bulkExtendDeadline, duplicateAssignment } = useAssignmentsStore();
   useEffect(() => {
     fetchAssignments();
   }, [fetchAssignments]);
-  const { sessions, fetchSessions, createSession, updateSession } = useSessionsStore();
+  const { sessions, fetchSessions, createSession, updateSession, assignSessionTrainer } = useSessionsStore();
+  const [selectedSessionIds, setSelectedSessionIds] = useState<Set<string>>(new Set());
+  const [assignTrainerTarget, setAssignTrainerTarget] = useState<Session[] | null>(null);
+  const { requests: reassignmentRequests, fetchRequests: fetchReassignmentRequests, reviewRequest: reviewReassignmentRequest } = useReassignmentRequestsStore();
+  useEffect(() => {
+    fetchReassignmentRequests();
+  }, [fetchReassignmentRequests]);
   useEffect(() => {
     fetchSessions();
   }, [fetchSessions]);
@@ -356,7 +371,6 @@ export default function AdminDashboardPage() {
         await createSession({
           title: `${selectedBatch.name} Sync`,
           batchId: selectedBatch.id,
-          facilitator: selectedBatch.poc,
           date: rescheduleForm.date,
           time: rescheduleForm.time,
           link: '',
@@ -519,7 +533,6 @@ export default function AdminDashboardPage() {
       await createSession({
         title: sessionForm.title,
         batchId: sessionForm.batchId,
-        facilitator: batch?.poc ?? '',
         date: sessionForm.date,
         time: sessionForm.time,
         link: '',
@@ -554,6 +567,42 @@ export default function AdminDashboardPage() {
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Unable to update session.', 'error');
     }
+  }
+
+  function toggleSessionSelected(id: string) {
+    setSelectedSessionIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAllSessions(visibleSessions: Session[]) {
+    setSelectedSessionIds((prev) => (prev.size === visibleSessions.length && visibleSessions.length > 0 ? new Set() : new Set(visibleSessions.map((s) => s.id))));
+  }
+
+  /** Candidate trainers for the session(s) being assigned -- the union of the involved batches'
+   * active facilitator teams, never "every facilitator in the org" (see Phase 5). */
+  function trainerCandidatesFor(targetSessions: Session[]): { id: string; name: string }[] {
+    const batchIds = new Set(targetSessions.map((s) => s.batchId));
+    const seen = new Map<string, string>();
+    for (const a of facilitatorAssignments) {
+      if (batchIds.has(a.batchId) && a.status !== 'Removed') seen.set(a.facilitatorId, a.facilitatorName);
+    }
+    return Array.from(seen, ([id, name]) => ({ id, name }));
+  }
+
+  async function handleAssignTrainerSave(result: TrainerAssignmentResult) {
+    if (!assignTrainerTarget) return;
+    for (const s of assignTrainerTarget) {
+      if (result.skipAlreadyAssigned && (s.primaryTrainerId || s.guestTrainer)) continue;
+      await assignSessionTrainer(s.id, { primaryTrainerId: result.primaryTrainerId, guestTrainer: result.guestTrainer });
+    }
+    logEvent('Session', `Trainer assignment updated for ${assignTrainerTarget.length} session(s).`, { module: 'Sessions' });
+    showToast(`Trainer updated for ${assignTrainerTarget.length} session(s)`);
+    setSelectedSessionIds(new Set());
+    setAssignTrainerTarget(null);
   }
 
   function startEditAttendance(session: Session) {
@@ -1180,6 +1229,7 @@ export default function AdminDashboardPage() {
               sessions={sessions}
               assignments={assignments}
               auditEntries={auditEntries}
+              reassignmentRequests={reassignmentRequests}
               dashboardLoadTime={dashboardLoadTime}
               onNavigateTab={setActiveTab}
               onOpenCreateBatch={() => setBulkUploadModalOpen(true)}
@@ -1262,7 +1312,7 @@ export default function AdminDashboardPage() {
                     <th className="px-6 py-4 font-bold w-8"></th>
                     <th className="px-6 py-4 font-bold">Batch Name</th>
                     <th className="px-6 py-4 font-bold">Batch Type</th>
-                    <th className="px-6 py-4 font-bold">POC</th>
+                    <th className="px-6 py-4 font-bold">Facilitator Team</th>
                     <th className="px-6 py-4 font-bold">Analytics summary</th>
                     <th className="px-6 py-4 font-bold">Status</th>
                     <th className="px-6 py-4 font-bold">Actions</th>
@@ -1277,11 +1327,13 @@ export default function AdminDashboardPage() {
                         <BatchRow
                           key={b.id}
                           batch={b}
+                          facilitatorTeam={facilitatorAssignments.filter((a) => a.batchId === b.id && a.status !== 'Removed')}
                           isExpanded={expandedBatchId === b.id}
                           isSelected={selectedBatchIds.has(b.id)}
                           onToggleExpand={() => setExpandedBatchId(expandedBatchId === b.id ? null : b.id)}
                           onToggleSelect={() => toggleBatchSelected(b.id)}
                           onManage={() => openBatchManage(b.id)}
+                          onManageFacilitators={() => setFacilitatorDrawerBatch({ id: b.id, name: b.name })}
                           onSelectTrainee={(name) => openTraineeProfile(b.id, name)}
                         />
                       ))
@@ -1296,11 +1348,13 @@ export default function AdminDashboardPage() {
                               <BatchRow
                                 key={b.id}
                                 batch={b}
+                                facilitatorTeam={facilitatorAssignments.filter((a) => a.batchId === b.id && a.status !== 'Removed')}
                                 isExpanded={expandedBatchId === b.id}
                                 isSelected={selectedBatchIds.has(b.id)}
                                 onToggleExpand={() => setExpandedBatchId(expandedBatchId === b.id ? null : b.id)}
                                 onToggleSelect={() => toggleBatchSelected(b.id)}
                                 onManage={() => openBatchManage(b.id)}
+                                onManageFacilitators={() => setFacilitatorDrawerBatch({ id: b.id, name: b.name })}
                                 onSelectTrainee={(name) => openTraineeProfile(b.id, name)}
                               />
                             ))}
@@ -1761,6 +1815,47 @@ export default function AdminDashboardPage() {
               </div>
             </div>
 
+            {reassignmentRequests.filter((r) => r.status === 'Pending').length > 0 && (
+              <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5 mb-6">
+                <h3 className="font-bold text-gray-800 mb-3">Reassignment Requests</h3>
+                <div className="space-y-2">
+                  {reassignmentRequests
+                    .filter((r) => r.status === 'Pending')
+                    .map((r) => {
+                      const rSession = sessions.find((s) => s.id === r.sessionId);
+                      return (
+                        <div key={r.id} className="flex items-center justify-between gap-3 border border-gray-200 rounded-lg p-3">
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium text-gray-800 truncate">{rSession?.title ?? r.sessionId}</div>
+                            <div className="text-xs text-gray-500 mt-0.5">{r.reason}</div>
+                          </div>
+                          <div className="flex gap-2 flex-shrink-0">
+                            <button
+                              onClick={async () => {
+                                await reviewReassignmentRequest(r.id, { status: 'Approved' });
+                                showToast('Reassignment approved');
+                              }}
+                              className="text-xs font-bold text-green-700 bg-green-50 hover:bg-green-100 px-3 py-1.5 rounded-lg"
+                            >
+                              Approve
+                            </button>
+                            <button
+                              onClick={async () => {
+                                await reviewReassignmentRequest(r.id, { status: 'Rejected' });
+                                showToast('Reassignment rejected');
+                              }}
+                              className="text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg"
+                            >
+                              Reject
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
+
             {sessionViewMode === 'calendar' ? (
               <SessionsCalendarView />
             ) : (
@@ -1778,7 +1873,22 @@ export default function AdminDashboardPage() {
                     <option>Cancelled</option>
                     <option>Rescheduled</option>
                   </select>
+                  <label className="flex items-center gap-2 text-sm text-gray-600 ml-auto">
+                    <input type="checkbox" checked={filteredSessions.length > 0 && selectedSessionIds.size === filteredSessions.length} onChange={() => toggleSelectAllSessions(filteredSessions)} />
+                    Select all
+                  </label>
                 </div>
+                {selectedSessionIds.size > 0 && (
+                  <div className="px-6 py-3 bg-blue-50 border-b border-blue-100 flex items-center justify-between">
+                    <span className="text-sm font-bold text-blue-800">{selectedSessionIds.size} selected</span>
+                    <button
+                      onClick={() => setAssignTrainerTarget(filteredSessions.filter((s) => selectedSessionIds.has(s.id)))}
+                      className="text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-lg transition-colors"
+                    >
+                      Assign Trainer to Selected
+                    </button>
+                  </div>
+                )}
                 <div className="p-6 space-y-4">
                   {filteredSessions.length === 0 && (
                     <EmptyState title="No sessions match these filters" icon="calendar" />
@@ -1791,13 +1901,41 @@ export default function AdminDashboardPage() {
                     const attendancePercent = totalAttendance > 0 ? Math.round(((s.presentCount ?? 0) / totalAttendance) * 100) : null;
                     return (
                       <div key={s.id} className="flex items-start p-4 border rounded-lg hover:bg-gray-50 hover:shadow-sm transition-all duration-150">
+                        <input
+                          type="checkbox"
+                          checked={selectedSessionIds.has(s.id)}
+                          onChange={() => toggleSessionSelected(s.id)}
+                          aria-label={`Select ${s.title}`}
+                          className="mt-1.5 mr-3 flex-shrink-0"
+                        />
                         <div className={`p-2 rounded-lg text-center border mr-4 w-16 flex-shrink-0 ${s.status === 'Upcoming' ? 'bg-blue-50 border-blue-100' : 'bg-gray-100 border-gray-200'}`}>
                           <div className={`text-xs font-bold uppercase ${s.status === 'Upcoming' ? 'text-blue-600' : 'text-gray-500'}`}>{s.date.split(' ')[0]}</div>
                           <div className={`text-xl font-bold ${s.status === 'Upcoming' ? 'text-blue-800' : 'text-gray-600'}`}>{s.date.split(' ')[1]?.replace(',', '')}</div>
                         </div>
                         <div className="flex-1">
                           <div className="font-bold text-gray-800">{s.title} — {batch?.name ?? s.batchId}</div>
-                          <div className="text-sm text-gray-500 mt-1">{s.time} • Facilitator: {s.facilitator}</div>
+                          <div className="text-sm text-gray-500 mt-1 flex items-center gap-2 flex-wrap">
+                            <span>{s.time}</span>
+                            <span>•</span>
+                            {s.guestTrainer ? (
+                              <span className="text-[11px] font-bold px-1.5 py-0.5 rounded bg-purple-50 text-purple-700">Guest: {s.guestTrainer.name}</span>
+                            ) : s.primaryTrainerName ? (
+                              <span>Trainer: {s.primaryTrainerName}</span>
+                            ) : (
+                              <span className="text-amber-600 font-bold">No trainer assigned</span>
+                            )}
+                            {s.coTrainers.length > 0 && (
+                              <span className="text-[11px] font-bold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700">
+                                +{s.coTrainers.length} co-trainer{s.coTrainers.length === 1 ? '' : 's'}
+                              </span>
+                            )}
+                            {s.trainerAssignmentStatus === 'Reassignment Requested' && (
+                              <span className="text-[11px] font-bold px-1.5 py-0.5 rounded bg-red-50 text-red-700">Reassignment requested</span>
+                            )}
+                            <button onClick={() => setAssignTrainerTarget([s])} className="text-[11px] font-bold text-blue-600 hover:underline">
+                              Assign Trainer
+                            </button>
+                          </div>
                           <div className="flex items-center gap-2 mt-2">
                             <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-indigo-50 text-indigo-700">{s.platform}</span>
                             {s.link ? (
@@ -2571,6 +2709,26 @@ export default function AdminDashboardPage() {
         items={globalSearchItems}
         onSelect={handleGlobalSearchSelect}
       />
+
+      {facilitatorDrawerBatch && (
+        <FacilitatorTeamDrawer
+          open={!!facilitatorDrawerBatch}
+          onClose={() => setFacilitatorDrawerBatch(null)}
+          batchId={facilitatorDrawerBatch.id}
+          batchName={facilitatorDrawerBatch.name}
+        />
+      )}
+
+      {assignTrainerTarget && (
+        <TrainerAssignmentModal
+          open={!!assignTrainerTarget}
+          onClose={() => setAssignTrainerTarget(null)}
+          targetSessions={assignTrainerTarget}
+          candidates={trainerCandidatesFor(assignTrainerTarget)}
+          allSessions={sessions}
+          onSave={handleAssignTrainerSave}
+        />
+      )}
     </DashboardLayout>
   );
 }

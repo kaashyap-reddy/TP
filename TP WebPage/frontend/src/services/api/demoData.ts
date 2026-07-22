@@ -115,6 +115,13 @@ export interface DemoSessionFeedbackForm {
   _count: { submissions: number };
 }
 
+export interface DemoGuestTrainer {
+  name: string;
+  email: string;
+  organization: string | null;
+  notes: string | null;
+}
+
 export interface DemoSession {
   id: string;
   batchId: string;
@@ -124,9 +131,44 @@ export interface DemoSession {
   platform: string;
   meetingLink: string | null;
   status: string;
+  /** The session's primary trainer -- null means unassigned, not "defaults to the batch coordinator". */
   facilitator: PersonRef | null;
+  coTrainers: PersonRef[];
+  trainerAssignmentStatus: string;
+  trainerNotes: string | null;
+  guestTrainer: DemoGuestTrainer | null;
   relatedAssignments: { id: string; title: string }[];
   feedbackForm: DemoSessionFeedbackForm | null;
+}
+
+// ---- facilitator-batch many-to-many assignment (the source of truth for "who's on this
+// batch's team" -- DemoBatch.facilitator is a denormalized cache of whichever row here has
+// isPrimaryCoordinator === true, kept in sync by demoMode.ts) ----
+export interface DemoFacilitatorAssignment {
+  id: string;
+  batchId: string;
+  facilitatorId: string;
+  facilitatorName: string;
+  facilitatorEmail: string;
+  role: string;
+  isPrimaryCoordinator: boolean;
+  status: string;
+  assignedAt: string;
+  assignedBy: string;
+  notes: string | null;
+}
+
+export interface DemoReassignmentRequest {
+  id: string;
+  sessionId: string;
+  batchId: string;
+  requestedById: string;
+  reason: string;
+  suggestedReplacementId: string | null;
+  status: string;
+  createdAt: string;
+  reviewedBy: string | null;
+  reviewNotes: string | null;
 }
 
 export interface DemoResource {
@@ -362,6 +404,10 @@ function instantiateSessions(
       meetingLink: `${meetingBase}/${batchPrefix}-session-${i}`,
       status: isPast ? 'Completed' : 'Upcoming',
       facilitator,
+      coTrainers: [],
+      trainerAssignmentStatus: facilitator ? 'Assigned' : 'Unassigned',
+      trainerNotes: null,
+      guestTrainer: null,
       relatedAssignments: [],
       feedbackForm: {
         id: `${batchPrefix}-feedback-form-${i}`,
@@ -462,6 +508,20 @@ const facilitatorJunaid = { id: 'demo-facilitator', name: 'Junaid Mohammed', ema
 const facilitatorSrikar = { id: 'demo-facilitator-2', name: 'Srikar Kulkarni', email: 'srikar.kulkarni@company.com' };
 const facilitatorDinesh = { id: 'demo-facilitator-3', name: 'Dinesh Paraman', email: 'dinesh.paraman@company.com' };
 const facilitatorKaashyap = { id: 'demo-facilitator-4', name: 'Kaashyap Reddy', email: 'kaashyap.reddy@company.com' };
+// Extra facilitators/trainers so the BA BTech batch can show a realistic large team (a real
+// ~42-session program draws on 10-20 different contributors, not one fixed trainer) -- see the
+// Facilitator Allocation model in DEMO_FACILITATOR_ASSIGNMENTS below.
+const facilitatorPriyanka = { id: 'demo-facilitator-5', name: 'Priyanka Rao', email: 'priyanka.rao@company.com' };
+const facilitatorArvind = { id: 'demo-facilitator-6', name: 'Arvind Menon', email: 'arvind.menon@company.com' };
+const facilitatorLakshmi = { id: 'demo-facilitator-7', name: 'Lakshmi Narayan', email: 'lakshmi.narayan@company.com' };
+const facilitatorRohit = { id: 'demo-facilitator-8', name: 'Rohit Bhatia', email: 'rohit.bhatia@company.com' };
+const facilitatorFarah = { id: 'demo-facilitator-9', name: 'Farah Sheikh', email: 'farah.sheikh@company.com' };
+const facilitatorVivek = { id: 'demo-facilitator-10', name: 'Vivek Chandran', email: 'vivek.chandran@company.com' };
+const facilitatorNandini = { id: 'demo-facilitator-11', name: 'Nandini Rao', email: 'nandini.rao@company.com' };
+// A guest trainer is never a registered user at all -- no DEMO_USERS entry, no login, no id
+// resolvable against the facilitator dataset. Represented only as a DemoGuestTrainer on the one
+// session they cover.
+const GUEST_TRAINER_AMIT = { name: 'Amit Deshpande', email: 'amit.deshpande@partnerfirm.example', organization: 'Partner Consulting LLP', notes: 'Covering the process-modeling deep dive as an external SME.' };
 
 // ---- trainees split across the two demo batches ----
 const traineeRefs = [
@@ -492,12 +552,30 @@ function traineeUser(ref: PersonRef, idNumber: string): DemoUser {
   };
 }
 
+function facilitatorUser(ref: PersonRef, idNumber: string): DemoUser {
+  return {
+    ...ref,
+    role: 'facilitator',
+    isActive: true,
+    lastLoginAt: new Date().toISOString(),
+    createdAt: '2026-01-05T00:00:00.000Z',
+    profile: { phone: '', location: '', company: 'Company Inc.', department: 'Business Analysis', idNumber, avatarStorageKey: null }
+  };
+}
+
 export const DEMO_USERS: DemoUser[] = [
   { ...adminAlex, role: 'admin', isActive: true, lastLoginAt: new Date().toISOString(), createdAt: '2026-01-05T00:00:00.000Z', profile: { phone: '', location: '', company: 'Company Inc.', department: 'Operations', idNumber: 'ADM-001', avatarStorageKey: null } },
   { ...facilitatorJunaid, role: 'facilitator', isActive: true, lastLoginAt: new Date().toISOString(), createdAt: '2026-01-05T00:00:00.000Z', profile: { phone: '', location: '', company: 'Company Inc.', department: 'Business Analysis', idNumber: 'FAC-001', avatarStorageKey: null } },
   { ...facilitatorSrikar, role: 'facilitator', isActive: true, lastLoginAt: new Date().toISOString(), createdAt: '2026-01-05T00:00:00.000Z', profile: { phone: '', location: '', company: 'Company Inc.', department: 'Business Analysis', idNumber: 'FAC-002', avatarStorageKey: null } },
   { ...facilitatorDinesh, role: 'facilitator', isActive: true, lastLoginAt: new Date().toISOString(), createdAt: '2026-01-05T00:00:00.000Z', profile: { phone: '', location: '', company: 'Company Inc.', department: 'Business Analysis', idNumber: 'FAC-003', avatarStorageKey: null } },
   { ...facilitatorKaashyap, role: 'facilitator', isActive: true, lastLoginAt: new Date().toISOString(), createdAt: '2026-01-05T00:00:00.000Z', profile: { phone: '', location: '', company: 'Company Inc.', department: 'Business Analysis', idNumber: 'FAC-004', avatarStorageKey: null } },
+  facilitatorUser(facilitatorPriyanka, 'FAC-005'),
+  facilitatorUser(facilitatorArvind, 'FAC-006'),
+  facilitatorUser(facilitatorLakshmi, 'FAC-007'),
+  facilitatorUser(facilitatorRohit, 'FAC-008'),
+  facilitatorUser(facilitatorFarah, 'FAC-009'),
+  facilitatorUser(facilitatorVivek, 'FAC-010'),
+  facilitatorUser(facilitatorNandini, 'FAC-011'),
   { id: 'demo-trainee', name: 'Priya Sharma', email: 'trainee@company.com', role: 'trainee', isActive: true, lastLoginAt: new Date().toISOString(), createdAt: '2026-01-10T00:00:00.000Z', profile: { phone: '', location: '', company: null, department: null, idNumber: 'TR-014', avatarStorageKey: null, batch: 'BA BTech', course: 'BA' } },
   traineeUser(traineeRefs[1], 'TR-015'),
   traineeUser(traineeRefs[2], 'TR-016'),
@@ -697,6 +775,91 @@ export const DEMO_BATCHES: DemoBatch[] = [
     trainingPlan: baBtechPlanRef,
     members: ['Priya Sharma'],
     metrics: { traineeCount: 1, avgScore: null, completionPct: null, attendanceRate: null, submissionRate: null, feedbackRating: null }
+  },
+  // Upcoming batch with no coordinator assigned yet -- feeds the Admin "Requires Attention" panel
+  // (a batch this close to starting with nobody accountable for it is exactly what that panel
+  // exists to surface).
+  {
+    id: 'demo-batch-ba-uiux-upcoming',
+    code: 'ba-uiux-upcoming',
+    name: 'UI/UX - September 2026',
+    program: 'UI/UX',
+    track: 'BTech',
+    status: 'Upcoming',
+    startMonth: '2026-09-01T00:00:00.000Z',
+    endDate: null,
+    facilitator: null,
+    trainingPlan: baBtechPlanRef,
+    members: [],
+    metrics: { traineeCount: 0, avgScore: null, completionPct: null, attendanceRate: null, submissionRate: null, feedbackRating: null }
+  }
+];
+
+function facilitatorAssignment(
+  id: string,
+  batchId: string,
+  facilitator: PersonRef,
+  role: string,
+  isPrimaryCoordinator: boolean,
+  status: string,
+  notes: string | null = null
+): DemoFacilitatorAssignment {
+  return {
+    id,
+    batchId,
+    facilitatorId: facilitator.id,
+    facilitatorName: facilitator.name,
+    facilitatorEmail: facilitator.email,
+    role,
+    isPrimaryCoordinator,
+    status,
+    assignedAt: '2026-06-15T00:00:00.000Z',
+    assignedBy: adminAlex.name,
+    notes
+  };
+}
+
+// The facilitator-batch team -- one clear source of truth for "who's on this batch and in what
+// capacity". BA BTech intentionally carries a large (11-person) team to demonstrate the
+// many-to-many model realistically; every other batch keeps just its existing single coordinator
+// so nothing about the rest of the demo changes. The Upcoming UI/UX batch deliberately has no
+// rows at all (see DEMO_BATCHES above).
+export const DEMO_FACILITATOR_ASSIGNMENTS: DemoFacilitatorAssignment[] = [
+  facilitatorAssignment('demo-fa-1', 'demo-batch-ba-btech', facilitatorJunaid, 'Primary Coordinator', true, 'Active'),
+  facilitatorAssignment('demo-fa-2', 'demo-batch-ba-btech', facilitatorSrikar, 'Lead Facilitator', false, 'Active'),
+  facilitatorAssignment('demo-fa-3', 'demo-batch-ba-btech', facilitatorDinesh, 'Trainer', false, 'Active'),
+  facilitatorAssignment('demo-fa-4', 'demo-batch-ba-btech', facilitatorKaashyap, 'Trainer', false, 'Active'),
+  facilitatorAssignment('demo-fa-5', 'demo-batch-ba-btech', facilitatorPriyanka, 'Trainer', false, 'Active'),
+  facilitatorAssignment('demo-fa-6', 'demo-batch-ba-btech', facilitatorArvind, 'Trainer', false, 'Active'),
+  facilitatorAssignment('demo-fa-7', 'demo-batch-ba-btech', facilitatorLakshmi, 'Trainer', false, 'Temporarily Unavailable', 'Out until Aug 10 -- do not assign new sessions until then.'),
+  facilitatorAssignment('demo-fa-8', 'demo-batch-ba-btech', facilitatorRohit, 'Backup Facilitator', false, 'Active'),
+  facilitatorAssignment('demo-fa-9', 'demo-batch-ba-btech', facilitatorFarah, 'Assignment Reviewer', false, 'Active'),
+  facilitatorAssignment('demo-fa-10', 'demo-batch-ba-btech', facilitatorVivek, 'Trainer', false, 'Upcoming'),
+  facilitatorAssignment('demo-fa-11', 'demo-batch-ba-btech', facilitatorNandini, 'Trainer', false, 'Active'),
+
+  // Junaid coordinates two batches at once; Srikar both leads BTech's team above *and*
+  // independently coordinates his own cohort -- the many-to-many relationship in both directions.
+  facilitatorAssignment('demo-fa-12', 'demo-batch-ba-mba', facilitatorJunaid, 'Primary Coordinator', true, 'Active'),
+  facilitatorAssignment('demo-fa-13', 'demo-batch-ba-mba', facilitatorSrikar, 'Trainer', false, 'Active'),
+
+  facilitatorAssignment('demo-fa-14', 'demo-batch-ba-btech-cohort2', facilitatorSrikar, 'Primary Coordinator', true, 'Active'),
+  facilitatorAssignment('demo-fa-15', 'demo-batch-ba-mba-cohort2', facilitatorDinesh, 'Primary Coordinator', true, 'Active'),
+  facilitatorAssignment('demo-fa-16', 'demo-batch-ba-btech-cohort3', facilitatorKaashyap, 'Primary Coordinator', true, 'Active')
+];
+
+export const DEMO_REASSIGNMENT_REQUESTS: DemoReassignmentRequest[] = [
+  {
+    id: 'demo-rr-1',
+    // Filled in below once DEMO_SESSIONS exists (needs a real upcoming BTech session id).
+    sessionId: '',
+    batchId: 'demo-batch-ba-btech',
+    requestedById: facilitatorDinesh.id,
+    reason: 'I have a conflicting client commitment that morning and won\'t be able to deliver this session.',
+    suggestedReplacementId: facilitatorPriyanka.id,
+    status: 'Pending',
+    createdAt: '2026-07-20T10:00:00.000Z',
+    reviewedBy: null,
+    reviewNotes: null
   }
 ];
 
@@ -722,6 +885,49 @@ export const DEMO_SESSIONS: DemoSession[] = [
 
 const btechSessions = DEMO_SESSIONS.filter((s) => s.batchId === 'demo-batch-ba-btech');
 const mbaSessions = DEMO_SESSIONS.filter((s) => s.batchId === 'demo-batch-ba-mba');
+
+// ---- hand-authored session-level trainer-allocation scenarios (Phase 14 demo-data checklist) --
+// these mutate individual session objects in place, so they're visible through DEMO_SESSIONS,
+// btechSessions, and mbaSessions alike regardless of insertion order. ----
+
+// Historical: Lakshmi delivered this already-completed early session before going temporarily
+// unavailable -- completed sessions keep their trainer even though she's no longer active.
+if (btechSessions[3]) btechSessions[3].facilitator = facilitatorLakshmi;
+
+// Guest trainer covering one specific upcoming session -- no registered account, no batch access.
+if (btechSessions[21]) {
+  btechSessions[21].facilitator = null;
+  btechSessions[21].guestTrainer = GUEST_TRAINER_AMIT;
+  btechSessions[21].trainerAssignmentStatus = 'Assigned';
+}
+
+// Primary trainer + co-trainer delivering the same session together.
+if (btechSessions[25]) {
+  btechSessions[25].facilitator = facilitatorDinesh;
+  btechSessions[25].coTrainers = [{ id: facilitatorPriyanka.id, name: facilitatorPriyanka.name, email: facilitatorPriyanka.email }];
+  btechSessions[25].trainerAssignmentStatus = 'Assigned';
+}
+
+// Unassigned future session -- shows up in Requires Attention and in "unassigned" filters.
+if (btechSessions[30]) {
+  btechSessions[30].facilitator = null;
+  btechSessions[30].trainerAssignmentStatus = 'Unassigned';
+}
+
+// Reassignment requested: Dinesh has a conflict and wants off this one (see DEMO_REASSIGNMENT_REQUESTS).
+if (btechSessions[33]) {
+  btechSessions[33].facilitator = facilitatorDinesh;
+  btechSessions[33].trainerAssignmentStatus = 'Reassignment Requested';
+  DEMO_REASSIGNMENT_REQUESTS[0].sessionId = btechSessions[33].id;
+}
+
+// Scheduling conflict across two different batches: Srikar (on both teams) double-booked at the
+// exact same time.
+if (btechSessions[35] && mbaSessions[10]) {
+  btechSessions[35].facilitator = facilitatorSrikar;
+  mbaSessions[10].facilitator = facilitatorSrikar;
+  mbaSessions[10].scheduledAt = btechSessions[35].scheduledAt;
+}
 
 export const DEMO_ASSIGNMENTS: DemoAssignment[] = [
   ...instantiateAssignments('demo-btech', 'demo-batch-ba-btech', btechBatchRef, btechAssignmentSpecs, btechSessions, BTECH_START, btechMemberRefs),

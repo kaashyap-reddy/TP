@@ -1,4 +1,4 @@
-import type { MeetingPlatform, Session, SessionStatus } from '../../types/session';
+import type { MeetingPlatform, Session, SessionCoTrainer, SessionGuestTrainer, SessionStatus, TrainerAssignmentStatus } from '../../types/session';
 import type { SessionFeedbackAudience } from '../../types/sessionFeedback';
 import { formatTimeRange, parseTimeRange } from '../../utils/sessionTime';
 import { api } from './apiClient';
@@ -28,7 +28,11 @@ interface ApiSession {
   platform: ApiPlatform;
   meetingLink: string | null;
   status: SessionStatus;
-  facilitator: { id: string; name: string; email: string };
+  facilitator: { id: string; name: string; email: string } | null;
+  coTrainers?: SessionCoTrainer[];
+  trainerAssignmentStatus?: TrainerAssignmentStatus;
+  trainerNotes?: string | null;
+  guestTrainer?: SessionGuestTrainer | null;
   relatedAssignments: { id: string; title: string }[];
   feedbackForm: {
     id: string;
@@ -74,6 +78,12 @@ function toFrontendSession(apiSession: ApiSession): Session {
     title: apiSession.title,
     batchId: apiSession.batchId,
     facilitator: apiSession.facilitator?.name ?? '',
+    primaryTrainerId: apiSession.facilitator?.id ?? null,
+    primaryTrainerName: apiSession.facilitator?.name ?? null,
+    coTrainers: apiSession.coTrainers ?? [],
+    trainerAssignmentStatus: apiSession.trainerAssignmentStatus ?? (apiSession.facilitator ? 'Assigned' : 'Unassigned'),
+    trainerNotes: apiSession.trainerNotes ?? null,
+    guestTrainer: apiSession.guestTrainer ?? null,
     date,
     time,
     link: apiSession.meetingLink ?? '',
@@ -104,7 +114,19 @@ export async function listSessions(filters?: { batchId?: string }): Promise<Sess
 
 export type CreateSessionInput = Omit<
   Session,
-  'id' | 'presentCount' | 'absentCount' | 'relatedAssignmentId' | 'relatedAssignmentTitle' | 'feedbackForm'
+  | 'id'
+  | 'presentCount'
+  | 'absentCount'
+  | 'relatedAssignmentId'
+  | 'relatedAssignmentTitle'
+  | 'feedbackForm'
+  | 'facilitator'
+  | 'primaryTrainerId'
+  | 'primaryTrainerName'
+  | 'coTrainers'
+  | 'trainerAssignmentStatus'
+  | 'trainerNotes'
+  | 'guestTrainer'
 >;
 
 export async function createSession(input: CreateSessionInput): Promise<Session> {
@@ -118,6 +140,25 @@ export async function createSession(input: CreateSessionInput): Promise<Session>
     status: input.status
   });
   return toFrontendSession(created.session);
+}
+
+/** Assigns/replaces the primary trainer and/or co-trainers on an existing session -- a trainer
+ * must already be on the batch's facilitator team unless `allowGuest`/`asGuest` is used. */
+export interface TrainerAssignmentInput {
+  primaryTrainerId?: string | null;
+  coTrainerIds?: string[];
+  guestTrainer?: SessionGuestTrainer | null;
+  trainerNotes?: string;
+}
+
+export async function assignSessionTrainer(id: string, input: TrainerAssignmentInput): Promise<Session> {
+  const updated = await api.patch<{ session: ApiSession }>(`/sessions/${id}`, {
+    primaryTrainerId: input.primaryTrainerId,
+    coTrainerIds: input.coTrainerIds,
+    guestTrainer: input.guestTrainer,
+    trainerNotes: input.trainerNotes
+  });
+  return toFrontendSession(updated.session);
 }
 
 /** presentCount/absentCount have no server field (attendance is tracked per-trainee) and are applied client-side only by the caller. */
