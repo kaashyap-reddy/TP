@@ -21,6 +21,9 @@ import { dateStrToIso, formatTimeRange, isoToDateStr, minutesToLabel, parseTimeR
 import AdminDashboardHome from '../components/admin/AdminDashboardHome';
 import { useFacilitatorAssignmentsStore } from '../store/facilitatorAssignmentsStore';
 import FacilitatorTeamDrawer from '../components/admin/FacilitatorTeamDrawer';
+import BatchFeedbackDrawer from '../components/admin/BatchFeedbackDrawer';
+import { listBatchFeedbackForms } from '../services/api/batchFeedbackService';
+import type { BatchFeedbackForm } from '../types/batchFeedback';
 import { useReassignmentRequestsStore } from '../store/reassignmentRequestsStore';
 import TrainerAssignmentModal, { TrainerAssignmentResult } from '../components/admin/TrainerAssignmentModal';
 import { canAssignSessionTrainer, canBulkAssignTrainers, canReviewReassignmentRequest } from '../constants/permissions';
@@ -125,7 +128,29 @@ export default function AdminDashboardPage() {
   useEffect(() => {
     fetchFacilitatorAssignments();
   }, [fetchFacilitatorAssignments]);
+  // Batch-level feedback forms aren't embedded on the Batch object itself (same as the real
+  // backend would keep them a separate resource) -- fetched once per batch here purely so
+  // RequiresAttentionWidget can surface invalid links / due-soon batch forms alongside its other
+  // items (Prompt 3, Phase 6).
+  const [batchFeedbackForms, setBatchFeedbackForms] = useState<(BatchFeedbackForm & { batchName: string })[]>([]);
+  useEffect(() => {
+    if (batches.length === 0) return;
+    let cancelled = false;
+    Promise.all(
+      batches.map((b) => listBatchFeedbackForms(b.id).then((forms) => forms.map((f) => ({ ...f, batchName: b.name }))))
+    )
+      .then((results) => {
+        if (!cancelled) setBatchFeedbackForms(results.flat());
+      })
+      .catch(() => {
+        if (!cancelled) setBatchFeedbackForms([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [batches]);
   const [facilitatorDrawerBatch, setFacilitatorDrawerBatch] = useState<{ id: string; name: string } | null>(null);
+  const [feedbackDrawerBatch, setFeedbackDrawerBatch] = useState<{ id: string; name: string } | null>(null);
   const { assignments, fetchAssignments, createAssignment, bulkDelete, bulkClose, bulkExtendDeadline, duplicateAssignment } = useAssignmentsStore();
   useEffect(() => {
     fetchAssignments();
@@ -1237,11 +1262,13 @@ export default function AdminDashboardPage() {
               assignments={assignments}
               auditEntries={auditEntries}
               reassignmentRequests={reassignmentRequests}
+              batchFeedbackForms={batchFeedbackForms}
               dashboardLoadTime={dashboardLoadTime}
               onNavigateTab={setActiveTab}
               onOpenCreateBatch={() => setBulkUploadModalOpen(true)}
               onOpenInviteTrainee={() => { setActiveTab('batches'); setInviteModalOpen(true); }}
               onOpenBatch={(batchId) => { setActiveTab('batches'); setExpandedBatchId(batchId); }}
+              onOpenBatchFeedback={(batchId, batchName) => setFeedbackDrawerBatch({ id: batchId, name: batchName })}
             />
           </div>
 
@@ -1341,6 +1368,7 @@ export default function AdminDashboardPage() {
                           onToggleSelect={() => toggleBatchSelected(b.id)}
                           onManage={() => openBatchManage(b.id)}
                           onManageFacilitators={() => setFacilitatorDrawerBatch({ id: b.id, name: b.name })}
+                          onManageFeedback={() => setFeedbackDrawerBatch({ id: b.id, name: b.name })}
                           onSelectTrainee={(name) => openTraineeProfile(b.id, name)}
                         />
                       ))
@@ -1362,6 +1390,7 @@ export default function AdminDashboardPage() {
                                 onToggleSelect={() => toggleBatchSelected(b.id)}
                                 onManage={() => openBatchManage(b.id)}
                                 onManageFacilitators={() => setFacilitatorDrawerBatch({ id: b.id, name: b.name })}
+                                onManageFeedback={() => setFeedbackDrawerBatch({ id: b.id, name: b.name })}
                                 onSelectTrainee={(name) => openTraineeProfile(b.id, name)}
                               />
                             ))}
@@ -2725,6 +2754,15 @@ export default function AdminDashboardPage() {
           onClose={() => setFacilitatorDrawerBatch(null)}
           batchId={facilitatorDrawerBatch.id}
           batchName={facilitatorDrawerBatch.name}
+        />
+      )}
+
+      {feedbackDrawerBatch && (
+        <BatchFeedbackDrawer
+          open={!!feedbackDrawerBatch}
+          onClose={() => setFeedbackDrawerBatch(null)}
+          batchId={feedbackDrawerBatch.id}
+          batchName={feedbackDrawerBatch.name}
         />
       )}
 

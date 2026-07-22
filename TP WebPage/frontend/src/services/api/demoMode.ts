@@ -24,6 +24,7 @@ import {
   type DemoAnnouncement,
   type DemoAssignment,
   type DemoAttendanceRecord,
+  type DemoBatchFeedbackForm,
   type DemoFacilitatorAssignment,
   type DemoGuestTrainer,
   type DemoReassignmentRequest,
@@ -80,6 +81,11 @@ const trainingPlans = clone(DEMO_TRAINING_PLANS);
 // submitterId — the trainee OR facilitator who submitted (a form's audience can target either).
 let sessionFeedbackSubmissions: { formId: string; submitterId: string }[] = [];
 let assignmentFeedbackSubmissions: { formId: string; submitterId: string }[] = [];
+// The demo trainee has already completed the BTech batch's (closed) kickoff feedback form --
+// the "locally-marked-completed" demo scenario (Prompt 3, Phase 16).
+let batchFeedbackSubmissions: { formId: string; submitterId: string }[] = [
+  { formId: 'demo-batch-feedback-btech-kickoff', submitterId: 'demo-trainee' }
+];
 let idCounter = 1000;
 
 function clone<T>(value: T): T {
@@ -127,6 +133,24 @@ function isRespondentFor(role: string, audience: string): boolean {
   if (role === 'trainee') return audience === 'Trainees' || audience === 'Both';
   if (role === 'facilitator') return audience === 'Facilitators' || audience === 'Both';
   return false;
+}
+
+/** Same idea as isRespondentFor, but for BatchFeedbackForm's wider audience enum (Trainees/
+ * Facilitators/Primary Coordinators/Admins/Multiple Roles) — see Prompt 3, Phase 2. */
+function isRespondentForBroadAudience(role: string, audience: string): boolean {
+  if (role === 'trainee') return audience === 'Trainees' || audience === 'Multiple Roles';
+  if (role === 'facilitator') return audience === 'Facilitators' || audience === 'Primary Coordinators' || audience === 'Multiple Roles';
+  if (role === 'admin') return audience === 'Admins' || audience === 'Multiple Roles';
+  return false;
+}
+
+/** Admin always manages a batch's feedback forms; a facilitator only if they're actively on that
+ * batch's team (primary-coordinator cache or the full facilitatorAssignments roster). */
+function isBatchFeedbackManager(currentUser: { id: string; role: string }, batch: { id: string; facilitator: { id: string } | null }): boolean {
+  if (currentUser.role === 'admin') return true;
+  if (currentUser.role !== 'facilitator') return false;
+  if (batch.facilitator?.id === currentUser.id) return true;
+  return facilitatorAssignments.some((a) => a.batchId === batch.id && a.facilitatorId === currentUser.id && a.status !== 'Removed');
 }
 
 function notFound(): never {
@@ -486,6 +510,120 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
       batch.metrics.traineeCount = batch.members.length;
       return { enrollment: { batchId: batch.id, traineeId: b.traineeId } };
     }
+  }
+
+  // ---- batch feedback (Phase 2: forms attached to the whole batch/program, not one session or
+  // assignment -- e.g. Mid-Program or Final Program Feedback). ----
+  const batchFeedbackFormsMatch = matchPath('/batches/:id/feedback-forms', path);
+  if (batchFeedbackFormsMatch) {
+    const batch = batches.find((x) => x.id === batchFeedbackFormsMatch.id);
+    if (!batch) notFound();
+    const currentUser = currentDemoUser();
+    const isManager = isBatchFeedbackManager(currentUser, batch);
+    const forms = batch.feedbackForms ?? [];
+    const totalTrainees = batch.members.length;
+
+    if (method === 'GET') {
+      // A Draft or reported-Invalid Link form is managerial-only -- a trainee/other-role viewer
+      // must never see it listed as if it were a live, usable form (see PHASE 15).
+      const visible = isManager
+        ? forms
+        : forms.filter((f) => f.status !== 'Draft' && f.status !== 'Invalid Link' && isRespondentForBroadAudience(currentUser.role, f.audience));
+      return {
+        forms: visible.map((f) => {
+          const respondent = isRespondentForBroadAudience(currentUser.role, f.audience);
+          const mySubmitted = respondent ? batchFeedbackSubmissions.some((s) => s.formId === f.id && s.submitterId === currentUser.id) : null;
+          return { ...f, submittedCount: f._count.submissions, totalTrainees, mySubmitted };
+        })
+      };
+    }
+    if (method === 'POST') {
+      if (!isManager) {
+        const err = new Error("Only Admin or this batch's Primary Coordinator/Lead Facilitator can attach a batch feedback form.") as Error & {
+          status?: number;
+        };
+        err.status = 403;
+        throw err;
+      }
+      assertValidUrl(b.formUrl, 'form URL', { required: true });
+      const created: DemoBatchFeedbackForm = {
+        id: nextId('demo-batch-feedback-form'),
+        batchId: batch.id,
+        name: String(b.name ?? `${batch.name} Feedback`),
+        description: String(b.description ?? ''),
+        formUrl: String(b.formUrl ?? ''),
+        formType: (b.formType as DemoBatchFeedbackForm['formType']) ?? 'Batch Feedback',
+        audience: (b.audience as DemoBatchFeedbackForm['audience']) ?? 'Trainees',
+        status: (b.status as DemoBatchFeedbackForm['status']) ?? 'Draft',
+        isRequired: Boolean(b.isRequired ?? false),
+        instructions: (b.instructions as string) || null,
+        openDate: (b.openDate as string) || null,
+        dueDate: (b.dueDate as string) || null,
+        completionTrackingMode: (b.completionTrackingMode as DemoBatchFeedbackForm['completionTrackingMode']) ?? 'Local Demo Status',
+        createdBy: currentUser.name,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        _count: { submissions: 0 }
+      };
+      batch.feedbackForms = [...forms, created];
+      return { form: { ...created, submittedCount: 0, totalTrainees, mySubmitted: null } };
+    }
+  }
+
+  const batchFeedbackFormIdMatch = matchPath('/batches/:id/feedback-forms/:formId', path);
+  if (batchFeedbackFormIdMatch) {
+    const batch = batches.find((x) => x.id === batchFeedbackFormIdMatch.id);
+    if (!batch) notFound();
+    const form = (batch.feedbackForms ?? []).find((f) => f.id === batchFeedbackFormIdMatch.formId);
+    if (!form) notFound();
+    const currentUser = currentDemoUser();
+    const isManager = isBatchFeedbackManager(currentUser, batch);
+    const totalTrainees = batch.members.length;
+
+    if (method === 'PATCH') {
+      if (!isManager) {
+        const err = new Error("Only Admin or this batch's Primary Coordinator/Lead Facilitator can edit this feedback form.") as Error & {
+          status?: number;
+        };
+        err.status = 403;
+        throw err;
+      }
+      if (b.formUrl !== undefined) assertValidUrl(b.formUrl, 'form URL', { required: true });
+      // A facilitator who isn't Primary Coordinator/Lead Facilitator never reaches this point
+      // (isManager already excludes plain Trainers) -- but even a coordinating facilitator stays
+      // scoped to their own batch and can't touch org-wide template settings (see PHASE 7).
+      Object.assign(form, b, { updatedAt: new Date().toISOString() });
+      return { form: { ...form, submittedCount: form._count.submissions, totalTrainees, mySubmitted: null } };
+    }
+    if (method === 'DELETE') {
+      if (currentUser.role !== 'admin') {
+        const err = new Error('Only Admin can remove a batch feedback form.') as Error & { status?: number };
+        err.status = 403;
+        throw err;
+      }
+      batch.feedbackForms = (batch.feedbackForms ?? []).filter((f) => f.id !== form.id);
+      return undefined;
+    }
+  }
+
+  const batchFeedbackSubmitMatch = matchPath('/batches/:id/feedback-forms/:formId/submissions', path);
+  if (method === 'POST' && batchFeedbackSubmitMatch) {
+    const batch = batches.find((x) => x.id === batchFeedbackSubmitMatch.id);
+    if (!batch) notFound();
+    const form = (batch.feedbackForms ?? []).find((f) => f.id === batchFeedbackSubmitMatch.formId);
+    if (!form) notFound();
+    const currentUser = currentDemoUser();
+    if (!isRespondentForBroadAudience(currentUser.role, form.audience)) {
+      const err = new Error('This feedback form is not for your role.') as Error & { status?: number };
+      err.status = 403;
+      throw err;
+    }
+    const alreadySubmitted = batchFeedbackSubmissions.some((s) => s.formId === form.id && s.submitterId === currentUser.id);
+    if (!alreadySubmitted) {
+      batchFeedbackSubmissions = [...batchFeedbackSubmissions, { formId: form.id, submitterId: currentUser.id }];
+      form._count.submissions += 1;
+    }
+    return { submission: { id: nextId('demo-batch-feedback-submission') } };
   }
 
   // ---- training plans ----

@@ -3,6 +3,7 @@ import { Session } from '../../store/sessionsStore';
 import { Assignment } from '../../store/assignmentsStore';
 import { AuditLogEntry } from '../../store/auditLogStore';
 import type { ReassignmentRequest } from '../../store/reassignmentRequestsStore';
+import type { BatchFeedbackForm } from '../../types/batchFeedback';
 import type { AdminTabId } from '../../constants/navigation';
 import Breadcrumbs from '../Breadcrumbs';
 import RequiresAttentionWidget from './RequiresAttentionWidget';
@@ -27,11 +28,13 @@ interface AdminDashboardHomeProps {
   assignments: Assignment[];
   auditEntries: AuditLogEntry[];
   reassignmentRequests: ReassignmentRequest[];
+  batchFeedbackForms: (BatchFeedbackForm & { batchName: string })[];
   dashboardLoadTime: Date;
   onNavigateTab: (tab: AdminTabId) => void;
   onOpenCreateBatch: () => void;
   onOpenInviteTrainee: () => void;
   onOpenBatch: (batchId: string) => void;
+  onOpenBatchFeedback: (batchId: string, batchName: string) => void;
 }
 
 // The Admin Portal's landing page -- a control center that answers "what needs my
@@ -43,11 +46,13 @@ export default function AdminDashboardHome({
   assignments,
   auditEntries,
   reassignmentRequests,
+  batchFeedbackForms,
   dashboardLoadTime,
   onNavigateTab,
   onOpenCreateBatch,
   onOpenInviteTrainee,
-  onOpenBatch
+  onOpenBatch,
+  onOpenBatchFeedback
 }: AdminDashboardHomeProps) {
   const activeBatchCount = batches.filter((b) => b.status === 'Active').length;
   const activeTraineeCount = batches.reduce((sum, b) => sum + b.traineeCount, 0);
@@ -115,10 +120,12 @@ export default function AdminDashboardHome({
           batches={batches}
           sessions={sessions}
           reassignmentRequests={reassignmentRequests}
+          batchFeedbackForms={batchFeedbackForms}
           onOpenBatch={onOpenBatch}
           onOpenSessions={() => onNavigateTab('sessions')}
           onOpenFeedbackForms={() => onNavigateTab('feedbackForms')}
           onOpenReassignmentRequests={() => onNavigateTab('sessions')}
+          onOpenBatchFeedback={onOpenBatchFeedback}
         />
       </div>
 

@@ -1,4 +1,5 @@
 import { Role } from '../../types/role';
+import type { TeamsContactable } from '../../utils/teamsContact';
 import { api } from './apiClient';
 
 export interface ApiUserProfile {
@@ -19,6 +20,10 @@ export interface ApiUser {
   lastLoginAt: string | null;
   createdAt: string;
   profile: ApiUserProfile | null;
+  /** Teams contact fields (Phase 10) -- absent/undefined means "not configured", not "no Teams access". */
+  teamsUserId?: string | null;
+  teamsChatUrl?: string | null;
+  teamsEnabled?: boolean;
 }
 
 interface PaginatedResponse<T> {
@@ -82,11 +87,23 @@ export async function findUserIdByName(name: string, role: Role): Promise<string
   return exact?.id ?? data[0]?.id ?? null;
 }
 
-/** Resolves a trainee/facilitator's real email from a display name — used for `mailto:` contact actions. */
+/** Resolves a trainee/facilitator's real email from a display name — used by internal/admin
+ * email actions that are NOT the trainee's primary Contact action (see Phase 13). */
 export async function findUserEmailByName(name: string, role: Role): Promise<string | null> {
   const trimmed = name.trim();
   if (!trimmed) return null;
   const { data } = await listUsers({ role, search: trimmed, pageSize: 5 });
   const exact = data.find((u) => u.name.toLowerCase() === trimmed.toLowerCase());
   return exact?.email ?? data[0]?.email ?? null;
+}
+
+/** Resolves a facilitator's Teams-contact fields from a display name -- used by every trainee
+ * "Contact" action (see utils/teamsContact.ts). Returns null if no user matches at all. */
+export async function findFacilitatorContactByName(name: string): Promise<TeamsContactable | null> {
+  const trimmed = name.trim();
+  if (!trimmed) return null;
+  const { data } = await listUsers({ role: 'facilitator', search: trimmed, pageSize: 5 });
+  const match = data.find((u) => u.name.toLowerCase() === trimmed.toLowerCase()) ?? data[0];
+  if (!match) return null;
+  return { name: match.name, email: match.email, teamsUserId: match.teamsUserId, teamsChatUrl: match.teamsChatUrl, teamsEnabled: match.teamsEnabled };
 }

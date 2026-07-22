@@ -59,3 +59,50 @@ export function canReviewReassignmentRequest(role: Role | null, batchRole?: Faci
 export function canRequestReassignment(role: Role | null): boolean {
   return role === 'facilitator';
 }
+
+// ---- feedback-form governance (Prompt 3, Phase 7) -- Admin retains final governance; a normal
+// Trainer gets view/open/report-invalid only, while Primary Coordinator/Lead Facilitator gets the
+// same attach/edit rights Admin has, scoped to their own batch. ----
+
+/** Attaching/editing a session, assignment, or batch feedback form. Admin can do this anywhere;
+ * a facilitator only within their own batch, and only as Primary Coordinator or Lead Facilitator
+ * -- a plain Trainer cannot attach or edit a form, even on their own session. */
+export function canAttachFeedbackForm(role: Role | null, batchRole?: FacilitatorRole | null): boolean {
+  if (role === 'admin') return true;
+  return role === 'facilitator' && !!batchRole && COORDINATION_ROLES.includes(batchRole);
+}
+export function canEditFeedbackForm(role: Role | null, batchRole?: FacilitatorRole | null): boolean {
+  return canAttachFeedbackForm(role, batchRole);
+}
+
+/** Deleting/archiving a feedback form is Admin-only -- a facilitator must never be able to remove
+ * a form other batches or sessions still rely on. */
+export function canDeleteFeedbackForm(role: Role | null): boolean {
+  return role === 'admin';
+}
+
+/** Any facilitator on a batch's team -- including a plain Trainer -- can report a feedback link as
+ * broken; this is deliberately looser than canEditFeedbackForm so whoever notices a dead link
+ * isn't stuck asking someone else to report it. Admin then decides whether to replace it. */
+export function canReportInvalidFeedbackLink(role: Role | null): boolean {
+  return role === 'admin' || role === 'facilitator';
+}
+
+/** The reusable Training-Plan feedback template (copied onto each batch at creation) stays
+ * Admin-only, same as the rest of the template -- see canEditTrainingPlanTemplate. */
+export function canEditGlobalFeedbackTemplate(role: Role | null): boolean {
+  return role === 'admin';
+}
+
+/** Cross-batch feedback completion data (who submitted what, anywhere) is Admin-only; a
+ * facilitator only ever sees completion data for their own batch's forms. */
+export function canViewAllFeedbackCompletionData(role: Role | null): boolean {
+  return role === 'admin';
+}
+
+/** The primary "Contact" action (trainee <-> facilitator, either direction) always opens
+ * Microsoft Teams or shows a clear disabled reason -- never Outlook/mailto: -- see PHASE 12/13.
+ * Admins and Guest Trainers (no portal account) aren't contactable through this action. */
+export function canContactViaTeams(role: Role | null): boolean {
+  return role === 'trainee' || role === 'facilitator';
+}

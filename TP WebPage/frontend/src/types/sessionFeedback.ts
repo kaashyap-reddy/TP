@@ -1,6 +1,8 @@
+import type { FeedbackFormMeta } from './feedbackForm';
+
 export type SessionFeedbackAudience = 'Trainees' | 'Facilitators' | 'Both';
 
-export interface SessionFeedbackForm {
+export interface SessionFeedbackForm extends FeedbackFormMeta {
   id: string;
   sessionId: string;
   name: string;
@@ -18,4 +20,8 @@ export interface SessionFeedbackFormInput {
   description?: string;
   formUrl: string;
   audience?: SessionFeedbackAudience;
+  isRequired?: boolean;
+  instructions?: string;
+  openDate?: string | null;
+  dueDate?: string | null;
 }

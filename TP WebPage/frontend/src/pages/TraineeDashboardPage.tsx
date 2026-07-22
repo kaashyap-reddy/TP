@@ -12,7 +12,8 @@ import { useAuthStore } from '../store/authStore';
 import { logout } from '../services/api/authService';
 import { assignmentAttachmentUrl } from '../services/api/assignmentService';
 import { submissionAttachmentUrl } from '../services/api/submissionService';
-import { findUserEmailByName } from '../services/api/userService';
+import { findFacilitatorContactByName } from '../services/api/userService';
+import { getTeamsContactLink, openTeamsContact } from '../utils/teamsContact';
 import * as sessionFeedbackService from '../services/api/sessionFeedbackService';
 import * as assignmentFeedbackService from '../services/api/assignmentFeedbackService';
 import { formatDate, formatDateTime, isRecentlyUpdated } from '../utils/dateUtils';
@@ -37,6 +38,7 @@ import SearchInput from '../components/SearchInput';
 import Table from '../components/Table';
 import FileViewButton from '../components/FileViewButton';
 import FeedbackCard from '../components/FeedbackCard';
+import TraineeBatchFeedbackList from '../components/TraineeBatchFeedbackList';
 import SessionsCalendarView from '../components/SessionsCalendarView';
 import DashboardLayout from '../layouts/DashboardLayout';
 import Breadcrumbs from '../components/Breadcrumbs';
@@ -298,13 +300,19 @@ export default function TraineeDashboardPage() {
     }
   }
 
-  async function handleContactFacilitator(name: string) {
-    const email = await findUserEmailByName(name, 'facilitator');
-    if (!email) {
-      showToast(`No email on file for ${name}.`, 'error');
+  // The trainee's primary Contact action -- opens Microsoft Teams, never Outlook or a mailto:
+  // link (see Prompt 3, Phase 12/13). Shared by the Facilitator Contacts tab, the batch POC, and
+  // every session's primary/co-trainer contact button, so behavior stays identical everywhere.
+  async function handleContactViaTeams(name: string) {
+    const contact = await findFacilitatorContactByName(name);
+    const link = getTeamsContactLink(contact ?? { name });
+    if (!link.available) {
+      showToast(link.disabledReason ?? `Teams contact is not available for ${name}.`, 'error');
       return;
     }
-    window.location.href = `mailto:${email}`;
+    if (!openTeamsContact(link)) {
+      showToast('Unable to open Microsoft Teams — your browser may have blocked the new tab.', 'error');
+    }
   }
 
   async function handleGiveFeedback() {
@@ -599,6 +607,7 @@ export default function TraineeDashboardPage() {
                         <div className="text-gray-800 font-medium mt-1">{b.completion !== null ? `${b.completion}%` : '—'}</div>
                       </div>
                     </div>
+                    <TraineeBatchFeedbackList batchId={b.id} />
                     <div className="p-6">
                       <h4 className="text-sm font-bold text-gray-700 mb-3">Other Trainees in This Batch ({b.members.length})</h4>
                       {b.members.length === 0 ? (
@@ -687,7 +696,35 @@ export default function TraineeDashboardPage() {
                         </div>
                         <div className="flex-1">
                           <div className="font-bold text-gray-800">{session.title}</div>
-                          <div className="text-sm text-gray-500 mt-1">{session.time} • Facilitator: {session.facilitator}</div>
+                          <div className="text-sm text-gray-500 mt-1 flex items-center gap-2 flex-wrap">
+                            <span>{session.time} • Facilitator: {(session.primaryTrainerName ?? session.facilitator) || '—'}</span>
+                            {session.guestTrainer || !(session.primaryTrainerName ?? session.facilitator) ? (
+                              <span
+                                title={session.guestTrainer ? 'Teams contact is not available for this trainer.' : 'No trainer assigned to this session yet.'}
+                                className="text-xs text-gray-400 border border-gray-200 rounded px-2 py-0.5 select-none"
+                              >
+                                Contact unavailable
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => handleContactViaTeams(session.primaryTrainerName ?? session.facilitator)}
+                                title="Opens Microsoft Teams"
+                                className="text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded px-2 py-0.5"
+                              >
+                                Contact
+                              </button>
+                            )}
+                            {session.coTrainers.map((ct) => (
+                              <button
+                                key={ct.id}
+                                onClick={() => handleContactViaTeams(ct.name)}
+                                title={`Opens Microsoft Teams — co-trainer ${ct.name}`}
+                                className="text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded px-2 py-0.5"
+                              >
+                                Contact {ct.name.split(' ')[0]} (co-trainer)
+                              </button>
+                            ))}
+                          </div>
                           <div className="text-xs text-gray-400 mt-1">Assignment: {session.relatedAssignmentTitle ?? '—'}</div>
                           {isUpcoming && (
                             <button onClick={() => handleJoinMeeting(session)} className="mt-2 text-sm bg-blue-600 text-white px-4 py-1.5 rounded-lg hover:bg-blue-700 transition-colors">Join Meeting</button>
@@ -737,7 +774,16 @@ export default function TraineeDashboardPage() {
                   <h3 className="font-bold text-gray-800">{f.name}</h3>
                   <p className="text-sm text-gray-500 mt-1">{f.programs}</p>
                   <p className="text-xs text-gray-400 mt-2">Last session: {f.lastSession}</p>
-                  <button onClick={() => handleContactFacilitator(f.name)} className="mt-4 w-full py-2 bg-blue-50 text-blue-700 font-bold rounded-lg hover:bg-blue-100">Contact</button>
+                  <button
+                    onClick={() => handleContactViaTeams(f.name)}
+                    title="Opens Microsoft Teams"
+                    className="mt-4 w-full py-2 bg-blue-50 text-blue-700 font-bold rounded-lg hover:bg-blue-100 flex items-center justify-center gap-1.5"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                    </svg>
+                    Contact on Teams
+                  </button>
                 </div>
               ))}
             </div>

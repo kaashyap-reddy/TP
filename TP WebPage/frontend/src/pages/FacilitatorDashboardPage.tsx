@@ -44,6 +44,7 @@ import AssignmentTitleLink from '../components/AssignmentTitleLink';
 import FileViewButton from '../components/FileViewButton';
 import FeedbackCard from '../components/FeedbackCard';
 import SessionFeedbackCell from '../components/SessionFeedbackCell';
+import BatchFeedbackDrawer from '../components/admin/BatchFeedbackDrawer';
 import SessionsCalendarView from '../components/SessionsCalendarView';
 import DashboardLayout from '../layouts/DashboardLayout';
 import type { FacilitatorTabId } from '../constants/navigation';
@@ -159,6 +160,7 @@ export default function FacilitatorDashboardPage() {
   const [resourceCategory, setResourceCategory] = useState('All Files');
   const [feedbackSearch, setFeedbackSearch] = useState('');
   const [feedbackSelectedTrainee, setFeedbackSelectedTrainee] = useState<{ name: string; batchId: string } | null>(null);
+  const [feedbackDrawerBatch, setFeedbackDrawerBatch] = useState<{ id: string; name: string } | null>(null);
 
   // Quick Action menu
   const [quickActionOpen, setQuickActionOpen] = useState(false);
@@ -970,7 +972,8 @@ export default function FacilitatorDashboardPage() {
                     { key: 'avgScore', label: 'Avg Performance' },
                     { key: 'completion', label: 'Assignment Completion' },
                     { key: 'attendance', label: 'Attendance' },
-                    { key: 'status', label: 'Status' }
+                    { key: 'status', label: 'Status' },
+                    { key: 'feedback', label: 'Feedback' }
                   ]}
                 >
                   {myBatches.map((b) => (
@@ -991,6 +994,17 @@ export default function FacilitatorDashboardPage() {
                       <td className="px-6 py-4 w-40"><ProgressBar value={b.completion} /></td>
                       <td className="px-6 py-4 text-gray-600 font-medium">{b.attendanceRate !== null ? `${b.attendanceRate}%` : '—'}</td>
                       <td className="px-6 py-4"><StatusBadge status={b.status} /></td>
+                      <td className="px-6 py-4">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setFeedbackDrawerBatch({ id: b.id, name: b.name });
+                          }}
+                          className="text-blue-600 hover:text-blue-800 font-bold text-xs bg-blue-50 px-2.5 py-1 rounded hover:bg-blue-100 transition-colors"
+                        >
+                          Manage Feedback
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </Table>
@@ -1746,6 +1760,15 @@ export default function FacilitatorDashboardPage() {
         }}
         onCancel={() => setLogoutConfirmOpen(false)}
       />
+
+      {feedbackDrawerBatch && (
+        <BatchFeedbackDrawer
+          open={!!feedbackDrawerBatch}
+          onClose={() => setFeedbackDrawerBatch(null)}
+          batchId={feedbackDrawerBatch.id}
+          batchName={feedbackDrawerBatch.name}
+        />
+      )}
 
     </DashboardLayout>
   );

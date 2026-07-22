@@ -14,6 +14,7 @@ interface BatchRowProps {
   onToggleSelect: () => void;
   onManage: () => void;
   onManageFacilitators: () => void;
+  onManageFeedback: () => void;
   onSelectTrainee: (traineeName: string) => void;
 }
 
@@ -24,7 +25,7 @@ function initials(name: string): string {
 
 const MAX_VISIBLE_AVATARS = 3;
 
-function BatchRow({ batch: b, facilitatorTeam, isExpanded, isSelected, onToggleExpand, onToggleSelect, onManage, onManageFacilitators, onSelectTrainee }: BatchRowProps) {
+function BatchRow({ batch: b, facilitatorTeam, isExpanded, isSelected, onToggleExpand, onToggleSelect, onManage, onManageFacilitators, onManageFeedback, onSelectTrainee }: BatchRowProps) {
   const primary = facilitatorTeam.find((a) => a.isPrimaryCoordinator);
   const visible = facilitatorTeam.slice(0, MAX_VISIBLE_AVATARS);
   const extraCount = Math.max(0, facilitatorTeam.length - visible.length);
@@ -81,9 +82,14 @@ function BatchRow({ batch: b, facilitatorTeam, isExpanded, isSelected, onToggleE
               </div>
             </div>
           )}
-          <button onClick={onManageFacilitators} className="mt-1 text-[11px] font-bold text-blue-600 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 rounded">
-            Manage Facilitators
-          </button>
+          <div className="flex flex-col items-start mt-1">
+            <button onClick={onManageFacilitators} className="text-[11px] font-bold text-blue-600 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 rounded">
+              Manage Facilitators
+            </button>
+            <button onClick={onManageFeedback} className="text-[11px] font-bold text-blue-600 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 rounded">
+              Manage Feedback
+            </button>
+          </div>
         </td>
         <td className="px-6 py-4 w-48">
           <div className="flex items-center gap-4">

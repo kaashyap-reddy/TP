@@ -27,12 +27,42 @@ export interface DemoUser extends PersonRef {
     batch?: string;
     course?: string;
   };
+  // Teams contact fields (Prompt 3, Phase 10) -- optional so trainees/admins (who never need
+  // Teams contact themselves) don't have to carry them.
+  teamsUserId?: string | null;
+  teamsChatUrl?: string | null;
+  teamsEnabled?: boolean;
 }
 
 export interface DemoTrainingPlanRef {
   id: string;
   code: string;
   name: string;
+}
+
+/** Feedback attached to the whole batch/program (Prompt 3, Phase 2) -- e.g. Mid-Program or Final
+ * Program Feedback -- distinct from SessionFeedbackForm/AssignmentFeedbackForm. `status` and the
+ * scheduling fields are set directly here (Draft/Scheduled/Active/Closed/Invalid Link) since
+ * Demo Mode never checks a link's liveness; "Invalid Link" always means an admin/facilitator
+ * manually reported it, not that this code detected it. */
+export interface DemoBatchFeedbackForm {
+  id: string;
+  batchId: string;
+  name: string;
+  description: string;
+  formUrl: string;
+  formType: 'Batch Feedback' | 'Mid-Program Feedback' | 'Final Program Feedback' | 'Custom Feedback';
+  audience: 'Trainees' | 'Facilitators' | 'Primary Coordinators' | 'Admins' | 'Multiple Roles';
+  status: 'Draft' | 'Scheduled' | 'Active' | 'Closed' | 'Archived' | 'Invalid Link';
+  isRequired: boolean;
+  instructions: string | null;
+  openDate: string | null;
+  dueDate: string | null;
+  completionTrackingMode: 'Not Tracked' | 'Local Demo Status' | 'Manually Updated';
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  _count: { submissions: number };
 }
 
 export interface DemoBatch {
@@ -55,6 +85,9 @@ export interface DemoBatch {
     submissionRate: number | null;
     feedbackRating: number | null;
   };
+  /** Batch/program-level feedback forms (Phase 2) -- defaults to none; only seeded on batches that
+   * demonstrate a scenario (see DEMO_BATCHES). */
+  feedbackForms?: DemoBatchFeedbackForm[];
 }
 
 export interface DemoSubmission {
@@ -560,27 +593,41 @@ function traineeUser(ref: PersonRef, idNumber: string): DemoUser {
   };
 }
 
-function facilitatorUser(ref: PersonRef, idNumber: string): DemoUser {
+function facilitatorUser(ref: PersonRef, idNumber: string, teams?: Pick<DemoUser, 'teamsUserId' | 'teamsChatUrl' | 'teamsEnabled'>): DemoUser {
   return {
     ...ref,
     role: 'facilitator',
     isActive: true,
     lastLoginAt: new Date().toISOString(),
     createdAt: '2026-01-05T00:00:00.000Z',
-    profile: { phone: '', location: '', company: 'Company Inc.', department: 'Business Analysis', idNumber, avatarStorageKey: null }
+    profile: { phone: '', location: '', company: 'Company Inc.', department: 'Business Analysis', idNumber, avatarStorageKey: null },
+    ...teams
   };
 }
 
 export const DEMO_USERS: DemoUser[] = [
   { ...adminAlex, role: 'admin', isActive: true, lastLoginAt: new Date().toISOString(), createdAt: '2026-01-05T00:00:00.000Z', profile: { phone: '', location: '', company: 'Company Inc.', department: 'Operations', idNumber: 'ADM-001', avatarStorageKey: null } },
-  { ...facilitatorJunaid, role: 'facilitator', isActive: true, lastLoginAt: new Date().toISOString(), createdAt: '2026-01-05T00:00:00.000Z', profile: { phone: '', location: '', company: 'Company Inc.', department: 'Business Analysis', idNumber: 'FAC-001', avatarStorageKey: null } },
+  // Junaid has an explicit Teams chat URL configured (Admin pasted it in) -- takes priority over
+  // the generated email-based link. Srikar/Dinesh/Kaashyap intentionally have no Teams fields at
+  // all, so their Contact link is generated live from email -- the common case.
+  {
+    ...facilitatorJunaid,
+    role: 'facilitator',
+    isActive: true,
+    lastLoginAt: new Date().toISOString(),
+    createdAt: '2026-01-05T00:00:00.000Z',
+    profile: { phone: '', location: '', company: 'Company Inc.', department: 'Business Analysis', idNumber: 'FAC-001', avatarStorageKey: null },
+    teamsChatUrl: 'https://teams.microsoft.com/l/chat/0/0?users=facilitator@company.com'
+  },
   { ...facilitatorSrikar, role: 'facilitator', isActive: true, lastLoginAt: new Date().toISOString(), createdAt: '2026-01-05T00:00:00.000Z', profile: { phone: '', location: '', company: 'Company Inc.', department: 'Business Analysis', idNumber: 'FAC-002', avatarStorageKey: null } },
   { ...facilitatorDinesh, role: 'facilitator', isActive: true, lastLoginAt: new Date().toISOString(), createdAt: '2026-01-05T00:00:00.000Z', profile: { phone: '', location: '', company: 'Company Inc.', department: 'Business Analysis', idNumber: 'FAC-003', avatarStorageKey: null } },
   { ...facilitatorKaashyap, role: 'facilitator', isActive: true, lastLoginAt: new Date().toISOString(), createdAt: '2026-01-05T00:00:00.000Z', profile: { phone: '', location: '', company: 'Company Inc.', department: 'Business Analysis', idNumber: 'FAC-004', avatarStorageKey: null } },
   facilitatorUser(facilitatorPriyanka, 'FAC-005'),
   facilitatorUser(facilitatorArvind, 'FAC-006'),
   facilitatorUser(facilitatorLakshmi, 'FAC-007'),
-  facilitatorUser(facilitatorRohit, 'FAC-008'),
+  // Rohit is the demo's "disabled Contact" scenario -- teamsEnabled: false overrides having an
+  // email on file, so the button shows disabled with an explanation rather than silently working.
+  facilitatorUser(facilitatorRohit, 'FAC-008', { teamsEnabled: false }),
   facilitatorUser(facilitatorFarah, 'FAC-009'),
   facilitatorUser(facilitatorVivek, 'FAC-010'),
   facilitatorUser(facilitatorNandini, 'FAC-011'),
@@ -723,7 +770,49 @@ export const DEMO_BATCHES: DemoBatch[] = [
     facilitator: facilitatorJunaid,
     trainingPlan: baBtechPlanRef,
     members: btechMembers,
-    metrics: { traineeCount: 5, avgScore: 89, completionPct: 62, attendanceRate: 94, submissionRate: 80, feedbackRating: 4.6 }
+    metrics: { traineeCount: 5, avgScore: 89, completionPct: 62, attendanceRate: 94, submissionRate: 80, feedbackRating: 4.6 },
+    // Both scenarios sit on the demo trainee's own batch so her dashboard shows a real due-soon
+    // reminder alongside a form she's already completed (Phase 16).
+    feedbackForms: [
+      {
+        id: 'demo-batch-feedback-btech-mid',
+        batchId: 'demo-batch-ba-btech',
+        name: 'Mid-Program Feedback',
+        description: 'How is the BA BTech program going so far? Share your feedback on pacing, content, and support.',
+        formUrl: 'https://forms.office.com/r/demoMidProgramBtech',
+        formType: 'Mid-Program Feedback',
+        audience: 'Trainees',
+        status: 'Active',
+        isRequired: true,
+        instructions: 'Please complete before the due date — this closes out the mid-program review.',
+        openDate: '2026-06-15T00:00:00.000Z',
+        dueDate: '2026-07-25T23:59:59.000Z',
+        completionTrackingMode: 'Local Demo Status',
+        createdBy: facilitatorJunaid.name,
+        createdAt: '2026-06-15T09:00:00.000Z',
+        updatedAt: '2026-06-15T09:00:00.000Z',
+        _count: { submissions: 2 }
+      },
+      {
+        id: 'demo-batch-feedback-btech-kickoff',
+        batchId: 'demo-batch-ba-btech',
+        name: 'Batch Kickoff Feedback',
+        description: 'First-two-weeks pulse check for the BA BTech batch.',
+        formUrl: 'https://forms.office.com/r/demoKickoffBtech',
+        formType: 'Batch Feedback',
+        audience: 'Trainees',
+        status: 'Closed',
+        isRequired: true,
+        instructions: null,
+        openDate: '2026-05-01T00:00:00.000Z',
+        dueDate: '2026-06-01T23:59:59.000Z',
+        completionTrackingMode: 'Local Demo Status',
+        createdBy: facilitatorJunaid.name,
+        createdAt: '2026-05-01T09:00:00.000Z',
+        updatedAt: '2026-06-02T09:00:00.000Z',
+        _count: { submissions: 5 }
+      }
+    ]
   },
   {
     id: 'demo-batch-ba-mba',
@@ -737,7 +826,68 @@ export const DEMO_BATCHES: DemoBatch[] = [
     facilitator: facilitatorJunaid,
     trainingPlan: baMbaPlanRef,
     members: mbaMembers,
-    metrics: { traineeCount: 5, avgScore: 85, completionPct: 40, attendanceRate: 91, submissionRate: 70, feedbackRating: 4.3 }
+    metrics: { traineeCount: 5, avgScore: 85, completionPct: 40, attendanceRate: 91, submissionRate: 70, feedbackRating: 4.3 },
+    // Admin/facilitator-facing scenarios (this batch's trainees aren't the demo trainee login, so
+    // these exercise Admin's feedback management screen and Requires Attention widget instead).
+    feedbackForms: [
+      {
+        id: 'demo-batch-feedback-mba-final',
+        batchId: 'demo-batch-ba-mba',
+        name: 'Final Program Feedback',
+        description: 'End-of-program feedback for the BA MBA batch — still being drafted.',
+        formUrl: 'https://forms.office.com/r/demoFinalMba',
+        formType: 'Final Program Feedback',
+        audience: 'Trainees',
+        status: 'Draft',
+        isRequired: false,
+        instructions: null,
+        openDate: null,
+        dueDate: null,
+        completionTrackingMode: 'Local Demo Status',
+        createdBy: facilitatorJunaid.name,
+        createdAt: '2026-07-18T09:00:00.000Z',
+        updatedAt: '2026-07-18T09:00:00.000Z',
+        _count: { submissions: 0 }
+      },
+      {
+        id: 'demo-batch-feedback-mba-wrapup',
+        batchId: 'demo-batch-ba-mba',
+        name: 'Program Wrap-Up Survey',
+        description: 'Opens once the program nears its final month.',
+        formUrl: 'https://forms.office.com/r/demoWrapupMba',
+        formType: 'Final Program Feedback',
+        audience: 'Trainees',
+        status: 'Scheduled',
+        isRequired: true,
+        instructions: null,
+        openDate: '2026-09-01T00:00:00.000Z',
+        dueDate: '2026-09-15T23:59:59.000Z',
+        completionTrackingMode: 'Local Demo Status',
+        createdBy: facilitatorJunaid.name,
+        createdAt: '2026-07-10T09:00:00.000Z',
+        updatedAt: '2026-07-10T09:00:00.000Z',
+        _count: { submissions: 0 }
+      },
+      {
+        id: 'demo-batch-feedback-mba-kickoff',
+        batchId: 'demo-batch-ba-mba',
+        name: 'Batch Kickoff Survey',
+        description: 'First-two-weeks pulse check for the BA MBA batch.',
+        formUrl: 'https://forms.office.com/r/demoKickoffMba',
+        formType: 'Batch Feedback',
+        audience: 'Trainees',
+        status: 'Invalid Link',
+        isRequired: false,
+        instructions: 'Reported broken by a facilitator — needs a replacement link from Admin.',
+        openDate: '2026-05-01T00:00:00.000Z',
+        dueDate: '2026-05-15T23:59:59.000Z',
+        completionTrackingMode: 'Local Demo Status',
+        createdBy: facilitatorJunaid.name,
+        createdAt: '2026-05-01T09:00:00.000Z',
+        updatedAt: '2026-07-05T09:00:00.000Z',
+        _count: { submissions: 3 }
+      }
+    ]
   },
   // Lightweight extra batches (no generated session/assignment schedule, unlike the two above) —
   // exist purely so the demo trainee (a member of all three) sees Srikar/Dinesh/Kaashyap as

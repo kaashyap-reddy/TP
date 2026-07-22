@@ -158,7 +158,7 @@ export default function AssignmentFeedbackCell({ assignment, onChange, canManage
   return (
     <div className="flex items-center gap-2 text-xs">
       <span className="text-gray-500">Assignment Feedback:</span>
-      <a href={assignment.feedbackForm.formUrl} target="_blank" rel="noreferrer" className="font-bold text-blue-600 hover:text-blue-800">
+      <a href={assignment.feedbackForm.formUrl} target="_blank" rel="noopener noreferrer" className="font-bold text-blue-600 hover:text-blue-800">
         Open Feedback Form
       </a>
       <button onClick={handleCopy} className="text-gray-400 hover:text-gray-600" title="Copy link">{copied ? 'Copied!' : 'Copy'}</button>

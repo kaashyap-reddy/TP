@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { Batch } from '../../store/batchesStore';
 import { Session } from '../../store/sessionsStore';
 import type { ReassignmentRequest } from '../../store/reassignmentRequestsStore';
+import type { BatchFeedbackForm } from '../../types/batchFeedback';
 import { findAllTrainerConflicts } from '../../utils/trainerConflicts';
 import EmptyState from '../EmptyState';
 
@@ -33,10 +34,12 @@ interface RequiresAttentionWidgetProps {
   batches: Batch[];
   sessions: Session[];
   reassignmentRequests: ReassignmentRequest[];
+  batchFeedbackForms: (BatchFeedbackForm & { batchName: string })[];
   onOpenBatch: (batchId: string) => void;
   onOpenSessions: () => void;
   onOpenFeedbackForms: () => void;
   onOpenReassignmentRequests: () => void;
+  onOpenBatchFeedback: (batchId: string, batchName: string) => void;
 }
 
 // Every item here is derived from real store data (batch.poc, session.facilitator,
@@ -46,10 +49,12 @@ export default function RequiresAttentionWidget({
   batches,
   sessions,
   reassignmentRequests,
+  batchFeedbackForms,
   onOpenBatch,
   onOpenSessions,
   onOpenFeedbackForms,
-  onOpenReassignmentRequests
+  onOpenReassignmentRequests,
+  onOpenBatchFeedback
 }: RequiresAttentionWidgetProps) {
   const items = useMemo(() => {
     const result: AttentionItem[] = [];
@@ -126,6 +131,33 @@ export default function RequiresAttentionWidget({
       });
     }
 
+    // Batch/program-level feedback forms (Prompt 3, Phase 2/6) -- a reported-broken link is
+    // high priority (trainees can't submit at all); a due date already passed on a Required form
+    // is medium (still fixable, less urgent than a dead link).
+    const invalidBatchForms = batchFeedbackForms.filter((f) => f.status === 'Invalid Link');
+    for (const f of invalidBatchForms.slice(0, 3)) {
+      result.push({
+        id: `batch-feedback-invalid-${f.id}`,
+        title: `"${f.name}" link is reported broken`,
+        description: `${f.batchName} — replace this feedback form's link.`,
+        priority: 'high',
+        onClick: () => onOpenBatchFeedback(f.batchId, f.batchName)
+      });
+    }
+    const overdueBatchForms = batchFeedbackForms.filter(
+      (f) => f.isRequired && f.status === 'Active' && f.dueDate && new Date(f.dueDate).getTime() < Date.now()
+    );
+    if (overdueBatchForms.length > 0) {
+      const first = overdueBatchForms[0];
+      result.push({
+        id: 'batch-feedback-overdue',
+        title: `${overdueBatchForms.length} required batch feedback form${overdueBatchForms.length === 1 ? '' : 's'} past due`,
+        description: `${first.batchName} — "${first.name}" was due ${(first.dueDate as string).slice(0, 10)}.`,
+        priority: 'medium',
+        onClick: () => onOpenBatchFeedback(first.batchId, first.batchName)
+      });
+    }
+
     const pendingRequests = reassignmentRequests.filter((r) => r.status === 'Pending');
     if (pendingRequests.length > 0) {
       result.push({
@@ -141,7 +173,17 @@ export default function RequiresAttentionWidget({
     }
 
     return result.sort((a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]).slice(0, 6);
-  }, [batches, sessions, reassignmentRequests, onOpenBatch, onOpenSessions, onOpenFeedbackForms, onOpenReassignmentRequests]);
+  }, [
+    batches,
+    sessions,
+    reassignmentRequests,
+    batchFeedbackForms,
+    onOpenBatch,
+    onOpenSessions,
+    onOpenFeedbackForms,
+    onOpenReassignmentRequests,
+    onOpenBatchFeedback
+  ]);
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden flex flex-col">

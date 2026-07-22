@@ -1,9 +1,10 @@
 import type { SessionFeedbackAudience } from './sessionFeedback';
+import type { FeedbackFormMeta } from './feedbackForm';
 
 /** Same audience semantics as session feedback — the two features share the enum on the backend too. */
 export type AssignmentFeedbackAudience = SessionFeedbackAudience;
 
-export interface AssignmentFeedbackForm {
+export interface AssignmentFeedbackForm extends FeedbackFormMeta {
   id: string;
   assignmentId: string;
   name: string;
@@ -21,4 +22,8 @@ export interface AssignmentFeedbackFormInput {
   description?: string;
   formUrl: string;
   audience?: AssignmentFeedbackAudience;
+  isRequired?: boolean;
+  instructions?: string;
+  openDate?: string | null;
+  dueDate?: string | null;
 }
