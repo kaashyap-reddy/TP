@@ -73,7 +73,7 @@ function StackItem({
     <button
       onClick={onClick}
       aria-expanded={isToggle ? chevronOpen : undefined}
-      className={`group relative flex h-[72px] w-full flex-col items-center justify-start gap-1.5 rounded-2xl pt-3 transition-all duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-blue-950 active:scale-[0.98] ${
+      className={`group relative flex h-14 w-full flex-col items-center justify-start gap-1 rounded-2xl pt-2 transition-all duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-blue-950 active:scale-[0.98] ${
         active
           ? 'bg-gradient-to-b from-white/[0.16] to-white/[0.05] text-white shadow-[0_8px_20px_-8px_rgba(56,189,248,0.45)] ring-1 ring-inset ring-white/15'
           : 'text-blue-200/70 hover:bg-white/[0.08] hover:text-white'
@@ -138,17 +138,20 @@ export default function DashboardLayout<TabId extends string>({
       <div>
         <StackItem icon={icon} label={label} active={active} chevronOpen={open} onClick={() => setOpenSection(open ? null : id)} />
         {/* Expands downward inside the sidebar column itself (grid-rows animates 0fr -> 1fr,
-            which animates height without a fixed pixel value) instead of flying out beside it. */}
+            which animates height without a fixed pixel value) instead of flying out beside it.
+            The inner list caps its own height and scrolls internally past that point -- so a
+            group with more items than the sidebar has room for never pushes the whole nav (and
+            Settings/Logout below it) into needing a scrollbar of its own. */}
         <div className={`grid transition-[grid-template-rows] duration-200 ease-in-out ${open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}`}>
           <div className="overflow-hidden">
-            <div className="mt-2 flex flex-col gap-1 rounded-xl bg-black/20 p-1.5 shadow-inner ring-1 ring-white/5">
+            <div className="mt-1.5 flex max-h-40 flex-col gap-1 overflow-y-auto rounded-xl bg-black/20 p-1.5 shadow-inner ring-1 ring-white/5">
               {items.map((item) => {
                 const itemActive = activeTab === item.tabId;
                 return (
                   <button
                     key={item.tabId}
                     onClick={() => onTabChange(item.tabId)}
-                    className={`flex w-full items-center gap-2.5 rounded-lg border-l-2 px-2.5 py-2 text-left text-[11px] leading-tight transition-all duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/60 focus-visible:ring-offset-1 focus-visible:ring-offset-blue-950 ${
+                    className={`flex w-full flex-shrink-0 items-center gap-2.5 rounded-lg border-l-2 px-2.5 py-1.5 text-left text-[11px] leading-tight transition-all duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/60 focus-visible:ring-offset-1 focus-visible:ring-offset-blue-950 ${
                       itemActive
                         ? 'border-cyan-300 bg-white/10 font-semibold text-white shadow-sm ring-1 ring-inset ring-white/10'
                         : 'border-transparent font-medium text-blue-100/75 hover:translate-x-0.5 hover:border-white/20 hover:bg-white/10 hover:text-white'
@@ -179,21 +182,21 @@ export default function DashboardLayout<TabId extends string>({
           <div className="flex h-16 items-center justify-center border-b border-white/10 px-3">
             <span className="text-center text-sm font-bold leading-tight text-white">{brandLabel}</span>
           </div>
-          <nav className="flex flex-1 flex-col justify-center gap-2 overflow-y-auto px-3 py-6">
+          <nav className="flex flex-1 flex-col gap-1.5 overflow-y-auto px-3 py-4">
             <StackItem
               icon={dashboardItem.iconPath}
               label="Dashboard"
               active={activeTab === dashboardItem.tabId}
               onClick={() => onTabChange(dashboardItem.tabId)}
             />
-            <div ref={dropdownsRef} className="flex flex-col gap-2">
+            <div ref={dropdownsRef} className="flex flex-col gap-1.5">
               {navGroups.map((group) => (
                 <Fragment key={group.key}>{renderDropdown(group.key, group.iconPath, group.label, itemsForGroup(group.key))}</Fragment>
               ))}
             </div>
             <StackItem icon={SETTINGS_ICON} label="Settings" active={settingsOpen} onClick={() => setSettingsOpen(true)} />
           </nav>
-          <div className="mt-auto border-t border-white/10 px-3 py-4">
+          <div className="mt-auto border-t border-white/10 px-3 py-3">
             <StackItem icon={LOGOUT_ICON} label="Logout" active={false} onClick={onLogout} />
           </div>
         </aside>
