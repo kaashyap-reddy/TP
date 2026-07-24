@@ -1932,7 +1932,7 @@ export default function AdminDashboardPage() {
                           <div className="flex items-center gap-2 mt-2">
                             <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-indigo-50 text-indigo-700">{s.platform}</span>
                             {s.link ? (
-                              <a href={s.link} target="_blank" rel="noreferrer" className="text-[11px] font-bold text-blue-600 hover:underline">Join via {s.platform}</a>
+                              <a href={s.link} target="_blank" rel="noopener noreferrer" className="text-[11px] font-bold text-blue-600 hover:underline">Join via {s.platform}</a>
                             ) : (
                               <span className="text-[11px] text-gray-400">No link set</span>
                             )}

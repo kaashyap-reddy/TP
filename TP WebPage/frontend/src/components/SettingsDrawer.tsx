@@ -85,6 +85,12 @@ export default function SettingsDrawer({ open, onClose }: SettingsDrawerProps) {
         danger
         onConfirm={() => {
           setConfirmDiscardOpen(false);
+          // SettingsDrawer is mounted permanently by its parent (it just returns null when
+          // !open), so this component's own isDirty state does NOT reset on "close" the way
+          // AccountSettingsForm's does on remount -- it must be reset explicitly here, or the
+          // next open/close cycle can show a stale "Discard unsaved changes?" prompt before
+          // AccountSettingsForm's own mount effect has a chance to correct it.
+          setIsDirty(false);
           onClose();
         }}
         onCancel={() => setConfirmDiscardOpen(false)}

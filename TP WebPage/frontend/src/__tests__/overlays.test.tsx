@@ -141,4 +141,24 @@ describe('SettingsDrawer', () => {
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
+
+  it('does not carry a stale dirty flag into the next open after a discard', async () => {
+    const user = userEvent.setup();
+    render(<SettingsDrawerHarness />);
+
+    // First session: dirty it, then discard.
+    await user.click(screen.getByRole('button', { name: 'Open settings' }));
+    await user.click(screen.getByRole('button', { name: 'Make dirty' }));
+    await user.keyboard('{Escape}');
+    await user.click(screen.getByRole('button', { name: 'Discard changes' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    // SettingsDrawer itself never unmounts (its parent renders it unconditionally), so without an
+    // explicit reset its isDirty state would still read true here even though nothing has been
+    // touched in this new session.
+    await user.click(screen.getByRole('button', { name: 'Open settings' }));
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: 'Discard unsaved changes?' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
 });
