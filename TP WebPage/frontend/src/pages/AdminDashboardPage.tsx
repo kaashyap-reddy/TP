@@ -1693,7 +1693,12 @@ export default function AdminDashboardPage() {
                     return (
                       <tr key={a.id} className="hover:bg-gray-50">
                         <td className="px-6 py-4">
-                          <input type="checkbox" checked={selectedAssignmentIds.has(a.id)} onChange={() => toggleAssignmentSelected(a.id)} />
+                          <input
+                            type="checkbox"
+                            checked={selectedAssignmentIds.has(a.id)}
+                            onChange={() => toggleAssignmentSelected(a.id)}
+                            aria-label={`Select ${a.title}`}
+                          />
                         </td>
                         <td className="px-6 py-4 font-medium">
                           <AssignmentTitleLink id={a.id} title={a.title} />

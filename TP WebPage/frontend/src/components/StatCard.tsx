@@ -27,6 +27,18 @@ export default function StatCard({
     <div
       className={`bg-white p-6 rounded-xl border border-gray-200 shadow-sm flex flex-col justify-center${clickClass}${hoverClass}`}
       onClick={onClick}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={
+        onClick
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onClick();
+              }
+            }
+          : undefined
+      }
     >
       <div className="text-gray-500 text-sm font-medium uppercase tracking-wide">{label}</div>
       <div className={valueClassName}>

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import Modal from '../Modal';
+import Button from '../Button';
 import ConfirmDialog from '../ConfirmDialog';
 import SavingButton from '../SavingButton';
 import { useSessionsStore, type MeetingPlatform, type Session, type SessionStatus } from '../../store/sessionsStore';
@@ -186,14 +187,14 @@ export default function SessionFormModal({ open, onClose, session, batchId, allS
 
           <div className="flex items-center justify-between gap-3 pt-2">
             {isEdit ? (
-              <button onClick={() => setDeleteConfirmOpen(true)} className="text-sm font-bold text-red-600 hover:text-red-700 px-2 py-2">
+              <Button variant="danger" size="sm" onClick={() => setDeleteConfirmOpen(true)}>
                 Delete Session
-              </button>
+              </Button>
             ) : (
               <span />
             )}
             <div className="flex gap-3">
-              <button onClick={onClose} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium">Cancel</button>
+              <Button variant="ghost" onClick={onClose}>Cancel</Button>
               <SavingButton onClick={handleSave} isSaving={saving} label={isEdit ? 'Save Changes' : 'Add Session'} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium" />
             </div>
           </div>

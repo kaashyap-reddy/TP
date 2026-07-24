@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import Modal from '../Modal';
+import Button from '../Button';
 import ConfirmDialog from '../ConfirmDialog';
 import EmptyState from '../EmptyState';
 import { useFacilitatorAssignmentsStore, FacilitatorAssignmentStatus } from '../../store/facilitatorAssignmentsStore';
@@ -133,9 +134,9 @@ export default function FacilitatorTeamDrawer({ open, onClose, batchId, batchNam
         {error && <p className="text-xs text-red-600">{error}</p>}
         <div className="flex items-center justify-between">
           <span className="text-xs text-gray-400 font-medium">{team.length} facilitator{team.length === 1 ? '' : 's'} on this batch</span>
-          <button onClick={() => setAddOpen((o) => !o)} className="text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors">
+          <Button variant="secondary" size="sm" onClick={() => setAddOpen((o) => !o)}>
             {addOpen ? 'Cancel' : '+ Add Facilitator'}
-          </button>
+          </Button>
         </div>
 
         {addOpen && (
@@ -164,13 +165,9 @@ export default function FacilitatorTeamDrawer({ open, onClose, batchId, batchNam
             </select>
             <p className="text-[11px] text-gray-400">To make someone Primary Coordinator, add them first, then use "Make Coordinator" below.</p>
             <div className="flex justify-end">
-              <button
-                disabled={!selectedCandidateId || busy}
-                onClick={handleAdd}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg font-bold text-sm hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
+              <Button variant="primary" size="sm" disabled={!selectedCandidateId || busy} onClick={handleAdd}>
                 Add to Team
-              </button>
+              </Button>
             </div>
           </div>
         )}

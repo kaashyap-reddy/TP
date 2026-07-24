@@ -99,3 +99,45 @@ test('trainee sees own batch and assignments', async ({ page }) => {
   await openSidebarItem(page, 'Me', 'Assignments');
   await expect(page.getByText(/Case Study/).first()).toBeVisible();
 });
+
+test('Settings drawer opens from the profile dropdown and closes on Escape', async ({ page }) => {
+  await enterDemo(page, 'Admin');
+  await page.getByRole('button', { name: 'Account menu' }).click();
+  await page.getByRole('button', { name: 'Account Settings' }).click();
+  await expect(page.getByRole('heading', { name: 'Account Settings' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('heading', { name: 'Account Settings' })).not.toBeVisible();
+});
+
+test('a notification can be opened from the bell and navigates to its target page', async ({ page }) => {
+  await enterDemo(page, 'Admin');
+  await page.getByRole('button', { name: /^Notifications/ }).click();
+  await page.getByRole('button', { name: /Batch has no facilitator/ }).click();
+  await expect(page).toHaveURL(/\/admin\/batches$/);
+});
+
+test('admin can open a batch detail page and manage its facilitator team and sessions', async ({ page }) => {
+  await enterDemo(page, 'Admin');
+  await page.goto('/admin/batches/demo-batch-ba-btech');
+  await expect(page.getByRole('heading', { name: 'BA BTech - July 2026' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Sessions', exact: true })).toBeVisible();
+
+  await page.getByRole('button', { name: 'Manage Facilitators' }).click();
+  await page.getByRole('button', { name: '+ Add Facilitator' }).click();
+  await expect(page.getByRole('button', { name: 'Add to Team' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('button', { name: 'Add to Team' })).not.toBeVisible();
+
+  await page.getByRole('button', { name: '+ Add Session' }).click();
+  await expect(page.getByRole('button', { name: 'Add Session', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Cancel' }).click();
+});
+
+test('facilitator can Quick Grade a submission with a score and feedback', async ({ page }) => {
+  await enterDemo(page, 'Facilitator');
+  await page.getByRole('button', { name: 'Quick Grade' }).first().click();
+  await page.locator('#facilitator-quick-grade-score').fill('88');
+  await page.locator('#facilitator-quick-grade-feedback').fill('Solid work, minor gaps in edge-case handling.');
+  await page.getByRole('button', { name: 'Save Grade' }).click();
+  await expect(page.locator('#facilitator-quick-grade-score')).not.toBeVisible();
+});

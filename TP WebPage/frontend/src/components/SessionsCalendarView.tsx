@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { CalendarEvent, CalendarEventType, listCalendarEvents } from '../services/api/calendarService';
+import Button from './Button';
 import EmptyState from './EmptyState';
 import Modal from './Modal';
 import StatusBadge from './StatusBadge';
@@ -77,9 +78,23 @@ export default function SessionsCalendarView({ batchId }: SessionsCalendarViewPr
     <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-2">
-          <button onClick={() => setViewedMonth(new Date(year, month - 1, 1))} className="px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors">‹</button>
+          <Button
+            variant="outline"
+            size="sm"
+            aria-label="Previous month"
+            onClick={() => setViewedMonth(new Date(year, month - 1, 1))}
+          >
+            ‹
+          </Button>
           <h3 className="font-bold text-gray-800 min-w-[10rem] text-center">{viewedMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</h3>
-          <button onClick={() => setViewedMonth(new Date(year, month + 1, 1))} className="px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors">›</button>
+          <Button
+            variant="outline"
+            size="sm"
+            aria-label="Next month"
+            onClick={() => setViewedMonth(new Date(year, month + 1, 1))}
+          >
+            ›
+          </Button>
         </div>
         <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
           {FILTERS.map((f) => (

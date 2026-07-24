@@ -104,7 +104,7 @@ export default function AuthenticatedDetailLayout({
         <div className="mb-1 flex items-center justify-between gap-4">
           <Breadcrumbs trail={breadcrumbTrail} />
         </div>
-        <Button variant="ghost" size="sm" onClick={onBack} className="mb-4 -ml-2 inline-flex items-center gap-1 px-2 py-1 text-sm text-blue-600 hover:bg-blue-50 rounded-lg font-medium">
+        <Button variant="link" size="sm" onClick={onBack} className="mb-4 -ml-2">
           ‹ {backLabel}
         </Button>
         {children}

@@ -11,7 +11,16 @@ export default function SearchInput({ value, onChange, placeholder, ariaLabel, c
   const inputClass = `px-4 py-2 border rounded-lg outline-none ${width} shadow-sm${clearable ? ' focus:ring-2 focus:ring-blue-500' : ''}`;
 
   if (!clearable) {
-    return <input type="text" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className={inputClass} />;
+    return (
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        aria-label={ariaLabel ?? placeholder}
+        className={inputClass}
+      />
+    );
   }
 
   return (

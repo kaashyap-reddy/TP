@@ -35,6 +35,7 @@ type ButtonBaseProps = {
   trailingIcon?: ReactNode;
   loading?: boolean;
   loadingLabel?: string;
+  fullWidth?: boolean;
 } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'>;
 
 // Icon-only buttons (size="icon") must carry an accessible name -- either children is plain
@@ -50,6 +51,7 @@ export default function Button({
   trailingIcon,
   loading = false,
   loadingLabel,
+  fullWidth = false,
   type = 'button',
   disabled,
   className,
@@ -81,7 +83,7 @@ export default function Button({
       aria-label={ariaLabel}
       title={isIconOnly ? ariaLabel : undefined}
       onClick={handleClick}
-      className={className ?? `${baseClass} ${SIZE_CLASS[size]} ${VARIANT_CLASS[variant]}`}
+      className={`${baseClass} ${SIZE_CLASS[size]} ${VARIANT_CLASS[variant]}${fullWidth ? ' w-full' : ''}${className ? ` ${className}` : ''}`}
       {...rest}
     >
       {loading ? (

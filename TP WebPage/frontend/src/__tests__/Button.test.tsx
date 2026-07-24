@@ -64,4 +64,23 @@ describe('Button', () => {
     expect(button).toHaveAccessibleName('Close');
     expect(button).toHaveAttribute('title', 'Close');
   });
+
+  it('merges a custom className with the variant/size classes instead of replacing them', () => {
+    render(
+      <Button variant="secondary" className="mb-4 -ml-2">
+        Save
+      </Button>
+    );
+    const button = screen.getByRole('button', { name: 'Save' });
+    expect(button.className).toContain('mb-4');
+    expect(button.className).toContain('-ml-2');
+    // Variant/size classes must survive the merge.
+    expect(button.className).toContain('bg-white');
+    expect(button.className).toContain('h-10');
+  });
+
+  it('appends w-full when fullWidth is set', () => {
+    render(<Button fullWidth>Save</Button>);
+    expect(screen.getByRole('button', { name: 'Save' }).className).toContain('w-full');
+  });
 });
