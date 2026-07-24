@@ -17,6 +17,7 @@ import assignmentsRoutes from './routes/assignments.routes';
 import attendanceRoutes from './routes/attendance.routes';
 import authRoutes from './routes/auth.routes';
 import batchesRoutes from './routes/batches.routes';
+import batchFeedbackRoutes from './routes/batchFeedback.routes';
 import calendarRoutes from './routes/calendar.routes';
 import facilitatorAssignmentsRoutes from './routes/facilitatorAssignments.routes';
 import feedbackRoutes from './routes/feedback.routes';
@@ -73,6 +74,7 @@ export function createApp(): Express {
   app.use('/api/auth', authRoutes);
   app.use('/api/users', usersRoutes);
   app.use('/api/batches', batchesRoutes);
+  app.use('/api/batches', batchFeedbackRoutes);
   app.use('/api/facilitator-assignments', facilitatorAssignmentsRoutes);
   app.use('/api/training-plans', trainingPlansRoutes);
   app.use('/api/assignments', assignmentsRoutes);

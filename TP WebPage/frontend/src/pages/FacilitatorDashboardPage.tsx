@@ -31,6 +31,7 @@ import StatusBadge from '../components/StatusBadge';
 import Tabs from '../components/Tabs';
 import Pagination, { paginate } from '../components/Pagination';
 import Breadcrumbs from '../components/Breadcrumbs';
+import Button from '../components/Button';
 import NotificationBell from '../components/NotificationBell';
 import ProfileDropdown from '../components/ProfileDropdown';
 import SavingButton from '../components/SavingButton';
@@ -710,15 +711,16 @@ export default function FacilitatorDashboardPage() {
                 Last updated {dashboardLoadTime.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
               </span>
             </div>
-            <div className="flex justify-between items-center mb-8">
-              <h2 className="text-2xl font-bold">Welcome, {displayName ?? 'Junaid'}</h2>
+            <PageHeader title={`Welcome, ${displayName ?? 'Junaid'}`} className="mb-8">
               <div className="flex space-x-3 relative" ref={quickActionMenuRef}>
-                <button
+                <Button
                   onClick={() => setQuickActionOpen((open) => !open)}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium shadow-sm flex items-center"
+                  leadingIcon={
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                  }
                 >
-                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg> Quick Action
-                </button>
+                  Quick Action
+                </Button>
                 {quickActionOpen && (
                   <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-xl border border-gray-200 z-50 py-2">
                     <button
@@ -742,7 +744,7 @@ export default function FacilitatorDashboardPage() {
                   </div>
                 )}
               </div>
-            </div>
+            </PageHeader>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
               <StatCard
@@ -785,14 +787,11 @@ export default function FacilitatorDashboardPage() {
                         {t.missingCount >= 2 ? `${t.missingCount} missing/late assignments` : `Low avg score (${t.avgGrade}%)`}
                       </div>
                       <div className="flex gap-2 mt-2">
-                        <button onClick={() => handleSendReminder(t.name)} className="text-xs bg-white border border-gray-300 px-3 py-1 rounded hover:bg-gray-50 transition-colors">Send Reminder</button>
-                        <button onClick={() => handleSchedule1on1(t.name)} className="text-xs bg-white border border-gray-300 px-3 py-1 rounded hover:bg-gray-50 transition-colors">Schedule 1:1</button>
-                        <button
-                          onClick={() => navigate(...facilitatorTraineeProfileNavArgs(t.name))}
-                          className="text-xs bg-white border border-gray-300 px-3 py-1 rounded hover:bg-gray-50 transition-colors"
-                        >
+                        <Button variant="outline" size="sm" onClick={() => handleSendReminder(t.name)}>Send Reminder</Button>
+                        <Button variant="outline" size="sm" onClick={() => handleSchedule1on1(t.name)}>Schedule 1:1</Button>
+                        <Button variant="outline" size="sm" onClick={() => navigate(...facilitatorTraineeProfileNavArgs(t.name))}>
                           View Profile
-                        </button>
+                        </Button>
                       </div>
                     </div>
                   ))}
@@ -802,7 +801,7 @@ export default function FacilitatorDashboardPage() {
               <div className="lg:col-span-2 bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden flex flex-col">
                 <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
                   <h3 className="font-bold text-gray-800">Recent Submissions</h3>
-                  <button onClick={() => setActiveTab('assignments')} className="text-blue-600 text-sm font-medium hover:underline">View All</button>
+                  <Button variant="link" onClick={() => setActiveTab('assignments')}>View All</Button>
                 </div>
                 <div className="divide-y divide-gray-100 flex-1 overflow-y-auto">
                   {recentSubmissions.length === 0 && (
@@ -824,14 +823,15 @@ export default function FacilitatorDashboardPage() {
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
-                            <button
+                            <Button
+                              variant="secondary"
+                              size="sm"
                               onClick={() => (isQuickGrading ? setQuickGradeTarget(null) : openQuickGrade(assignment.id, submission.traineeName, submission))}
-                              className="px-3 py-1.5 bg-blue-50 text-blue-700 font-medium rounded-lg hover:bg-blue-100 transition-colors text-sm"
                             >
                               {isQuickGrading ? 'Close' : 'Quick Grade'}
-                            </button>
+                            </Button>
                             <Link to={`/assignments/${assignment.id}`} className="px-3 py-1.5 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors text-sm">Open</Link>
-                            <button onClick={() => handleDownloadSubmission(assignment.title, submission.traineeName)} className="px-3 py-1.5 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition-colors text-sm">Download</button>
+                            <Button variant="outline" size="sm" onClick={() => handleDownloadSubmission(assignment.title, submission.traineeName)}>Download</Button>
                           </div>
                         </div>
                         {isQuickGrading && (
@@ -858,7 +858,7 @@ export default function FacilitatorDashboardPage() {
                                   <option>Late</option>
                                 </select>
                               </div>
-                              <button onClick={saveQuickGrade} className="px-4 py-1.5 bg-blue-600 text-white rounded-lg font-bold text-sm hover:bg-blue-700">Save Grade</button>
+                              <Button size="sm" onClick={saveQuickGrade}>Save Grade</Button>
                             </div>
                             <div>
                               <label htmlFor="facilitator-quick-grade-feedback" className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Feedback</label>
@@ -883,10 +883,9 @@ export default function FacilitatorDashboardPage() {
           {/* Resource Library Tab */}
           <div className={hiddenUnless('resources')}>
             <Breadcrumbs trail={['Facilitator', 'Resources']} />
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-bold">Digital Resource Library</h2>
-              <button onClick={() => setResourceModalOpen(true)} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700">+ Upload Resource</button>
-            </div>
+            <PageHeader title="Digital Resource Library">
+              <Button onClick={() => setResourceModalOpen(true)}>+ Upload Resource</Button>
+            </PageHeader>
 
             <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden mb-6 flex">
               <div className="p-4 border-r w-1/4">
@@ -932,12 +931,9 @@ export default function FacilitatorDashboardPage() {
                       {resource.verified ? (
                         <span className="text-xs bg-green-100 text-green-700 font-bold px-2 py-1 rounded-full">Verified</span>
                       ) : (
-                        <button
-                          onClick={() => { verifyResource(resource.id).then(() => showToast('Resource verified')); }}
-                          className="text-blue-600 hover:text-blue-800 text-sm font-medium"
-                        >
+                        <Button variant="link" onClick={() => { verifyResource(resource.id).then(() => showToast('Resource verified')); }}>
                           Verify
-                        </button>
+                        </Button>
                       )}
                     </div>
                   ))}
@@ -949,7 +945,7 @@ export default function FacilitatorDashboardPage() {
           {/* Batches Tab */}
           <div className={hiddenUnless('batches')}>
             <Breadcrumbs trail={['Facilitator', 'Batches']} />
-            <h2 className="text-2xl font-bold mb-6">My Batches</h2>
+            <PageHeader title="My Batches" wrap={false} />
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
               <StatCard label="Batches" value={myBatches.length} valueClassName="text-3xl font-bold mt-2 text-gray-800" />
@@ -1000,15 +996,16 @@ export default function FacilitatorDashboardPage() {
                       <td className="px-6 py-4 text-gray-600 font-medium">{b.attendanceRate !== null ? `${b.attendanceRate}%` : '—'}</td>
                       <td className="px-6 py-4"><StatusBadge status={b.status} /></td>
                       <td className="px-6 py-4">
-                        <button
+                        <Button
+                          variant="secondary"
+                          size="sm"
                           onClick={(e) => {
                             e.stopPropagation();
                             setFeedbackDrawerBatch({ id: b.id, name: b.name });
                           }}
-                          className="text-blue-600 hover:text-blue-800 font-bold text-xs bg-blue-50 px-2.5 py-1 rounded hover:bg-blue-100 transition-colors"
                         >
                           Manage Feedback
-                        </button>
+                        </Button>
                       </td>
                     </tr>
                   ))}
@@ -1020,10 +1017,9 @@ export default function FacilitatorDashboardPage() {
           {/* Assignments Tab */}
           <div className={hiddenUnless('assignments')}>
             <Breadcrumbs trail={['Facilitator', 'Assignments']} />
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-bold">Assignments Dashboard</h2>
-              <button onClick={() => setAssignmentModalOpen(true)} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 hover:-translate-y-0.5 transition-all duration-150">+ Create Assignment</button>
-            </div>
+            <PageHeader title="Assignments Dashboard">
+              <Button onClick={() => setAssignmentModalOpen(true)}>+ Create Assignment</Button>
+            </PageHeader>
 
             <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden mb-8">
               <div className="p-4 border-b border-gray-200 bg-gray-50 flex flex-wrap items-center gap-3">
@@ -1051,10 +1047,10 @@ export default function FacilitatorDashboardPage() {
                 <div className="px-6 py-3 bg-blue-50 border-b border-blue-100 flex items-center justify-between">
                   <span className="text-sm font-bold text-blue-800">{selectedAssignmentIds.size} selected</span>
                   <div className="flex items-center gap-2">
-                    <button onClick={handleBulkDuplicateAssignments} className="text-xs font-bold text-blue-700 bg-white border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-colors">Duplicate</button>
-                    <button onClick={() => setExtendDeadlineModalOpen(true)} className="text-xs font-bold text-blue-700 bg-white border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-colors">Extend Deadline</button>
-                    <button onClick={handleBulkCloseAssignments} className="text-xs font-bold text-amber-700 bg-white border border-amber-200 px-3 py-1.5 rounded-lg hover:bg-amber-50 transition-colors">Close</button>
-                    <button onClick={handleBulkDeleteAssignments} className="text-xs font-bold text-red-700 bg-white border border-red-200 px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors">Delete</button>
+                    <Button variant="outline" size="sm" onClick={handleBulkDuplicateAssignments}>Duplicate</Button>
+                    <Button variant="outline" size="sm" onClick={() => setExtendDeadlineModalOpen(true)}>Extend Deadline</Button>
+                    <Button variant="outline" size="sm" onClick={handleBulkCloseAssignments}>Close</Button>
+                    <Button variant="danger" size="sm" onClick={handleBulkDeleteAssignments}>Delete</Button>
                   </div>
                 </div>
               )}
@@ -1119,16 +1115,15 @@ export default function FacilitatorDashboardPage() {
           {/* Sessions & Calendar Tab */}
           <div className={hiddenUnless('sessions')}>
             <Breadcrumbs trail={['Facilitator', 'Sessions & Calendar']} />
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-bold">Sessions & Calendar</h2>
+            <PageHeader title="Sessions & Calendar">
               <div className="flex items-center gap-3">
                 <div className="flex rounded-lg border border-gray-300 overflow-hidden text-sm font-medium">
                   <button onClick={() => setSessionViewMode('list')} className={`px-3 py-2 transition-colors ${sessionViewMode === 'list' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>List</button>
                   <button onClick={() => setSessionViewMode('calendar')} className={`px-3 py-2 transition-colors ${sessionViewMode === 'calendar' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>Calendar</button>
                 </div>
-                <button onClick={() => setSessionModalOpen(true)} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700">+ Schedule Session</button>
+                <Button onClick={() => setSessionModalOpen(true)}>+ Schedule Session</Button>
               </div>
-            </div>
+            </PageHeader>
             {sessionViewMode === 'calendar' ? (
               <SessionsCalendarView />
             ) : (
@@ -1164,7 +1159,7 @@ export default function FacilitatorDashboardPage() {
                                 <span className="text-green-600 font-bold">{session.presentCount ?? 0} present</span>
                                 <span className="text-red-500 font-bold">{session.absentCount ?? 0} absent</span>
                                 <span className="text-gray-500 font-bold">{attendancePercent}% attendance</span>
-                                <button onClick={() => startEditAttendance(session)} className="text-blue-600 hover:underline font-medium">Edit</button>
+                                <Button variant="link" onClick={() => startEditAttendance(session)}>Edit</Button>
                               </div>
                             )}
                             {isEditingAttendance && (
@@ -1191,18 +1186,22 @@ export default function FacilitatorDashboardPage() {
                                     className="w-20 px-2 py-1 border border-gray-300 rounded-lg text-sm outline-none"
                                   />
                                 </div>
-                                <button onClick={() => setAttendanceEditingId(null)} className="text-xs font-medium text-gray-500 hover:text-gray-700 px-2 py-1.5">Cancel</button>
-                                <button onClick={() => saveAttendance(session)} className="text-xs font-bold bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700">Save</button>
+                                <Button variant="ghost" size="sm" onClick={() => setAttendanceEditingId(null)}>Cancel</Button>
+                                <Button size="sm" onClick={() => saveAttendance(session)}>Save</Button>
                               </div>
                             )}
                             {attendancePercent === null && !isEditingAttendance && (
-                              <button
+                              <Button
+                                variant="success"
+                                size="sm"
+                                className="mt-2"
                                 onClick={() => startEditAttendance(session)}
-                                className="mt-2 inline-flex items-center gap-1.5 text-xs font-bold rounded-full px-3 py-1.5 border border-green-200 bg-green-50 text-green-700 hover:bg-green-100 transition-all duration-150 hover:scale-105 active:scale-95"
+                                leadingIcon={
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                }
                               >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                                 Record Attendance
-                              </button>
+                              </Button>
                             )}
                           </>
                         );
@@ -1224,34 +1223,26 @@ export default function FacilitatorDashboardPage() {
                               className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
                             />
                             <div className="flex justify-end gap-2">
-                              <button onClick={() => { setReassignRequestSessionId(null); setReassignReason(''); }} className="text-xs font-medium text-gray-500 hover:text-gray-700 px-2 py-1.5">
+                              <Button variant="ghost" size="sm" onClick={() => { setReassignRequestSessionId(null); setReassignReason(''); }}>
                                 Cancel
-                              </button>
-                              <button
-                                onClick={() => submitReassignmentRequest(session.id)}
-                                disabled={!reassignReason.trim()}
-                                className="text-xs font-bold bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 disabled:opacity-50"
-                              >
+                              </Button>
+                              <Button size="sm" disabled={!reassignReason.trim()} onClick={() => submitReassignmentRequest(session.id)}>
                                 Submit
-                              </button>
+                              </Button>
                             </div>
                           </div>
                         ) : (
-                          <button
-                            onClick={() => setReassignRequestSessionId(session.id)}
-                            className="text-xs font-bold rounded-full px-3 py-1.5 border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 transition-all duration-150"
-                          >
+                          <Button variant="outline" size="sm" onClick={() => setReassignRequestSessionId(session.id)}>
                             Request Reassignment
-                          </button>
+                          </Button>
                         ))}
-                      <button
+                      <Button
+                        variant={isEditing ? 'secondary' : 'outline'}
+                        size="sm"
                         onClick={() => (isEditing ? setEditingSessionId(null) : startEditSession(session.id, session.date, session.time))}
-                        className={`text-xs font-bold rounded-full px-3 py-1.5 border transition-all duration-150 hover:scale-105 active:scale-95 ${
-                          isEditing ? 'text-gray-600 border-gray-200 bg-gray-50 hover:bg-gray-100' : 'text-blue-600 border-blue-200 bg-blue-50 hover:bg-blue-100'
-                        }`}
                       >
                         {isEditing ? 'Close' : 'Edit timing'}
-                      </button>
+                      </Button>
                       {isEditing && (
                         <div className="absolute right-0 top-full mt-2 w-72 bg-white rounded-xl shadow-xl border border-gray-200 z-50 p-4 text-left">
                           <div className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">Reschedule Session</div>
@@ -1297,10 +1288,10 @@ export default function FacilitatorDashboardPage() {
                               />
                             </div>
                             <div className="flex justify-end gap-2 pt-1">
-                              <button onClick={() => setEditingSessionId(null)} className="text-xs font-medium text-gray-500 px-2 py-1.5 hover:text-gray-700">Cancel</button>
-                              <button onClick={() => saveSessionEdit(session.id)} className="text-xs font-bold bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 transition-transform duration-150 hover:scale-105 active:scale-95">
+                              <Button variant="ghost" size="sm" onClick={() => setEditingSessionId(null)}>Cancel</Button>
+                              <Button size="sm" onClick={() => saveSessionEdit(session.id)}>
                                 Save
-                              </button>
+                              </Button>
                             </div>
                           </div>
                         </div>
@@ -1316,10 +1307,9 @@ export default function FacilitatorDashboardPage() {
           {/* Announcements Tab */}
           <div className={hiddenUnless('announcements')}>
             <Breadcrumbs trail={['Facilitator', 'Announcements']} />
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-bold">Announcements</h2>
-              <button onClick={() => setAnnouncementModalOpen(true)} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700">+ New Announcement</button>
-            </div>
+            <PageHeader title="Announcements">
+              <Button onClick={() => setAnnouncementModalOpen(true)}>+ New Announcement</Button>
+            </PageHeader>
             <div className="space-y-4">
               {announcements.length === 0 && (
                 <EmptyState title="No announcements yet" message="Broadcasts you post will appear here." icon="inbox" />
@@ -1340,7 +1330,7 @@ export default function FacilitatorDashboardPage() {
           {/* Feedback Tab */}
           <div className={hiddenUnless('feedback')}>
             <Breadcrumbs trail={['Facilitator', 'Feedback']} />
-            <h2 className="text-2xl font-bold mb-1">Session Feedback</h2>
+            <PageHeader title="Session Feedback" wrap={false} className="mb-1" />
             <p className="text-gray-500 text-sm mb-6">
               Attach, open, copy, or replace each session's external feedback-form link — and give your own feedback when a form targets facilitators.
             </p>
@@ -1370,12 +1360,9 @@ export default function FacilitatorDashboardPage() {
                             alreadySubmitted ? (
                               <span className="text-xs font-bold text-green-700 bg-green-50 border border-green-200 px-3 py-1.5 rounded-lg whitespace-nowrap">Submitted</span>
                             ) : (
-                              <button
-                                onClick={() => handleGiveSessionFeedback(session)}
-                                className="text-xs font-bold text-white bg-green-600 hover:bg-green-700 px-3 py-1.5 rounded-lg transition-colors whitespace-nowrap"
-                              >
+                              <Button variant="success" size="sm" className="whitespace-nowrap" onClick={() => handleGiveSessionFeedback(session)}>
                                 Give Feedback
-                              </button>
+                              </Button>
                             )
                           )}
                         </div>
@@ -1434,9 +1421,9 @@ export default function FacilitatorDashboardPage() {
                       className="w-full px-3 py-2 border rounded-lg outline-none h-24"
                       placeholder="Detailed feedback..."
                     ></textarea>
-                    <button onClick={handleSaveFeedback} disabled={!feedbackSelectedTrainee} className="w-full py-2 bg-blue-600 text-white rounded-lg font-bold disabled:opacity-50 disabled:cursor-not-allowed">
+                    <Button fullWidth disabled={!feedbackSelectedTrainee} onClick={handleSaveFeedback}>
                       Save Permanently
-                    </button>
+                    </Button>
 
                     {feedbackSelectedTrainee && (
                       <div className="pt-2 border-t border-gray-100">
@@ -1499,19 +1486,20 @@ export default function FacilitatorDashboardPage() {
                   <p className="text-sm text-gray-500 mt-1">{t.batchName}</p>
                   <p className="text-xs text-gray-400 mt-2 mb-4">{t.pendingCount > 0 ? `${t.pendingCount} pending submission(s)` : 'All caught up'}</p>
                   <div className="mt-auto space-y-2">
-                    <button
+                    <Button
+                      variant="secondary"
+                      fullWidth
                       onClick={() => navigate(...facilitatorTraineeProfileNavArgs(t.name, { type: 'trainees' }))}
-                      className="w-full py-2 bg-blue-50 text-blue-700 font-bold rounded-lg hover:bg-blue-100 text-sm"
                     >
                       View Profile
-                    </button>
+                    </Button>
                     <div className="flex gap-2">
-                      <button onClick={() => handleSchedule1on1(t.name)} className="flex-1 py-2 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 text-sm">
+                      <Button variant="outline" className="flex-1" onClick={() => handleSchedule1on1(t.name)}>
                         Schedule 1:1
-                      </button>
-                      <button onClick={() => handleContactTrainee(t.name)} className="flex-1 py-2 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 text-sm">
+                      </Button>
+                      <Button variant="outline" className="flex-1" onClick={() => handleContactTrainee(t.name)}>
                         Contact
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 </div>
@@ -1549,7 +1537,7 @@ export default function FacilitatorDashboardPage() {
             </div>
           </div>
           <div className="flex justify-end space-x-3 mt-6">
-            <button onClick={() => { setAnnouncementModalOpen(false); setAnnouncementFormError(''); }} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium">Cancel</button>
+            <Button variant="ghost" onClick={() => { setAnnouncementModalOpen(false); setAnnouncementFormError(''); }}>Cancel</Button>
             <SavingButton onClick={handlePostAnnouncement} isSaving={announcementFormSaving} label="Post" className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium" />
           </div>
       </Modal>
@@ -1605,7 +1593,7 @@ export default function FacilitatorDashboardPage() {
             </div>
           </div>
           <div className="flex justify-end space-x-3 mt-6">
-            <button onClick={() => { setSessionModalOpen(false); setSessionFormError(''); }} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium">Cancel</button>
+            <Button variant="ghost" onClick={() => { setSessionModalOpen(false); setSessionFormError(''); }}>Cancel</Button>
             <SavingButton onClick={handleCreateSession} isSaving={sessionFormSaving} label="Schedule" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium" />
           </div>
       </Modal>
@@ -1669,7 +1657,7 @@ export default function FacilitatorDashboardPage() {
             </div>
           </div>
           <div className="flex justify-end space-x-3 mt-6">
-            <button onClick={() => { setAssignmentModalOpen(false); setAssignmentFormError(''); }} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium">Cancel</button>
+            <Button variant="ghost" onClick={() => { setAssignmentModalOpen(false); setAssignmentFormError(''); }}>Cancel</Button>
             <SavingButton onClick={handleCreateAssignment} isSaving={assignmentFormSaving} label="Create" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium" />
           </div>
       </Modal>
@@ -1726,8 +1714,8 @@ export default function FacilitatorDashboardPage() {
             </div>
           </div>
           <div className="flex justify-end space-x-3 mt-6">
-            <button onClick={() => setResourceModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium">Cancel</button>
-            <button onClick={handleUploadResource} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium">Upload</button>
+            <Button variant="ghost" onClick={() => setResourceModalOpen(false)}>Cancel</Button>
+            <Button onClick={handleUploadResource}>Upload</Button>
           </div>
       </Modal>
 
@@ -1746,8 +1734,8 @@ export default function FacilitatorDashboardPage() {
             className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
           />
           <div className="flex justify-end space-x-3 mt-6">
-            <button onClick={() => setExtendDeadlineModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium">Cancel</button>
-            <button onClick={confirmBulkExtendAssignmentDeadline} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium">Apply</button>
+            <Button variant="ghost" onClick={() => setExtendDeadlineModalOpen(false)}>Cancel</Button>
+            <Button onClick={confirmBulkExtendAssignmentDeadline}>Apply</Button>
           </div>
       </Modal>
 

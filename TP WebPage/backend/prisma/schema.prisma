@@ -119,6 +119,34 @@ enum SessionFeedbackAudience {
   Both
 }
 
+// Batch/program-level feedback forms (Mid-Program, Final Program, etc.) support a wider audience
+// than session/assignment forms -- they can reasonably target Primary Coordinators or Admins too,
+// not just Trainees/Facilitators/Both. Kept as its own enum rather than widening
+// SessionFeedbackAudience so the already-shipped session/assignment features are undisturbed.
+enum FeedbackFormBroadAudience {
+  Trainees
+  Facilitators
+  PrimaryCoordinators
+  Admins
+  MultipleRoles
+}
+
+enum BatchFeedbackFormType {
+  BatchFeedback
+  MidProgramFeedback
+  FinalProgramFeedback
+  CustomFeedback
+}
+
+enum FeedbackFormStatus {
+  Draft
+  Scheduled
+  Active
+  Closed
+  Archived
+  InvalidLink
+}
+
 // ---------- Auth & identity ----------
 
 model Role {
@@ -186,6 +214,8 @@ model User {
   sessionFeedbackSubmissions      SessionFeedbackSubmission[]
   assignmentFeedbackFormsCreated  AssignmentFeedbackForm[]
   assignmentFeedbackSubmissions   AssignmentFeedbackSubmission[]
+  batchFeedbackFormsCreated       BatchFeedbackForm[]
+  batchFeedbackSubmissions        BatchFeedbackSubmission[]
   announcements                   Announcement[]
   announcementReads               AnnouncementRead[]
   discussionThreads               DiscussionThread[]
@@ -404,6 +434,7 @@ model Batch {
   announcements          Announcement[]
   notifications          Notification[]
   facilitatorAssignments BatchFacilitator[]
+  feedbackForms          BatchFeedbackForm[]
 
   @@index([facilitatorId])
   @@index([status])
@@ -712,6 +743,49 @@ model AssignmentFeedbackSubmission {
   @@unique([formId, submitterId])
   @@index([submitterId])
   @@map("assignment_feedback_submissions")
+}
+
+// Feedback attached to a whole batch/program rather than one session or assignment -- Mid-Program
+// Feedback, Final Program Feedback, Batch Experience Feedback, etc. Unlike SessionFeedbackForm/
+// AssignmentFeedbackForm (one form per session/assignment, enforced via a @unique parent id), a
+// batch can have several of these at once, so batchId is a plain indexed FK, not @unique.
+model BatchFeedbackForm {
+  id           String                    @id @default(uuid())
+  batchId      String                    @map("batch_id")
+  name         String
+  description  String                    @default("")
+  formUrl      String                    @map("form_url")
+  formType     BatchFeedbackFormType     @default(BatchFeedback) @map("form_type")
+  audience     FeedbackFormBroadAudience @default(Trainees)
+  status       FeedbackFormStatus        @default(Draft)
+  isRequired   Boolean                   @default(false) @map("is_required")
+  instructions String?
+  openDate     DateTime?                 @map("open_date")
+  dueDate      DateTime?                 @map("due_date")
+  createdBy    String                    @map("created_by")
+  createdAt    DateTime                  @default(now()) @map("created_at")
+  updatedAt    DateTime                  @updatedAt @map("updated_at")
+
+  batch       Batch                      @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  creator     User                       @relation(fields: [createdBy], references: [id])
+  submissions BatchFeedbackSubmission[]
+
+  @@index([batchId])
+  @@map("batch_feedback_forms")
+}
+
+model BatchFeedbackSubmission {
+  id          String   @id @default(uuid())
+  formId      String   @map("form_id")
+  submitterId String   @map("submitter_id")
+  submittedAt DateTime @default(now()) @map("submitted_at")
+
+  form      BatchFeedbackForm @relation(fields: [formId], references: [id], onDelete: Cascade)
+  submitter User              @relation(fields: [submitterId], references: [id], onDelete: Cascade)
+
+  @@unique([formId, submitterId])
+  @@index([submitterId])
+  @@map("batch_feedback_submissions")
 }
 
 model FeedbackEntry {
