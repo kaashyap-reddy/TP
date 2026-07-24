@@ -21,6 +21,12 @@ export const createSessionSchema = z.object({
   status: statusEnum.optional().default('Upcoming')
 });
 
-export const updateSessionSchema = createSessionSchema.omit({ batchId: true }).partial();
+// facilitatorId is intentionally omitted from createSessionSchema (create() always hard-codes the
+// creator as trainer) but is a real, separately-added field here -- this is the only way to
+// reassign a session's trainer after creation.
+export const updateSessionSchema = createSessionSchema
+  .omit({ batchId: true })
+  .partial()
+  .extend({ facilitatorId: z.string().uuid().nullable().optional() });
 
 export const sessionIdParamsSchema = z.object({ id: z.string().uuid() });

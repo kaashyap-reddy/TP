@@ -9,6 +9,7 @@ const submissionFindUnique = vi.fn();
 const submissionUpsert = vi.fn();
 const batchTraineeCount = vi.fn();
 const batchTraineeFindFirst = vi.fn();
+const batchFacilitatorFindFirst = vi.fn();
 
 vi.mock('../prisma/client', () => ({
   prisma: {
@@ -26,7 +27,10 @@ vi.mock('../prisma/client', () => ({
     batchTrainee: {
       count: (...a: unknown[]) => batchTraineeCount(...a),
       findFirst: (...a: unknown[]) => batchTraineeFindFirst(...a)
-    }
+    },
+    // assertOwnerOrAdmin/getForAssignment widen facilitator ownership to active batch-team
+    // membership via isOnAnyBatchTeam(), which queries this table.
+    batchFacilitator: { findFirst: (...a: unknown[]) => batchFacilitatorFindFirst(...a) }
   }
 }));
 
@@ -44,7 +48,10 @@ const assignment = {
 };
 
 describe('assignmentFeedback.service', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    batchFacilitatorFindFirst.mockResolvedValue(null);
+  });
 
   it('lets the owning facilitator attach a feedback form', async () => {
     const { attach } = await import('../services/assignmentFeedback.service');
@@ -85,6 +92,19 @@ describe('assignmentFeedback.service', () => {
     const err = await attach(otherFacilitator, 'assignment-1', { formUrl: 'https://forms.gle/x' } as never).catch((e) => e);
     expect(err.statusCode).toBe(403);
     expect(formCreate).not.toHaveBeenCalled();
+  });
+
+  it('allows a non-owning facilitator who is an active team member of one of the assignment batches', async () => {
+    const { attach } = await import('../services/assignmentFeedback.service');
+    assignmentFindFirst.mockResolvedValueOnce(assignment);
+    formFindUnique.mockResolvedValueOnce(null);
+    formCreate.mockResolvedValueOnce({ id: 'form-1' });
+    submissionCount.mockResolvedValueOnce(0);
+    batchTraineeCount.mockResolvedValueOnce(8);
+    batchFacilitatorFindFirst.mockResolvedValueOnce({ id: 'assignment-row', status: 'Active' });
+
+    await expect(attach(otherFacilitator, 'assignment-1', { formUrl: 'https://forms.gle/x' } as never)).resolves.toBeDefined();
+    expect(formCreate).toHaveBeenCalled();
   });
 
   it('rejects attaching a second form to an assignment that already has one', async () => {

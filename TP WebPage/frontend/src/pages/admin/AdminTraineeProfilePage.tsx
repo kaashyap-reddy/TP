@@ -5,12 +5,12 @@ import { useAssignmentsStore } from '../../store/assignmentsStore';
 import { useFeedbackStore } from '../../store/feedbackStore';
 import { listBatchTraineeStats, type BatchTraineeStats } from '../../services/api/batchService';
 import { formatDateTime } from '../../utils/dateUtils';
-import Breadcrumbs from '../../components/Breadcrumbs';
 import StatCard from '../../components/StatCard';
 import StatusBadge from '../../components/StatusBadge';
 import Table from '../../components/Table';
 import EmptyState from '../../components/EmptyState';
 import { ROUTES } from '../../constants/routes';
+import AuthenticatedDetailLayout from '../../layouts/AuthenticatedDetailLayout';
 
 interface TraineeProfileOrigin {
   batchId?: string;
@@ -96,35 +96,39 @@ export default function AdminTraineeProfilePage() {
 
   if (!traineeName || !batch) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 text-gray-600">
-        <p className="mb-4">Trainee not found.</p>
-        <button onClick={goBack} className="text-blue-600 font-medium hover:underline">
-          ‹ Back to Batch Management
-        </button>
-      </div>
+      <AuthenticatedDetailLayout
+        role="admin"
+        activeTab="batches"
+        headerTitle="Trainee"
+        breadcrumbTrail={['Admin', 'Batch Management']}
+        onBack={goBack}
+        backLabel="Back to Batch Management"
+      >
+        <p className="text-sm text-gray-600">Trainee not found.</p>
+      </AuthenticatedDetailLayout>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="bg-white border-b border-gray-200 px-8 py-5">
-        <button onClick={goBack} className="text-sm text-blue-600 hover:underline font-medium mb-3">
-          ‹ Back to Batch Management
-        </button>
-        <Breadcrumbs trail={['Admin', 'Batch Management', batch.name, traineeName]} />
-        <div className="flex items-center gap-4 mt-2">
-          <div className="w-16 h-16 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center font-bold text-xl">{initialsOf(traineeName)}</div>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">{traineeName}</h1>
-            <p className="text-sm text-gray-500 mt-1">
-              {batch.name} • {batch.program} {batch.track}
-              {stats?.email && <span> • {stats.email}</span>}
-            </p>
-          </div>
+    <AuthenticatedDetailLayout
+      role="admin"
+      activeTab="batches"
+      headerTitle={traineeName}
+      breadcrumbTrail={['Admin', 'Batch Management', batch.name, traineeName]}
+      onBack={goBack}
+      backLabel="Back to Batch Management"
+    >
+      <div className="flex items-center gap-4 mb-6">
+        <div className="w-16 h-16 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center font-bold text-xl">{initialsOf(traineeName)}</div>
+        <div>
+          <p className="text-sm text-gray-500">
+            {batch.name} • {batch.program} {batch.track}
+            {stats?.email && <span> • {stats.email}</span>}
+          </p>
         </div>
-      </header>
+      </div>
 
-      <div className="p-8 max-w-4xl mx-auto space-y-6">
+      <div className="max-w-4xl mx-auto space-y-6">
         {statsError && <p className="text-sm text-red-600">{statsError}</p>}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -182,6 +186,6 @@ export default function AdminTraineeProfilePage() {
           )}
         </div>
       </div>
-    </div>
+    </AuthenticatedDetailLayout>
   );
 }

@@ -4,6 +4,8 @@ import { prisma } from '../prisma/client';
 import { AuthenticatedUser } from '../types/auth';
 import { ApiError } from '../utils/ApiError';
 import { buildPaginatedResponse, getPagination } from '../utils/pagination';
+import { isOnBatchTeam } from './facilitatorAssignments.service';
+import { notifyRole } from './notifications.service';
 import {
   createBatchSchema,
   enrollTraineeSchema,
@@ -154,21 +156,25 @@ async function assertRole(userId: string, expected: 'facilitator' | 'trainee') {
   return user;
 }
 
-/** Admin: unrestricted. Facilitator: only the batch they're assigned to. Trainee: only if enrolled. */
+/** Admin: unrestricted. Facilitator: assigned as primary coordinator OR any active team member. Trainee: only if enrolled. */
 async function assertBatchAccess(actor: AuthenticatedUser, batch: { id: string; facilitatorId: string | null }): Promise<void> {
   if (actor.role === 'admin') return;
   if (actor.role === 'facilitator') {
     if (actor.id === batch.facilitatorId) return;
+    if (await isOnBatchTeam(actor.id, batch.id)) return;
     throw ApiError.forbidden('You do not have access to this batch.');
   }
   const enrollment = await prisma.batchTrainee.findUnique({ where: { batchId_traineeId: { batchId: batch.id, traineeId: actor.id } } });
   if (!enrollment || enrollment.removedAt) throw ApiError.forbidden('You are not enrolled in this batch.');
 }
 
-/** Admin: unrestricted. Facilitator: only the batch they're assigned to. Trainee: never. */
-function assertFacilitatorOrAdminAccess(actor: AuthenticatedUser, batch: { facilitatorId: string | null }): void {
+/** Admin: unrestricted. Facilitator: assigned as primary coordinator OR any active team member. Trainee: never. */
+async function assertFacilitatorOrAdminAccess(actor: AuthenticatedUser, batch: { id: string; facilitatorId: string | null }): Promise<void> {
   if (actor.role === 'admin') return;
-  if (actor.role === 'facilitator' && actor.id === batch.facilitatorId) return;
+  if (actor.role === 'facilitator') {
+    if (actor.id === batch.facilitatorId) return;
+    if (await isOnBatchTeam(actor.id, batch.id)) return;
+  }
   throw ApiError.forbidden('You do not have access to this batch.');
 }
 
@@ -180,7 +186,22 @@ export async function list(query: z.infer<typeof listBatchesQuerySchema>) {
     ...(query.program ? { program: query.program } : {}),
     ...(query.track ? { track: query.track } : {}),
     ...(query.status ? { status: query.status } : {}),
-    ...(query.facilitatorId ? { facilitatorId: query.facilitatorId } : {}),
+    // Matches either the denormalized coordinator cache or active team membership, so
+    // GET /batches?facilitatorId=<id> returns every batch that facilitator is genuinely on the
+    // team for -- not just the ones where they're the primary coordinator. Wrapped in AND (rather
+    // than a top-level OR) so it composes safely with the search OR below instead of clobbering it.
+    ...(query.facilitatorId
+      ? {
+          AND: [
+            {
+              OR: [
+                { facilitatorId: query.facilitatorId },
+                { facilitatorAssignments: { some: { facilitatorId: query.facilitatorId, status: { not: 'Removed' } } } }
+              ]
+            }
+          ]
+        }
+      : {}),
     ...(query.trainingPlanId ? { trainingPlanId: query.trainingPlanId } : {}),
     ...(query.traineeId ? { trainees: { some: { traineeId: query.traineeId, removedAt: null } } } : {}),
     ...(query.search
@@ -355,6 +376,18 @@ export async function create(actorId: string, input: z.infer<typeof createBatchS
     }
 
     return tx.batch.findUniqueOrThrow({ where: { id: batch.id }, include });
+  }).then(async (created) => {
+    if (!trainerId) {
+      await notifyRole('admin', {
+        type: 'BatchUnassigned',
+        title: 'Batch has no facilitator',
+        message: `"${created.name}" was created without a facilitator/POC assigned.`,
+        targetUrl: `/admin/batches/${created.id}`,
+        severity: 'Warning',
+        batchId: created.id
+      });
+    }
+    return created;
   });
 }
 
@@ -502,7 +535,7 @@ export interface BatchTraineeStats {
  */
 export async function listTraineeStats(actor: AuthenticatedUser, batchId: string): Promise<BatchTraineeStats[]> {
   const batch = await getById(batchId);
-  assertFacilitatorOrAdminAccess(actor, batch);
+  await assertFacilitatorOrAdminAccess(actor, batch);
 
   const enrollments = await prisma.batchTrainee.findMany({
     where: { batchId, removedAt: null },

@@ -6,7 +6,6 @@ import { useAssignmentsStore } from '../store/assignmentsStore';
 import { useSessionsStore } from '../store/sessionsStore';
 import { listBatchTraineeStats, type BatchTraineeStats } from '../services/api/batchService';
 import { formatDateTime } from '../utils/dateUtils';
-import Breadcrumbs from '../components/Breadcrumbs';
 import StatCard from '../components/StatCard';
 import StatusBadge from '../components/StatusBadge';
 import ProgressBar from '../components/ProgressBar';
@@ -14,6 +13,7 @@ import Table from '../components/Table';
 import EmptyState from '../components/EmptyState';
 import { ROUTES } from '../constants/routes';
 import { facilitatorTraineeProfileNavArgs } from '../utils/facilitatorProfileNav';
+import AuthenticatedDetailLayout from '../layouts/AuthenticatedDetailLayout';
 
 function initialsOf(name: string): string {
   return name.split(' ').map((p) => p.charAt(0)).join('').slice(0, 2).toUpperCase();
@@ -102,36 +102,33 @@ export default function FacilitatorBatchDetailPage() {
 
   if (!batchId || !batch) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 text-gray-600">
-        <p className="mb-4">Batch not found.</p>
-        <button onClick={goBack} className="text-blue-600 font-medium hover:underline">
-          ‹ Back to Batches
-        </button>
-      </div>
+      <AuthenticatedDetailLayout role="facilitator" activeTab="batches" headerTitle="Batch" breadcrumbTrail={['Facilitator', 'Batches']} onBack={goBack} backLabel="Back to Batches">
+        <p className="text-sm text-gray-600">Batch not found.</p>
+      </AuthenticatedDetailLayout>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="bg-white border-b border-gray-200 px-8 py-5">
-        <button onClick={goBack} className="text-sm text-blue-600 hover:underline font-medium mb-3">
-          ‹ Back to Batches
-        </button>
-        <Breadcrumbs trail={['Facilitator', 'Batches', batch.name]} />
-        <div className="flex items-center justify-between mt-2 flex-wrap gap-3">
-          <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold text-gray-900">{batch.name}</h1>
-              <StatusBadge status={batch.status} />
-            </div>
-            <p className="text-sm text-gray-500 mt-1">
-              {batch.code} • {batch.program} {batch.track} • {batch.startMonth || '—'} – {batch.endDate ? formatDateTime(batch.endDate) : '—'}
-            </p>
+    <AuthenticatedDetailLayout
+      role="facilitator"
+      activeTab="batches"
+      headerTitle={batch.name}
+      breadcrumbTrail={['Facilitator', 'Batches', batch.name]}
+      onBack={goBack}
+      backLabel="Back to Batches"
+    >
+      <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
+        <div>
+          <div className="flex items-center gap-3">
+            <StatusBadge status={batch.status} />
           </div>
+          <p className="text-sm text-gray-500 mt-1">
+            {batch.code} • {batch.program} {batch.track} • {batch.startMonth || '—'} – {batch.endDate ? formatDateTime(batch.endDate) : '—'}
+          </p>
         </div>
-      </header>
+      </div>
 
-      <div className="p-8 max-w-6xl mx-auto space-y-8">
+      <div className="max-w-6xl mx-auto space-y-8">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           <StatCard label="Trainees" value={batch.traineeCount} valueClassName="text-3xl font-bold mt-2 text-gray-800" />
           <StatCard
@@ -307,6 +304,6 @@ export default function FacilitatorBatchDetailPage() {
           </div>
         </div>
       </div>
-    </div>
+    </AuthenticatedDetailLayout>
   );
 }

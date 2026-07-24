@@ -18,13 +18,10 @@ import * as sessionFeedbackService from '../services/api/sessionFeedbackService'
 import * as assignmentFeedbackService from '../services/api/assignmentFeedbackService';
 import { formatDate, formatDateTime, isRecentlyUpdated } from '../utils/dateUtils';
 import { average } from '../utils/mathUtils';
-import { useClickOutside } from '../hooks/useClickOutside';
-import { useEscapeKey } from '../hooks/useEscapeKey';
-import { useNotifications } from '../hooks/useNotifications';
 import { useBaseline } from '../hooks/useBaseline';
 import ConfirmDialog from '../components/ConfirmDialog';
 import Modal from '../components/Modal';
-import NotificationPanel from '../components/NotificationPanel';
+import NotificationBell from '../components/NotificationBell';
 import ProfileDropdown from '../components/ProfileDropdown';
 import EmptyState from '../components/EmptyState';
 import StatusBadge from '../components/StatusBadge';
@@ -80,7 +77,6 @@ export default function TraineeDashboardPage() {
   useEffect(() => {
     fetchFeedback();
   }, [fetchFeedback]);
-  const auditEntries = useAuditLogStore((s) => s.entries);
   const logEvent = useAuditLogStore((s) => s.logEvent);
 
   const [activeTab, setActiveTab] = useState<TabId>('dashboard');
@@ -95,10 +91,6 @@ export default function TraineeDashboardPage() {
       }
     });
   }, [activeTab, announcements, markRead]);
-  const [notificationOpen, setNotificationOpen] = useState(false);
-  const notificationMenuRef = useRef<HTMLDivElement>(null);
-  useClickOutside(notificationMenuRef, () => setNotificationOpen(false), notificationOpen);
-  const { readLogIds, unreadCount, markNotificationRead, markAllNotificationsRead } = useNotifications(auditEntries);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
 
   // Assignments / submission
@@ -130,7 +122,6 @@ export default function TraineeDashboardPage() {
   // Sessions & Calendar
   const [sessionViewMode, setSessionViewMode] = useState<'list' | 'calendar'>('list');
 
-  useEscapeKey(() => setNotificationOpen(false), notificationOpen);
 
   function hiddenUnless(tab: TabId) {
     return activeTab === tab ? '' : 'hidden';
@@ -358,32 +349,7 @@ export default function TraineeDashboardPage() {
       headerTitle={HEADER_TITLES[activeTab]}
       headerRight={
         <>
-          <div className="relative" ref={notificationMenuRef}>
-            <button
-              className="relative text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-lg p-1"
-              onClick={() => setNotificationOpen(!notificationOpen)}
-              aria-label="Notifications"
-              aria-haspopup="true"
-              aria-expanded={notificationOpen}
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
-              {unreadCount > 0 && (
-                <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] text-white">{unreadCount}</span>
-              )}
-            </button>
-
-            <div className={`${notificationOpen ? '' : 'hidden'} absolute top-full right-0 mt-2 bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden z-50`}>
-              <NotificationPanel
-                entries={auditEntries}
-                readIds={readLogIds}
-                onMarkRead={markNotificationRead}
-                onMarkAllRead={markAllNotificationsRead}
-                onViewAll={() => setNotificationOpen(false)}
-                viewAllLabel="Close"
-              />
-            </div>
-          </div>
-
+          <NotificationBell />
           <ProfileDropdown role="trainee" onSignOut={() => setLogoutConfirmOpen(true)} />
         </>
       }
@@ -522,6 +488,17 @@ export default function TraineeDashboardPage() {
                               <div className="text-sm text-gray-700 font-medium truncate max-w-[10rem]">{mySubmission!.attachmentFilename}</div>
                               <div className="text-xs text-gray-400">{mySubmission!.submittedOn ? formatDateTime(mySubmission!.submittedOn) : ''}</div>
                               <StatusBadge status={mySubmission!.status} />
+                              {mySubmission!.grade !== null && (
+                                <div className="mt-2 max-w-[14rem]">
+                                  <div className="text-sm font-bold text-gray-800">Grade: {mySubmission!.grade}/100</div>
+                                  {mySubmission!.feedback && (
+                                    <div className="text-xs text-gray-600 mt-1 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5">
+                                      <span className="font-bold text-gray-500 uppercase text-[10px] block mb-0.5">Feedback</span>
+                                      {mySubmission!.feedback}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           ) : (
                             <span className="text-xs text-gray-400">Not submitted</span>

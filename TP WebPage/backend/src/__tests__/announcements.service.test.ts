@@ -12,6 +12,9 @@ const readUpsert = vi.fn();
 const batchFindFirst = vi.fn();
 const batchFindMany = vi.fn();
 const batchTraineeFindMany = vi.fn();
+const batchTraineeFindUnique = vi.fn();
+const batchFacilitatorFindFirst = vi.fn();
+const batchFacilitatorFindMany = vi.fn();
 
 vi.mock('../prisma/client', () => ({
   prisma: {
@@ -32,7 +35,14 @@ vi.mock('../prisma/client', () => ({
       findMany: (...a: unknown[]) => batchFindMany(...a)
     },
     batchTrainee: {
-      findMany: (...a: unknown[]) => batchTraineeFindMany(...a)
+      findMany: (...a: unknown[]) => batchTraineeFindMany(...a),
+      findUnique: (...a: unknown[]) => batchTraineeFindUnique(...a)
+    },
+    // visibleBatchIds/create/markRead widen facilitator ownership to active batch-team
+    // membership via isOnBatchTeam(), which queries this table.
+    batchFacilitator: {
+      findFirst: (...a: unknown[]) => batchFacilitatorFindFirst(...a),
+      findMany: (...a: unknown[]) => batchFacilitatorFindMany(...a)
     },
     $transaction: (ops: unknown[]) => Promise.all(ops)
   }
@@ -62,6 +72,8 @@ beforeEach(() => {
   announcementFindMany.mockResolvedValue([row]);
   announcementCount.mockResolvedValue(1);
   readFindMany.mockResolvedValue([]);
+  batchFacilitatorFindFirst.mockResolvedValue(null);
+  batchFacilitatorFindMany.mockResolvedValue([]);
 });
 
 const baseQuery = { page: 1, pageSize: 20, sortBy: 'createdAt', sortOrder: 'desc' } as never;
@@ -113,6 +125,16 @@ describe('announcements create permissions', () => {
     expect(err.statusCode).toBe(403);
   });
 
+  it('lets a non-owning facilitator who is an active team member post to that batch', async () => {
+    const { create } = await import('../services/announcements.service');
+    batchFindFirst.mockResolvedValueOnce({ id: 'batch-1', facilitatorId: 'someone-else' });
+    batchFacilitatorFindFirst.mockResolvedValueOnce({ id: 'assignment-row', status: 'Active' });
+    announcementCreate.mockResolvedValueOnce({ ...row, batchId: 'batch-1', authorId: facilitator.id });
+
+    const created = await create(facilitator, { ...(input as object), batchId: 'batch-1' } as never);
+    expect(created.readByCount).toBe(3);
+  });
+
   it('lets a facilitator post to their own batch', async () => {
     const { create } = await import('../services/announcements.service');
     batchFindFirst.mockResolvedValueOnce({ id: 'batch-1', facilitatorId: facilitator.id });
@@ -162,5 +184,25 @@ describe('mark read', () => {
         update: {}
       })
     );
+  });
+
+  it('denies a trainee marking read a batch-scoped announcement for a batch they are not enrolled in', async () => {
+    const { markRead } = await import('../services/announcements.service');
+    announcementFindFirst.mockResolvedValueOnce({ ...row, batchId: 'batch-1' });
+    batchTraineeFindUnique.mockResolvedValueOnce(null);
+
+    const err = await markRead(trainee, 'ann-1').catch((e) => e);
+    expect(err.statusCode).toBe(403);
+    expect(readUpsert).not.toHaveBeenCalled();
+  });
+
+  it('denies a facilitator with no relationship to the announcement batch', async () => {
+    const { markRead } = await import('../services/announcements.service');
+    announcementFindFirst.mockResolvedValueOnce({ ...row, batchId: 'batch-1' });
+    batchFindFirst.mockResolvedValueOnce({ id: 'batch-1', facilitatorId: 'someone-else' });
+
+    const err = await markRead(facilitator, 'ann-1').catch((e) => e);
+    expect(err.statusCode).toBe(403);
+    expect(readUpsert).not.toHaveBeenCalled();
   });
 });

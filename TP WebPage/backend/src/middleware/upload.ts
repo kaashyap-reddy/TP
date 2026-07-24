@@ -24,13 +24,15 @@ export function fileFilter(_req: Request, file: Express.Multer.File, cb: FileFil
   cb(null, true);
 }
 
-export function createUploader(subdir: string) {
+export function createUploader(subdir: string, options?: { maxSizeBytes?: number }) {
+  const maxSizeBytes = options?.maxSizeBytes ?? config.upload.maxSizeBytes;
+
   // Cloud providers (S3 etc.) need the raw bytes in memory to upload them; only the local
   // provider benefits from multer writing straight to disk. See services/storage/.
   if (config.storage.provider !== 'local') {
     return multer({
       storage: multer.memoryStorage(),
-      limits: { fileSize: config.upload.maxSizeBytes },
+      limits: { fileSize: maxSizeBytes },
       fileFilter
     });
   }
@@ -50,7 +52,7 @@ export function createUploader(subdir: string) {
 
   return multer({
     storage,
-    limits: { fileSize: config.upload.maxSizeBytes },
+    limits: { fileSize: maxSizeBytes },
     fileFilter
   });
 }

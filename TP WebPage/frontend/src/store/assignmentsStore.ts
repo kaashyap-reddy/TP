@@ -10,7 +10,7 @@ interface AssignmentsState {
   assignments: Assignment[];
   isLoading: boolean;
   error: string | null;
-  fetchAssignments: (filters?: { batchId?: string }) => Promise<void>;
+  fetchAssignments: (filters?: { batchId?: string; status?: AssignmentStatus }) => Promise<void>;
   /** Replaces one assignment's `submissions` with the full roster (incl. "Not submitted" placeholders + batch info) from GET /assignments/:id/submissions. */
   fetchSubmissionsForAssignment: (assignmentId: string) => Promise<void>;
   createAssignment: (input: assignmentService.CreateAssignmentInput) => Promise<Assignment>;

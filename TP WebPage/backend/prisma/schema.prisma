@@ -50,6 +50,23 @@ enum SubmissionStatus {
   Late
 }
 
+enum FacilitatorRole {
+  PrimaryCoordinator @map("Primary Coordinator")
+  LeadFacilitator    @map("Lead Facilitator")
+  Trainer
+  GuestTrainer       @map("Guest Trainer")
+  AssignmentReviewer @map("Assignment Reviewer")
+  BackupFacilitator  @map("Backup Facilitator")
+}
+
+enum FacilitatorAssignmentStatus {
+  Active
+  Upcoming
+  TemporarilyUnavailable @map("Temporarily Unavailable")
+  Completed
+  Removed
+}
+
 enum SessionPlatform {
   GoogleMeet     @map("Google Meet")
   MicrosoftTeams @map("Microsoft Teams")
@@ -151,30 +168,33 @@ model User {
 
   role Role @relation(fields: [roleId], references: [id])
 
-  profile                        UserProfile?
-  refreshTokens                  RefreshToken[]
-  passwordResetTokens            PasswordResetToken[]
-  invitesSent                    UserInvite[]                   @relation("InviteSentBy")
-  batchesAsFacilitator           Batch[]                        @relation("BatchFacilitator")
-  batchEnrollments               BatchTrainee[]
-  assignmentsCreated             Assignment[]
-  submissions                    Submission[]
-  sessionsAsFacilitator          Session[]
-  attendanceMarked               Attendance[]                   @relation("AttendanceMarkedBy")
-  attendanceRecords              Attendance[]                   @relation("AttendanceTrainee")
-  resourcesUploaded              Resource[]
-  feedbackAsTrainee              FeedbackEntry[]                @relation("FeedbackTrainee")
-  feedbackAsFacilitator          FeedbackEntry[]                @relation("FeedbackFacilitator")
-  sessionFeedbackFormsCreated    SessionFeedbackForm[]
-  sessionFeedbackSubmissions     SessionFeedbackSubmission[]
-  assignmentFeedbackFormsCreated AssignmentFeedbackForm[]
-  assignmentFeedbackSubmissions  AssignmentFeedbackSubmission[]
-  announcements                  Announcement[]
-  announcementReads              AnnouncementRead[]
-  discussionThreads              DiscussionThread[]
-  discussionMessages             DiscussionMessage[]
-  auditLogEntries                AuditLog[]
-  notificationReads              NotificationRead[]
+  profile                         UserProfile?
+  refreshTokens                   RefreshToken[]
+  passwordResetTokens             PasswordResetToken[]
+  invitesSent                     UserInvite[]                   @relation("InviteSentBy")
+  batchesAsFacilitator            Batch[]                        @relation("BatchFacilitator")
+  batchEnrollments                BatchTrainee[]
+  assignmentsCreated              Assignment[]
+  submissions                     Submission[]
+  sessionsAsFacilitator           Session[]
+  attendanceMarked                Attendance[]                   @relation("AttendanceMarkedBy")
+  attendanceRecords               Attendance[]                   @relation("AttendanceTrainee")
+  resourcesUploaded               Resource[]
+  feedbackAsTrainee               FeedbackEntry[]                @relation("FeedbackTrainee")
+  feedbackAsFacilitator           FeedbackEntry[]                @relation("FeedbackFacilitator")
+  sessionFeedbackFormsCreated     SessionFeedbackForm[]
+  sessionFeedbackSubmissions      SessionFeedbackSubmission[]
+  assignmentFeedbackFormsCreated  AssignmentFeedbackForm[]
+  assignmentFeedbackSubmissions   AssignmentFeedbackSubmission[]
+  announcements                   Announcement[]
+  announcementReads               AnnouncementRead[]
+  discussionThreads               DiscussionThread[]
+  discussionMessages              DiscussionMessage[]
+  auditLogEntries                 AuditLog[]
+  notificationReads               NotificationRead[]
+  notifications                   Notification[]
+  batchFacilitatorAssignments     BatchFacilitator[]             @relation("BatchFacilitatorAssignments")
+  batchFacilitatorAssignmentsMade BatchFacilitator[]             @relation("BatchFacilitatorAssignedBy")
 
   // Matches the admin user-listing endpoint's role filter (GET /users?role=...).
   @@index([roleId])
@@ -374,19 +394,50 @@ model Batch {
   trainingPlan TrainingPlan @relation(fields: [trainingPlanId], references: [id])
   facilitator  User?        @relation("BatchFacilitator", fields: [facilitatorId], references: [id], onDelete: SetNull)
 
-  trainees          BatchTrainee[]
-  assignments       Assignment[]
-  assignmentBatches AssignmentBatch[]
-  sessions          Session[]
-  resources         Resource[]
-  feedback          FeedbackEntry[]
-  discussions       DiscussionThread[]
-  announcements     Announcement[]
+  trainees               BatchTrainee[]
+  assignments            Assignment[]
+  assignmentBatches      AssignmentBatch[]
+  sessions               Session[]
+  resources              Resource[]
+  feedback               FeedbackEntry[]
+  discussions            DiscussionThread[]
+  announcements          Announcement[]
+  notifications          Notification[]
+  facilitatorAssignments BatchFacilitator[]
 
   @@index([facilitatorId])
   @@index([status])
   @@index([trainingPlanId])
   @@map("batches")
+}
+
+// A batch's facilitator team is many-to-many (one batch, many facilitators; one facilitator,
+// many batches), with exactly one assignment marked isPrimaryCoordinator per batch at a time --
+// enforced in services/facilitatorAssignments.service.ts's setPrimary/remove, not by a DB
+// constraint. Batch.facilitatorId (above) stays as a denormalized cache of whichever assignment
+// currently holds isPrimaryCoordinator, kept in sync by that same service, so every existing
+// single-facilitator check elsewhere in the backend keeps working unchanged for coordinator-level
+// access. A surrogate id (not a composite [batchId, facilitatorId] PK) is used deliberately: a
+// removed-then-rejoined facilitator gets a fresh row rather than reusing history, matching the
+// duplicate check in create() which only excludes status: Removed rows.
+model BatchFacilitator {
+  id                   String                      @id @default(uuid())
+  batchId              String                      @map("batch_id")
+  facilitatorId        String                      @map("facilitator_id")
+  role                 FacilitatorRole
+  isPrimaryCoordinator Boolean                     @default(false) @map("is_primary_coordinator")
+  status               FacilitatorAssignmentStatus @default(Active)
+  assignedAt           DateTime                    @default(now()) @map("assigned_at")
+  assignedBy           String?                     @map("assigned_by")
+  notes                String?
+
+  batch          Batch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  facilitator    User  @relation("BatchFacilitatorAssignments", fields: [facilitatorId], references: [id], onDelete: Cascade)
+  assignedByUser User? @relation("BatchFacilitatorAssignedBy", fields: [assignedBy], references: [id], onDelete: SetNull)
+
+  @@index([batchId])
+  @@index([facilitatorId])
+  @@map("batch_facilitators")
 }
 
 model BatchTrainee {
@@ -794,4 +845,38 @@ model NotificationRead {
 
   @@id([auditLogId, userId])
   @@map("notification_reads")
+}
+
+enum NotificationSeverity {
+  Info
+  Warning
+  Critical
+}
+
+// A real, per-recipient notification -- distinct from AuditLog (which is a compliance/audit
+// trail, not a delivery mechanism, and has no recipient concept). One row per recipient, decided
+// at generation time (see services/notifications.service.ts's notifyUser/notifyUsers/notifyRole/
+// notifyBatch helpers) rather than one shared "event" row with scope resolved at read time -- so
+// every read/write in this table is a trivial `where: { recipientId: <caller> }`, with no
+// dynamic scope-resolution path that could leak another user's notifications.
+model Notification {
+  id          String               @id @default(uuid())
+  recipientId String               @map("recipient_id")
+  type        String
+  title       String
+  message     String
+  targetUrl   String?              @map("target_url")
+  severity    NotificationSeverity @default(Info)
+  // Context only (e.g. for a "View this batch" link or future filtering) -- never used to
+  // authorize access; authorization is always solely by recipientId.
+  batchId     String?              @map("batch_id")
+  createdAt   DateTime             @default(now()) @map("created_at")
+  readAt      DateTime?            @map("read_at")
+
+  recipient User   @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  batch     Batch? @relation(fields: [batchId], references: [id], onDelete: SetNull)
+
+  @@index([recipientId, createdAt(sort: Desc)])
+  @@index([recipientId, readAt])
+  @@map("notifications")
 }

@@ -41,7 +41,7 @@ function isRespondent(actor: AuthenticatedUser, audience: string): boolean {
 
 export async function attach(actor: AuthenticatedUser, sessionId: string, input: z.infer<typeof feedbackFormBodySchema>) {
   const session = await getSessionOrThrow(sessionId);
-  assertOwnerOrAdmin(actor, session.facilitatorId);
+  await assertOwnerOrAdmin(actor, session.facilitatorId, session.batchId);
 
   const existing = await prisma.sessionFeedbackForm.findUnique({ where: { sessionId } });
   if (existing) throw ApiError.conflict('This session already has a feedback form attached — edit it instead.');
@@ -54,7 +54,7 @@ export async function attach(actor: AuthenticatedUser, sessionId: string, input:
 
 export async function update(actor: AuthenticatedUser, sessionId: string, input: z.infer<typeof updateFeedbackFormBodySchema>) {
   const session = await getSessionOrThrow(sessionId);
-  assertOwnerOrAdmin(actor, session.facilitatorId);
+  await assertOwnerOrAdmin(actor, session.facilitatorId, session.batchId);
 
   const existing = await prisma.sessionFeedbackForm.findUnique({ where: { sessionId } });
   if (!existing) throw ApiError.notFound('No feedback form attached to this session yet.');
@@ -73,7 +73,7 @@ export async function update(actor: AuthenticatedUser, sessionId: string, input:
 
 export async function remove(actor: AuthenticatedUser, sessionId: string): Promise<void> {
   const session = await getSessionOrThrow(sessionId);
-  assertOwnerOrAdmin(actor, session.facilitatorId);
+  await assertOwnerOrAdmin(actor, session.facilitatorId, session.batchId);
 
   const existing = await prisma.sessionFeedbackForm.findUnique({ where: { sessionId } });
   if (!existing) throw ApiError.notFound('No feedback form attached to this session.');

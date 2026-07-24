@@ -11,10 +11,10 @@ import { useToastStore } from '../store/toastStore';
 import { findUserEmailByName } from '../services/api/userService';
 import { average } from '../utils/mathUtils';
 import { formatDateTime } from '../utils/dateUtils';
-import Breadcrumbs from '../components/Breadcrumbs';
 import StatusBadge from '../components/StatusBadge';
 import SavingButton from '../components/SavingButton';
 import { resolveFacilitatorProfileBack } from '../utils/facilitatorProfileNav';
+import AuthenticatedDetailLayout from '../layouts/AuthenticatedDetailLayout';
 
 export default function TraineeProfilePage() {
   const { traineeName: encodedName } = useParams();
@@ -22,6 +22,9 @@ export default function TraineeProfilePage() {
   const navigate = useNavigate();
   const location = useLocation();
   const backTarget = resolveFacilitatorProfileBack(location.state);
+  const backLabel = backTarget.label.replace(/^[‹\s]+/, '');
+  const origin = (location.state as { from?: { type: 'batch' | 'trainees' } } | null)?.from;
+  const activeTab = origin?.type === 'trainees' ? 'trainees' : 'batches';
   const { id: currentUserId } = useAuthStore();
 
   const batches = useBatchesStore((s) => s.batches);
@@ -84,12 +87,16 @@ export default function TraineeProfilePage() {
 
   if (!traineeName || !batch) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 text-gray-600">
-        <p className="mb-4">Trainee not found.</p>
-        <button onClick={goBack} className="text-blue-600 font-medium hover:underline">
-          {backTarget.label}
-        </button>
-      </div>
+      <AuthenticatedDetailLayout
+        role="facilitator"
+        activeTab={activeTab}
+        headerTitle="Trainee"
+        breadcrumbTrail={['Facilitator Dashboard', 'Trainees']}
+        onBack={goBack}
+        backLabel={backLabel}
+      >
+        <p className="text-sm text-gray-600">Trainee not found.</p>
+      </AuthenticatedDetailLayout>
     );
   }
 
@@ -153,24 +160,24 @@ export default function TraineeProfilePage() {
     .toUpperCase();
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="bg-white border-b border-gray-200 px-8 py-5">
-        <button onClick={goBack} className="text-sm text-blue-600 hover:underline font-medium mb-3">
-          {backTarget.label}
-        </button>
-        <Breadcrumbs trail={['Facilitator Dashboard', 'Trainees', traineeName]} />
-        <div className="flex items-center gap-4 mt-2">
-          <div className="w-16 h-16 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center font-bold text-xl">{initials}</div>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">{traineeName}</h1>
-            <p className="text-sm text-gray-500 mt-1">
-              {batch.name} • {batch.program} {batch.track}
-            </p>
-          </div>
+    <AuthenticatedDetailLayout
+      role="facilitator"
+      activeTab={activeTab}
+      headerTitle={traineeName}
+      breadcrumbTrail={['Facilitator Dashboard', 'Trainees', traineeName]}
+      onBack={goBack}
+      backLabel={backLabel}
+    >
+      <div className="flex items-center gap-4 mb-6">
+        <div className="w-16 h-16 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center font-bold text-xl">{initials}</div>
+        <div>
+          <p className="text-sm text-gray-500">
+            {batch.name} • {batch.program} {batch.track}
+          </p>
         </div>
-      </header>
+      </div>
 
-      <div className="p-8 max-w-4xl mx-auto space-y-6">
+      <div className="max-w-4xl mx-auto space-y-6">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5">
             <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">Missing/Late Submissions</div>
@@ -319,6 +326,6 @@ export default function TraineeProfilePage() {
           </div>
         </div>
       </div>
-    </div>
+    </AuthenticatedDetailLayout>
   );
 }

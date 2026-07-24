@@ -33,7 +33,7 @@ import AssignmentBatchesCell from '../components/AssignmentBatchesCell';
 import AssignmentTitleLink from '../components/AssignmentTitleLink';
 import FileViewButton from '../components/FileViewButton';
 import FeedbackCard from '../components/FeedbackCard';
-import NotificationPanel from '../components/NotificationPanel';
+import NotificationBell from '../components/NotificationBell';
 import ProfileDropdown from '../components/ProfileDropdown';
 import BatchRow from '../components/admin/BatchRow';
 import { formatDate, formatDateTime, isRecentlyUpdated } from '../utils/dateUtils';
@@ -46,6 +46,7 @@ import { useBaseline } from '../hooks/useBaseline';
 import TrendIndicator from '../components/TrendIndicator';
 import ProgressBar from '../components/ProgressBar';
 import StatusBadge from '../components/StatusBadge';
+import Tabs from '../components/Tabs';
 import EmptyState from '../components/EmptyState';
 import Breadcrumbs from '../components/Breadcrumbs';
 import { SkeletonCards, SkeletonRows } from '../components/Skeleton';
@@ -155,7 +156,7 @@ export default function AdminDashboardPage() {
   useEffect(() => {
     fetchAssignments();
   }, [fetchAssignments]);
-  const { sessions, fetchSessions, createSession, updateSession, assignSessionTrainer } = useSessionsStore();
+  const { sessions, fetchSessions, createSession, updateSession, assignSessionTrainer, deleteSession } = useSessionsStore();
   const [selectedSessionIds, setSelectedSessionIds] = useState<Set<string>>(new Set());
   const [assignTrainerTarget, setAssignTrainerTarget] = useState<Session[] | null>(null);
   const { requests: reassignmentRequests, fetchRequests: fetchReassignmentRequests, reviewRequest: reviewReassignmentRequest } = useReassignmentRequestsStore();
@@ -185,7 +186,6 @@ export default function AdminDashboardPage() {
   }, [fetchAnnouncements, batches]);
 
   const dashboardLoadTime = useRef(new Date()).current;
-  const notificationMenuRef = useRef<HTMLDivElement>(null);
   const baselineAvgScore = useBaseline(average(batches.map((b) => b.avgScore)));
   const baselineCompletion = useBaseline(average(batches.map((b) => b.completion)));
 
@@ -202,9 +202,6 @@ export default function AdminDashboardPage() {
     const timer = setTimeout(() => setTabLoading(false), 350);
     return () => clearTimeout(timer);
   }, [activeTab]);
-  const [notificationOpen, setNotificationOpen] = useState(false);
-  useClickOutside(notificationMenuRef, () => setNotificationOpen(false), notificationOpen);
-  const [readLogIds, setReadLogIds] = useState<Set<string>>(new Set());
   const [chartParameter, setChartParameter] = useState('completion');
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
 
@@ -280,9 +277,6 @@ export default function AdminDashboardPage() {
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
   const selectedBatch = batches.find((b) => b.id === selectedBatchId) ?? null;
 
-  const [editBatchModalOpen, setEditBatchModalOpen] = useState(false);
-  const [editBatchForm, setEditBatchForm] = useState({ poc: '', status: 'Active' as Batch['status'], avgScore: '', completion: '' });
-
   const [rescheduleModalOpen, setRescheduleModalOpen] = useState(false);
   const [rescheduleForm, setRescheduleForm] = useState({ date: '', time: '' });
 
@@ -330,6 +324,7 @@ export default function AdminDashboardPage() {
   const [sessionEditingId, setSessionEditingId] = useState<string | null>(null);
   const sessionEditPopoverRef = useRef<HTMLDivElement>(null);
   useClickOutside(sessionEditPopoverRef, () => setSessionEditingId(null), sessionEditingId !== null);
+  const [deleteSessionTarget, setDeleteSessionTarget] = useState<Session | null>(null);
   const [sessionEditDraft, setSessionEditDraft] = useState({ dateIso: '', startMin: 9 * 60, endMin: 10 * 60 });
 
   // Feedback
@@ -345,29 +340,10 @@ export default function AdminDashboardPage() {
 
   useEscapeKey(() => setBulkUploadModalOpen(false), bulkUploadModalOpen);
   useEscapeKey(() => setBatchManageModalOpen(false), batchManageModalOpen);
-  useEscapeKey(() => setNotificationOpen(false), notificationOpen);
   useEscapeKey(() => setSessionEditingId(null), sessionEditingId !== null);
 
   function hiddenUnless(tab: TabId) {
     return activeTab === tab ? '' : 'hidden';
-  }
-
-  const unreadCount = auditEntries.filter((n) => !readLogIds.has(n.id)).length;
-
-  function markNotificationRead(id: string) {
-    setReadLogIds((prev) => new Set(prev).add(id));
-  }
-
-  function markAllNotificationsRead() {
-    setReadLogIds((prev) => {
-      const next = new Set(prev);
-      auditEntries.forEach((n) => next.add(n.id));
-      return next;
-    });
-  }
-
-  function toggleNotificationMenu() {
-    setNotificationOpen((open) => !open);
   }
 
   // ---- Batch management actions ----
@@ -413,33 +389,9 @@ export default function AdminDashboardPage() {
     }
   }
 
-  function openEditBatch() {
-    if (!selectedBatch) return;
-    setEditBatchForm({
-      poc: selectedBatch.poc,
-      status: selectedBatch.status,
-      avgScore: selectedBatch.avgScore !== null ? String(selectedBatch.avgScore) : '',
-      completion: selectedBatch.completion !== null ? String(selectedBatch.completion) : ''
-    });
+  function openBatchProgram(batchId: string) {
     setBatchManageModalOpen(false);
-    setEditBatchModalOpen(true);
-  }
-
-  async function saveEditBatch() {
-    if (!selectedBatch) return;
-    try {
-      await updateBatch(selectedBatch.id, {
-        poc: editBatchForm.poc,
-        status: editBatchForm.status,
-        avgScore: editBatchForm.avgScore.trim() === '' ? null : Number(editBatchForm.avgScore),
-        completion: editBatchForm.completion.trim() === '' ? null : Number(editBatchForm.completion)
-      });
-      logEvent('Batch', `${selectedBatch.name} details were updated.`);
-      showToast('Batch details updated');
-      setEditBatchModalOpen(false);
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Unable to update batch.', 'error');
-    }
+    navigate(ROUTES.ADMIN_BATCH_DETAIL(batchId));
   }
 
   function openDeleteBatch() {
@@ -456,6 +408,18 @@ export default function AdminDashboardPage() {
       setDeleteBatchConfirmOpen(false);
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Unable to delete batch.', 'error');
+    }
+  }
+
+  async function confirmDeleteSession() {
+    if (!deleteSessionTarget) return;
+    try {
+      await deleteSession(deleteSessionTarget.id);
+      logEvent('Session', `"${deleteSessionTarget.title}" was deleted.`);
+      showToast('Session deleted');
+      setDeleteSessionTarget(null);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Unable to delete session.', 'error');
     }
   }
 
@@ -1091,16 +1055,32 @@ export default function AdminDashboardPage() {
   const totalRead = announcements.reduce((sum, a) => sum + a.readByCount, 0);
   const totalUnread = Math.max(0, totalAudienceReached - totalRead);
 
-  const filteredAssignments = useMemo(
+  // Search+batch filtered but not by status -- feeds the status Tabs' per-tab counts, which should
+  // reflect what else is currently selected without the count changing when you switch tabs.
+  const assignmentsBeforeStatusFilter = useMemo(
     () =>
       assignments.filter((a) => {
         const q = assignmentSearch.trim().toLowerCase();
         const matchesSearch = q === '' || a.title.toLowerCase().includes(q);
-        const matchesStatus = assignmentStatusFilter === 'All Statuses' || effectiveStatus(a) === assignmentStatusFilter;
         const matchesBatch = assignmentBatchFilter === 'All Batches' || a.batches.some((b) => b.name === assignmentBatchFilter);
-        return matchesSearch && matchesStatus && matchesBatch;
+        return matchesSearch && matchesBatch;
       }),
-    [assignments, assignmentSearch, assignmentStatusFilter, assignmentBatchFilter]
+    [assignments, assignmentSearch, assignmentBatchFilter]
+  );
+  const assignmentStatusTabs = useMemo(
+    () => [
+      { value: 'All Statuses', label: 'All', count: assignmentsBeforeStatusFilter.length },
+      ...(['Draft', 'Open', 'Closed', 'Overdue'] as const).map((status) => ({
+        value: status,
+        label: status,
+        count: assignmentsBeforeStatusFilter.filter((a) => effectiveStatus(a) === status).length
+      }))
+    ],
+    [assignmentsBeforeStatusFilter]
+  );
+  const filteredAssignments = useMemo(
+    () => assignmentsBeforeStatusFilter.filter((a) => assignmentStatusFilter === 'All Statuses' || effectiveStatus(a) === assignmentStatusFilter),
+    [assignmentsBeforeStatusFilter, assignmentStatusFilter]
   );
   const ASSIGNMENT_PAGE_SIZE = 6;
   const assignmentPageCount = Math.max(1, Math.ceil(filteredAssignments.length / ASSIGNMENT_PAGE_SIZE));
@@ -1210,36 +1190,8 @@ export default function AdminDashboardPage() {
       }
       headerRight={
         <>
-          <div className="relative" ref={notificationMenuRef}>
-            <button
-              onClick={toggleNotificationMenu}
-              className="relative text-gray-500 hover:text-gray-700 p-1 rounded-lg hover:bg-gray-100 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
-              aria-label="Notifications"
-              aria-haspopup="true"
-              aria-expanded={notificationOpen}
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
-              {unreadCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center px-1">{unreadCount}</span>
-              )}
-            </button>
-            <div className={`${notificationOpen ? '' : 'hidden'} absolute right-0 mt-2 bg-white rounded-xl shadow-xl border border-gray-200 z-50 overflow-hidden`}>
-              <NotificationPanel
-                entries={auditEntries}
-                readIds={readLogIds}
-                onMarkRead={markNotificationRead}
-                onMarkAllRead={markAllNotificationsRead}
-                onViewAll={() => { setActiveTab('logs'); setNotificationOpen(false); }}
-              />
-            </div>
-          </div>
-
-          <ProfileDropdown
-            role="admin"
-            onSignOut={() => setLogoutConfirmOpen(true)}
-            forceClose={notificationOpen}
-            onOpenChange={(open) => { if (open) setNotificationOpen(false); }}
-          />
+          <NotificationBell />
+          <ProfileDropdown role="admin" onSignOut={() => setLogoutConfirmOpen(true)} />
         </>
       }
     >
@@ -1367,6 +1319,7 @@ export default function AdminDashboardPage() {
                           onToggleExpand={() => setExpandedBatchId(expandedBatchId === b.id ? null : b.id)}
                           onToggleSelect={() => toggleBatchSelected(b.id)}
                           onManage={() => openBatchManage(b.id)}
+                          onOpenProgram={() => openBatchProgram(b.id)}
                           onManageFacilitators={() => setFacilitatorDrawerBatch({ id: b.id, name: b.name })}
                           onManageFeedback={() => setFeedbackDrawerBatch({ id: b.id, name: b.name })}
                           onSelectTrainee={(name) => openTraineeProfile(b.id, name)}
@@ -1389,6 +1342,7 @@ export default function AdminDashboardPage() {
                                 onToggleExpand={() => setExpandedBatchId(expandedBatchId === b.id ? null : b.id)}
                                 onToggleSelect={() => toggleBatchSelected(b.id)}
                                 onManage={() => openBatchManage(b.id)}
+                                onOpenProgram={() => openBatchProgram(b.id)}
                                 onManageFacilitators={() => setFacilitatorDrawerBatch({ id: b.id, name: b.name })}
                                 onManageFeedback={() => setFeedbackDrawerBatch({ id: b.id, name: b.name })}
                                 onSelectTrainee={(name) => openTraineeProfile(b.id, name)}
@@ -1683,17 +1637,13 @@ export default function AdminDashboardPage() {
                   placeholder="Search assignments..."
                   className="px-4 py-2 border border-gray-300 rounded-lg outline-none w-56 text-sm focus:ring-2 focus:ring-blue-500"
                 />
-                <select value={assignmentStatusFilter} onChange={(e) => setAssignmentStatusFilter(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg outline-none text-sm bg-white">
-                  <option>All Statuses</option>
-                  <option>Draft</option>
-                  <option>Open</option>
-                  <option>Closed</option>
-                  <option>Overdue</option>
-                </select>
                 <select value={assignmentBatchFilter} onChange={(e) => setAssignmentBatchFilter(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg outline-none text-sm bg-white">
                   <option>All Batches</option>
                   {batches.map((b) => <option key={b.id}>{b.name}</option>)}
                 </select>
+              </div>
+              <div className="px-4 pt-2 border-b border-gray-200 bg-gray-50">
+                <Tabs tabs={assignmentStatusTabs} active={assignmentStatusFilter} onChange={setAssignmentStatusFilter} aria-label="Filter assignments by status" />
               </div>
 
               {selectedAssignmentIds.size > 0 && (
@@ -2048,14 +1998,23 @@ export default function AdminDashboardPage() {
                         </div>
                         <div className="flex flex-col items-end gap-2 relative" ref={isEditing ? sessionEditPopoverRef : undefined}>
                           <StatusBadge status={s.status} />
-                          <button
-                            onClick={() => (isEditing ? setSessionEditingId(null) : startEditSession(s))}
-                            className={`text-xs font-bold rounded-full px-3 py-1.5 border transition-all duration-150 hover:scale-105 active:scale-95 ${
-                              isEditing ? 'text-gray-600 border-gray-200 bg-gray-50 hover:bg-gray-100' : 'text-blue-600 border-blue-200 bg-blue-50 hover:bg-blue-100'
-                            }`}
-                          >
-                            {isEditing ? 'Close' : 'Edit timing'}
-                          </button>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              onClick={() => (isEditing ? setSessionEditingId(null) : startEditSession(s))}
+                              className={`text-xs font-bold rounded-full px-3 py-1.5 border transition-all duration-150 hover:scale-105 active:scale-95 ${
+                                isEditing ? 'text-gray-600 border-gray-200 bg-gray-50 hover:bg-gray-100' : 'text-blue-600 border-blue-200 bg-blue-50 hover:bg-blue-100'
+                              }`}
+                            >
+                              {isEditing ? 'Close' : 'Edit timing'}
+                            </button>
+                            <button
+                              onClick={() => setDeleteSessionTarget(s)}
+                              aria-label={`Delete ${s.title}`}
+                              className="text-xs font-bold rounded-full px-3 py-1.5 border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 transition-all duration-150 hover:scale-105 active:scale-95"
+                            >
+                              Delete
+                            </button>
+                          </div>
                           {isEditing && (
                             <div className="absolute right-0 top-full mt-2 w-72 bg-white rounded-xl shadow-xl border border-gray-200 z-50 p-4">
                               <div className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">Reschedule Session</div>
@@ -2519,8 +2478,8 @@ export default function AdminDashboardPage() {
             </button>
           </div>
           <div className="space-y-3">
-            <button onClick={openReschedule} className="w-full text-left px-4 py-3 rounded-lg border border-blue-100 bg-blue-50 text-blue-700 font-bold hover:bg-blue-100">Reschedule batch session</button>
-            <button onClick={openEditBatch} className="w-full text-left px-4 py-3 rounded-lg border border-gray-200 bg-white text-gray-700 font-bold hover:bg-gray-50">Edit batch details</button>
+            <button onClick={() => selectedBatch && openBatchProgram(selectedBatch.id)} className="w-full text-left px-4 py-3 rounded-lg border border-blue-100 bg-blue-50 text-blue-700 font-bold hover:bg-blue-100">View Full Program</button>
+            <button onClick={openReschedule} className="w-full text-left px-4 py-3 rounded-lg border border-gray-200 bg-white text-gray-700 font-bold hover:bg-gray-50">Reschedule batch session</button>
             <button onClick={openDeleteBatch} className="w-full text-left px-4 py-3 rounded-lg border border-red-100 bg-red-50 text-red-700 font-bold hover:bg-red-100">Delete batch record</button>
           </div>
         </div>
@@ -2541,37 +2500,6 @@ export default function AdminDashboardPage() {
           <div className="flex justify-end space-x-3 mt-6">
             <button onClick={() => setRescheduleModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium">Cancel</button>
             <button onClick={saveReschedule} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium">Save</button>
-          </div>
-      </Modal>
-
-      {/* Edit Batch Modal */}
-      <Modal open={editBatchModalOpen} onClose={() => setEditBatchModalOpen(false)} title="Edit Batch Details" maxWidth="sm">
-          <div className="space-y-4">
-            <div>
-              <label htmlFor="admin-edit-batch-poc" className="block text-sm font-medium text-gray-700 mb-1">POC</label>
-              <input id="admin-edit-batch-poc" type="text" value={editBatchForm.poc} onChange={(e) => setEditBatchForm({ ...editBatchForm, poc: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none" />
-            </div>
-            <div>
-              <label htmlFor="admin-edit-batch-status" className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-              <select id="admin-edit-batch-status" value={editBatchForm.status} onChange={(e) => setEditBatchForm({ ...editBatchForm, status: e.target.value as Batch['status'] })} className="w-full px-3 py-2 border rounded-lg outline-none bg-white">
-                <option>Active</option>
-                <option>Upcoming</option>
-              </select>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="admin-edit-batch-avg-score" className="block text-sm font-medium text-gray-700 mb-1">Avg Score (%)</label>
-                <input id="admin-edit-batch-avg-score" type="number" value={editBatchForm.avgScore} onChange={(e) => setEditBatchForm({ ...editBatchForm, avgScore: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none" />
-              </div>
-              <div>
-                <label htmlFor="admin-edit-batch-completion" className="block text-sm font-medium text-gray-700 mb-1">Completion (%)</label>
-                <input id="admin-edit-batch-completion" type="number" value={editBatchForm.completion} onChange={(e) => setEditBatchForm({ ...editBatchForm, completion: e.target.value })} className="w-full px-3 py-2 border rounded-lg outline-none" />
-              </div>
-            </div>
-          </div>
-          <div className="flex justify-end space-x-3 mt-6">
-            <button onClick={() => setEditBatchModalOpen(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium">Cancel</button>
-            <button onClick={saveEditBatch} className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium">Save</button>
           </div>
       </Modal>
 
@@ -2668,6 +2596,16 @@ export default function AdminDashboardPage() {
         danger
         onConfirm={confirmDeleteBatch}
         onCancel={() => setDeleteBatchConfirmOpen(false)}
+      />
+
+      <ConfirmDialog
+        open={deleteSessionTarget !== null}
+        title="Delete session?"
+        message={`This will permanently remove "${deleteSessionTarget?.title ?? 'this session'}" from the schedule. This cannot be undone.`}
+        confirmLabel="Delete"
+        danger
+        onConfirm={confirmDeleteSession}
+        onCancel={() => setDeleteSessionTarget(null)}
       />
 
       <ConfirmDialog

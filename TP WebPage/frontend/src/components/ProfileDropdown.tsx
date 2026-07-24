@@ -1,17 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { Role } from '../types/role';
 import { useAuthStore } from '../store/authStore';
 import { useProfileStore } from '../store/profileStore';
+import { useSettingsDrawerStore } from '../store/settingsDrawerStore';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { useEscapeKey } from '../hooks/useEscapeKey';
-import { ROUTES } from '../constants/routes';
-
-const ACCOUNT_SETTINGS_ROUTE: Record<Role, string> = {
-  admin: ROUTES.ADMIN_ACCOUNT_SETTINGS,
-  facilitator: ROUTES.FACILITATOR_ACCOUNT_SETTINGS,
-  trainee: ROUTES.TRAINEE_ACCOUNT_SETTINGS
-};
+import { useAvatarUrl } from '../hooks/useAvatarUrl';
 
 interface ProfileDropdownProps {
   role: Role;
@@ -69,11 +63,12 @@ function DetailRow({ label, value, last }: { label: string; value?: string; last
 }
 
 export default function ProfileDropdown({ role, onSignOut, forceClose, onOpenChange }: ProfileDropdownProps) {
-  const navigate = useNavigate();
+  const openSettings = useSettingsDrawerStore((s) => s.openSettings);
   const email = useAuthStore((s) => s.email);
   const displayName = useAuthStore((s) => s.displayName);
   const profile = useProfileStore((s) => s.profiles[role]);
   const fetchMyProfile = useProfileStore((s) => s.fetchMyProfile);
+  const avatarUrl = useAvatarUrl(profile.avatarStorageKey, profile.avatarUpdatedAt);
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -110,14 +105,14 @@ export default function ProfileDropdown({ role, onSignOut, forceClose, onOpenCha
         aria-haspopup="true"
         aria-expanded={open}
       >
-        {profile.avatarDataUrl ? <img src={profile.avatarDataUrl} alt="" className="w-full h-full object-cover" /> : initial}
+        {avatarUrl ? <img src={avatarUrl} alt="" className="w-full h-full object-cover" /> : initial}
       </button>
       <div className={`${open ? '' : 'hidden'} absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-xl border border-gray-200 z-50 overflow-hidden`}>
         <div className={`bg-gradient-to-r ${style.gradient} px-5 py-5 text-white relative overflow-hidden`}>
           <div className="absolute -top-8 -right-8 w-24 h-24 bg-white/10 rounded-full"></div>
           <div className="flex items-center space-x-3 relative z-10">
             <div className="w-14 h-14 bg-white/20 rounded-full flex items-center justify-center text-xl font-bold ring-2 ring-white/30 overflow-hidden">
-              {profile.avatarDataUrl ? <img src={profile.avatarDataUrl} alt="" className="w-full h-full object-cover" /> : initial}
+              {avatarUrl ? <img src={avatarUrl} alt="" className="w-full h-full object-cover" /> : initial}
             </div>
             <div>
               <div className="font-bold text-base">{name}</div>
@@ -179,7 +174,7 @@ export default function ProfileDropdown({ role, onSignOut, forceClose, onOpenCha
           <button
             onClick={() => {
               setOpen(false);
-              navigate(ACCOUNT_SETTINGS_ROUTE[role]);
+              openSettings();
             }}
             className="block w-full text-center py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg font-medium transition-colors"
           >

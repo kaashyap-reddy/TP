@@ -152,8 +152,11 @@ export interface TrainerAssignmentInput {
 }
 
 export async function assignSessionTrainer(id: string, input: TrainerAssignmentInput): Promise<Session> {
+  // The real backend's updateSessionSchema only accepts `facilitatorId` (primary trainer
+  // reassignment) -- coTrainerIds/guestTrainer/trainerNotes have no backend field yet and are
+  // silently dropped there (Demo Mode still simulates all four; see sessions.validator.ts).
   const updated = await api.patch<{ session: ApiSession }>(`/sessions/${id}`, {
-    primaryTrainerId: input.primaryTrainerId,
+    facilitatorId: input.primaryTrainerId,
     coTrainerIds: input.coTrainerIds,
     guestTrainer: input.guestTrainer,
     trainerNotes: input.trainerNotes

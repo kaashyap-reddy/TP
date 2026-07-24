@@ -1,3 +1,7 @@
+// Adds toBeInTheDocument()/toHaveAttribute()/etc. to expect() for the jsdom component tests;
+// a no-op for the plain node-environment tests in this same suite.
+import '@testing-library/jest-dom/vitest';
+
 // Minimal Web Storage stand-in so browser-targeted modules (demoMode's sessionStorage session,
 // authService's localStorage hint) can run under vitest's node environment without jsdom.
 class MemoryStorage implements Storage {

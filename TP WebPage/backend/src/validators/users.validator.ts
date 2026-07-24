@@ -25,3 +25,6 @@ export const updateUserByAdminSchema = updateSelfSchema.extend({
   department: z.string().trim().optional(),
   idNumber: z.string().trim().optional()
 });
+
+export const AVATAR_ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png'] as const;
+export const AVATAR_MAX_DIMENSION_PX = 4096;

@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const userFindFirst = vi.fn();
+const userFindMany = vi.fn();
+const notificationCreateMany = vi.fn();
 const batchFindUnique = vi.fn();
 const trainingPlanFindUnique = vi.fn();
 const txBatchCreate = vi.fn();
@@ -22,15 +24,22 @@ const tx = {
 
 vi.mock('../prisma/client', () => ({
   prisma: {
-    user: { findFirst: (...args: unknown[]) => userFindFirst(...args) },
+    user: { findFirst: (...args: unknown[]) => userFindFirst(...args), findMany: (...args: unknown[]) => userFindMany(...args) },
     batch: { findUnique: (...args: unknown[]) => batchFindUnique(...args) },
     trainingPlan: { findUnique: (...args: unknown[]) => trainingPlanFindUnique(...args) },
+    notification: { createMany: (...args: unknown[]) => notificationCreateMany(...args) },
     $transaction: (cb: (tx: unknown) => unknown) => cb(tx)
   }
 }));
 
 describe('batches.service create() — Training Plan automation', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // A batch created with no facilitator triggers an admin notification fan-out
+    // (notifyRole('admin', ...)) -- default to "no admins" so tests that don't care about this
+    // side effect don't need to stub it themselves.
+    userFindMany.mockResolvedValue([]);
+  });
 
   it('instantiates sessions (with their feedback forms) and linked assignments from the plan template', async () => {
     const { create } = await import('../services/batches.service');

@@ -6,6 +6,16 @@ import { AuthenticatedUser } from '../types/auth';
 import { ApiError } from '../utils/ApiError';
 import { buildPaginatedResponse, getPagination } from '../utils/pagination';
 import { createAssignmentSchema, listAssignmentsQuerySchema, updateAssignmentSchema } from '../validators/assignments.validator';
+import { isOnAnyBatchTeam } from './facilitatorAssignments.service';
+import { notifyBatch } from './notifications.service';
+
+// An assignment can span multiple batches (AssignmentBatch join) — the scalar `batchId` is only
+// the primary/first one (see the schema comment on Assignment.batchId). Team-membership checks
+// need every batch the assignment is actually assigned to, not just the primary.
+function batchIdsOf(assignment: { batchId: string; batches: { batchId: string }[] }): string[] {
+  const ids = assignment.batches.map((b) => b.batchId);
+  return ids.length > 0 ? ids : [assignment.batchId];
+}
 
 // Submissions are embedded directly (not just a count) because every consumer of the list
 // endpoint (Admin/Facilitator/Trainee dashboards) needs per-submission status/grade/trainee to
@@ -33,10 +43,13 @@ type AssignmentWithIncludes = Prisma.AssignmentGetPayload<{ include: typeof incl
 
 // facilitatorId is nullable — assignments generated from a Training Plan template usually have
 // no individual owner. A null facilitatorId never matches an actor, so only admin can manage an
-// unowned assignment; once a trainer is set, that facilitator (or admin) can.
-function assertOwnerOrAdmin(actor: AuthenticatedUser, facilitatorId: string | null) {
+// unowned assignment; once a trainer is set, that facilitator (or admin) can. Also passes for any
+// facilitator who is an active member of any of the assignment's batch teams (not just the
+// primary batch), matching multi-batch assignments.
+async function assertOwnerOrAdmin(actor: AuthenticatedUser, facilitatorId: string | null, batchIds: string[]) {
   if (actor.role === 'admin') return;
   if (actor.role === 'facilitator' && actor.id === facilitatorId) return;
+  if (actor.role === 'facilitator' && (await isOnAnyBatchTeam(actor.id, batchIds))) return;
   throw ApiError.forbidden('You do not own this assignment.');
 }
 
@@ -59,12 +72,14 @@ function serialize(assignment: AssignmentWithIncludes) {
 // as sessions.service.ts's withFeedbackFormVisibility() and assignmentFeedback.service.ts's
 // getForAssignment(). `actor` is optional only because a couple of internal callers (and tests)
 // don't have one; the HTTP handlers always pass req.user.
-function withFeedbackFormVisibility<T extends { facilitatorId: string | null; feedbackForm: { audience: string } | null }>(
-  actor: AuthenticatedUser | undefined,
-  assignment: T
-): T {
+async function withFeedbackFormVisibility<
+  T extends { facilitatorId: string | null; feedbackForm: { audience: string } | null; batchId: string; batches: { batchId: string }[] }
+>(actor: AuthenticatedUser | undefined, assignment: T): Promise<T> {
   if (!actor || !assignment.feedbackForm) return assignment;
-  const isManager = actor.role === 'admin' || (actor.role === 'facilitator' && actor.id === assignment.facilitatorId);
+  const isManager =
+    actor.role === 'admin' ||
+    (actor.role === 'facilitator' &&
+      (actor.id === assignment.facilitatorId || (await isOnAnyBatchTeam(actor.id, batchIdsOf(assignment)))));
   if (isManager) return assignment;
   if (actor.role === 'trainee' && assignment.feedbackForm.audience === 'Facilitators') return { ...assignment, feedbackForm: null };
   if (actor.role === 'facilitator' && assignment.feedbackForm.audience === 'Trainees') return { ...assignment, feedbackForm: null };
@@ -91,18 +106,14 @@ export async function list(query: z.infer<typeof listAssignmentsQuerySchema>, ac
     prisma.assignment.count({ where })
   ]);
 
-  return buildPaginatedResponse(
-    assignments.map((a) => serialize(withFeedbackFormVisibility(actor, a))),
-    total,
-    page,
-    pageSize
-  );
+  const visible = await Promise.all(assignments.map((a) => withFeedbackFormVisibility(actor, a)));
+  return buildPaginatedResponse(visible.map(serialize), total, page, pageSize);
 }
 
 export async function getById(id: string, actor?: AuthenticatedUser) {
   const assignment = await prisma.assignment.findFirst({ where: { id, deletedAt: null }, include });
   if (!assignment) throw ApiError.notFound('Assignment not found.');
-  return serialize(withFeedbackFormVisibility(actor, assignment));
+  return serialize(await withFeedbackFormVisibility(actor, assignment));
 }
 
 export async function create(
@@ -140,6 +151,25 @@ export async function create(
       },
       include
     });
+
+    if (assignment.status === 'Open') {
+      await Promise.all(
+        batchIds.map((batchId) =>
+          notifyBatch(
+            batchId,
+            {
+              type: 'AssignmentPublished',
+              title: 'New assignment published',
+              message: `"${assignment.title}" is now available.`,
+              targetUrl: `/trainee/assignments/${assignment.id}`,
+              severity: 'Info'
+            },
+            { trainees: true }
+          )
+        )
+      );
+    }
+
     return serialize(assignment);
   } catch (err) {
     // The file already landed in storage before the DB write failed — don't leave it orphaned.
@@ -154,9 +184,12 @@ export async function update(
   input: z.infer<typeof updateAssignmentSchema>,
   file?: Express.Multer.File
 ) {
-  const existing = await prisma.assignment.findFirst({ where: { id, deletedAt: null } });
+  const existing = await prisma.assignment.findFirst({
+    where: { id, deletedAt: null },
+    include: { batches: { select: { batchId: true } } }
+  });
   if (!existing) throw ApiError.notFound('Assignment not found.');
-  assertOwnerOrAdmin(actor, existing.facilitatorId);
+  await assertOwnerOrAdmin(actor, existing.facilitatorId, batchIdsOf(existing));
 
   let batchIds: string[] | undefined;
   if (input.batchIds) {
@@ -206,9 +239,12 @@ export async function update(
 }
 
 export async function softDelete(actor: AuthenticatedUser, id: string): Promise<void> {
-  const existing = await prisma.assignment.findFirst({ where: { id, deletedAt: null } });
+  const existing = await prisma.assignment.findFirst({
+    where: { id, deletedAt: null },
+    include: { batches: { select: { batchId: true } } }
+  });
   if (!existing) throw ApiError.notFound('Assignment not found.');
-  assertOwnerOrAdmin(actor, existing.facilitatorId);
+  await assertOwnerOrAdmin(actor, existing.facilitatorId, batchIdsOf(existing));
 
   await prisma.assignment.update({ where: { id }, data: { deletedAt: new Date() } });
 }
@@ -228,8 +264,7 @@ export async function getAttachmentForView(actor: AuthenticatedUser, id: string)
 
   if (actor.role === 'facilitator') {
     if (actor.id === assignment.facilitatorId) return assignment;
-    const managesAssignedBatch = await prisma.batch.findFirst({ where: { id: { in: batchIds }, facilitatorId: actor.id } });
-    if (managesAssignedBatch) return assignment;
+    if (await isOnAnyBatchTeam(actor.id, batchIds)) return assignment;
     throw ApiError.forbidden('You do not have access to this assignment.');
   }
 

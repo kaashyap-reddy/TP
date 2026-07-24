@@ -13,6 +13,7 @@ interface BatchRowProps {
   onToggleExpand: () => void;
   onToggleSelect: () => void;
   onManage: () => void;
+  onOpenProgram: () => void;
   onManageFacilitators: () => void;
   onManageFeedback: () => void;
   onSelectTrainee: (traineeName: string) => void;
@@ -25,7 +26,7 @@ function initials(name: string): string {
 
 const MAX_VISIBLE_AVATARS = 3;
 
-function BatchRow({ batch: b, facilitatorTeam, isExpanded, isSelected, onToggleExpand, onToggleSelect, onManage, onManageFacilitators, onManageFeedback, onSelectTrainee }: BatchRowProps) {
+function BatchRow({ batch: b, facilitatorTeam, isExpanded, isSelected, onToggleExpand, onToggleSelect, onManage, onOpenProgram, onManageFacilitators, onManageFeedback, onSelectTrainee }: BatchRowProps) {
   const primary = facilitatorTeam.find((a) => a.isPrimaryCoordinator);
   const visible = facilitatorTeam.slice(0, MAX_VISIBLE_AVATARS);
   const extraCount = Math.max(0, facilitatorTeam.length - visible.length);
@@ -46,7 +47,9 @@ function BatchRow({ batch: b, facilitatorTeam, isExpanded, isSelected, onToggleE
           </button>
         </td>
         <td className="px-6 py-4">
-          <div className="font-bold text-gray-900 text-base">{b.name}</div>
+          <button onClick={onOpenProgram} className="font-bold text-gray-900 text-base hover:text-blue-600 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 rounded text-left">
+            {b.name}
+          </button>
           <div className="text-xs text-gray-500 mt-1">
             {b.traineeCount} Trainees Enrolled <span className="text-gray-300 mx-1">•</span> Started {b.startMonth}
           </div>

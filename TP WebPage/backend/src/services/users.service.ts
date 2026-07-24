@@ -1,10 +1,19 @@
+import fs from 'fs';
 import { Prisma } from '@prisma/client';
+import { imageSize } from 'image-size';
 import { prisma } from '../prisma/client';
+import { getStorageProvider } from './storage';
 import { AppRole } from '../types/auth';
 import { ApiError } from '../utils/ApiError';
 import { buildPaginatedResponse, getPagination } from '../utils/pagination';
 import { z } from 'zod';
-import { listUsersQuerySchema, updateSelfSchema, updateUserByAdminSchema } from '../validators/users.validator';
+import {
+  AVATAR_ALLOWED_MIME_TYPES,
+  AVATAR_MAX_DIMENSION_PX,
+  listUsersQuerySchema,
+  updateSelfSchema,
+  updateUserByAdminSchema
+} from '../validators/users.validator';
 
 const include = { role: true, profile: true } satisfies Prisma.UserInclude;
 
@@ -24,7 +33,8 @@ function toDto(user: Prisma.UserGetPayload<{ include: typeof include }>) {
           company: user.profile.company,
           department: user.profile.department,
           idNumber: user.profile.idNumber,
-          avatarStorageKey: user.profile.avatarStorageKey
+          avatarStorageKey: user.profile.avatarStorageKey,
+          avatarUpdatedAt: user.profile.avatarUpdatedAt
         }
       : null
   };
@@ -118,4 +128,62 @@ export async function softDelete(id: string): Promise<void> {
     prisma.user.update({ where: { id }, data: { deletedAt: new Date(), isActive: false } }),
     prisma.refreshToken.updateMany({ where: { userId: id, revokedAt: null }, data: { revokedAt: new Date() } })
   ]);
+}
+
+function readFileBytes(file: Express.Multer.File): Buffer {
+  // multer gives a Buffer on memoryStorage (cloud providers) or writes straight to disk (local
+  // provider) — dimension validation needs the bytes either way, see middleware/upload.ts.
+  return file.buffer ?? fs.readFileSync(file.path);
+}
+
+export async function uploadAvatar(userId: string, file: Express.Multer.File) {
+  if (!AVATAR_ALLOWED_MIME_TYPES.includes(file.mimetype as (typeof AVATAR_ALLOWED_MIME_TYPES)[number])) {
+    throw ApiError.badRequest('Avatar must be a JPG or PNG image.');
+  }
+
+  const { width, height } = imageSize(readFileBytes(file));
+  if (width > AVATAR_MAX_DIMENSION_PX || height > AVATAR_MAX_DIMENSION_PX) {
+    throw ApiError.badRequest(`Avatar image is too large (max ${AVATAR_MAX_DIMENSION_PX}x${AVATAR_MAX_DIMENSION_PX}px).`);
+  }
+
+  const existing = await prisma.userProfile.findUnique({ where: { userId } });
+  const storageKey = await getStorageProvider().save(file, 'avatars');
+
+  try {
+    await prisma.userProfile.upsert({
+      where: { userId },
+      create: { userId, avatarStorageKey: storageKey, avatarMimeType: file.mimetype, avatarSizeBytes: file.size, avatarUpdatedAt: new Date() },
+      update: { avatarStorageKey: storageKey, avatarMimeType: file.mimetype, avatarSizeBytes: file.size, avatarUpdatedAt: new Date() }
+    });
+  } catch (err) {
+    await getStorageProvider().remove(storageKey);
+    throw err;
+  }
+
+  if (existing?.avatarStorageKey) {
+    await getStorageProvider().remove(existing.avatarStorageKey);
+  }
+
+  return getById(userId);
+}
+
+export async function removeAvatar(userId: string) {
+  const existing = await prisma.userProfile.findUnique({ where: { userId } });
+  if (existing?.avatarStorageKey) {
+    await getStorageProvider().remove(existing.avatarStorageKey);
+  }
+
+  await prisma.userProfile.upsert({
+    where: { userId },
+    create: { userId, avatarStorageKey: null, avatarMimeType: null, avatarSizeBytes: null, avatarUpdatedAt: null },
+    update: { avatarStorageKey: null, avatarMimeType: null, avatarSizeBytes: null, avatarUpdatedAt: null }
+  });
+
+  return getById(userId);
+}
+
+export async function getAvatarForStreaming(userId: string): Promise<{ storageKey: string; mimeType: string }> {
+  const profile = await prisma.userProfile.findUnique({ where: { userId } });
+  if (!profile?.avatarStorageKey) throw ApiError.notFound('No avatar uploaded.');
+  return { storageKey: profile.avatarStorageKey, mimeType: profile.avatarMimeType ?? 'image/jpeg' };
 }

@@ -1,5 +1,7 @@
-import { ReactNode, useEffect, useId, useRef } from 'react';
+import { ReactNode, useId, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useEscapeKey } from '../hooks/useEscapeKey';
+import { useModalA11y } from '../hooks/useModalA11y';
 
 interface ModalProps {
   open: boolean;
@@ -22,20 +24,21 @@ const MAX_WIDTH_CLASS: Record<'sm' | 'md' | 'lg', string> = {
   lg: 'max-w-2xl'
 };
 
+// Shared z-index for every true modal/drawer overlay (Modal, ConfirmDialog, SettingsDrawer,
+// MobileNavDrawer) so stacking is predictable instead of each file picking its own value.
+export const OVERLAY_Z = 'z-[100]';
+
 export default function Modal({ open, onClose, title, subtitle, maxWidth = 'sm', children }: ModalProps) {
   useEscapeKey(onClose, open);
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
+  useModalA11y(open, panelRef);
 
-  // Move focus into the dialog when it opens so keyboard/screen-reader users land inside it
-  // instead of it opening silently around wherever focus already was.
-  useEffect(() => {
-    if (open) panelRef.current?.focus();
-  }, [open]);
+  if (!open) return null;
 
-  return (
+  return createPortal(
     <div
-      className={`fixed inset-0 bg-gray-900 bg-opacity-50 ${open ? 'flex' : 'hidden'} items-center justify-center z-50 p-4`}
+      className={`fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center ${OVERLAY_Z} p-4`}
       role="dialog"
       aria-modal="true"
       aria-labelledby={title ? titleId : undefined}
@@ -55,6 +58,7 @@ export default function Modal({ open, onClose, title, subtitle, maxWidth = 'sm',
         {subtitle && <p className="text-sm text-gray-500 mb-4">{subtitle}</p>}
         {children}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

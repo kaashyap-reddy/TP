@@ -19,7 +19,6 @@ import { dateStrToIso, formatTimeRange, isoToDateStr, minutesToLabel, parseTimeR
 import { formatDate, formatDateTime } from '../utils/dateUtils';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { useEscapeKey } from '../hooks/useEscapeKey';
-import { useNotifications } from '../hooks/useNotifications';
 import { useBaseline } from '../hooks/useBaseline';
 import { useReassignmentRequestsStore } from '../store/reassignmentRequestsStore';
 import { canRequestReassignment } from '../constants/permissions';
@@ -29,9 +28,10 @@ import { average } from '../utils/mathUtils';
 import EmptyState from '../components/EmptyState';
 import ProgressBar from '../components/ProgressBar';
 import StatusBadge from '../components/StatusBadge';
+import Tabs from '../components/Tabs';
 import Pagination, { paginate } from '../components/Pagination';
 import Breadcrumbs from '../components/Breadcrumbs';
-import NotificationPanel from '../components/NotificationPanel';
+import NotificationBell from '../components/NotificationBell';
 import ProfileDropdown from '../components/ProfileDropdown';
 import SavingButton from '../components/SavingButton';
 import StatCard from '../components/StatCard';
@@ -118,7 +118,6 @@ export default function FacilitatorDashboardPage() {
     fetchFeedback();
   }, [fetchFeedback]);
   const submitFeedback = useFeedbackStore((s) => s.submitFeedback);
-  const auditEntries = useAuditLogStore((s) => s.entries);
   const logEvent = useAuditLogStore((s) => s.logEvent);
   const showToast = useToastStore((s) => s.showToast);
   const announcements = useAnnouncementsStore((s) => s.announcements);
@@ -134,6 +133,7 @@ export default function FacilitatorDashboardPage() {
   const [quickGradeTarget, setQuickGradeTarget] = useState<{ assignmentId: string; traineeName: string } | null>(null);
   const [quickGradeScore, setQuickGradeScore] = useState('');
   const [quickGradeStatus, setQuickGradeStatus] = useState<SubmissionStatus>('Completed');
+  const [quickGradeFeedback, setQuickGradeFeedback] = useState('');
 
   useEffect(() => {
     if (activeTab !== 'announcements') return;
@@ -144,14 +144,13 @@ export default function FacilitatorDashboardPage() {
       }
     });
   }, [activeTab, announcements, markAnnouncementRead]);
-  const [notificationOpen, setNotificationOpen] = useState(false);
-  const { readLogIds, unreadCount, markNotificationRead, markAllNotificationsRead } = useNotifications(auditEntries);
   const [announcementModalOpen, setAnnouncementModalOpen] = useState(false);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const [resourceSearch, setResourceSearch] = useState('');
   const [traineeSearch, setTraineeSearch] = useState('');
   const [assignmentSearch, setAssignmentSearch] = useState('');
   const [assignmentStatusFilter, setAssignmentStatusFilter] = useState('All Statuses');
+  const [pendingGradingOnly, setPendingGradingOnly] = useState(false);
   const [assignmentBatchFilter, setAssignmentBatchFilter] = useState('All Batches');
   const [selectedAssignmentIds, setSelectedAssignmentIds] = useState<Set<string>>(new Set());
   const [assignmentPage, setAssignmentPage] = useState(1);
@@ -164,10 +163,8 @@ export default function FacilitatorDashboardPage() {
 
   // Quick Action menu
   const [quickActionOpen, setQuickActionOpen] = useState(false);
-  const notificationMenuRef = useRef<HTMLDivElement>(null);
   const quickActionMenuRef = useRef<HTMLDivElement>(null);
   const sessionEditPopoverRef = useRef<HTMLDivElement>(null);
-  useClickOutside(notificationMenuRef, () => setNotificationOpen(false), notificationOpen);
   useClickOutside(quickActionMenuRef, () => setQuickActionOpen(false), quickActionOpen);
   const [announcementTitle, setAnnouncementTitle] = useState('');
   const [announcementPriority, setAnnouncementPriority] = useState<Announcement['priority']>('Normal');
@@ -218,7 +215,6 @@ export default function FacilitatorDashboardPage() {
   const [feedbackComment, setFeedbackComment] = useState('');
 
   useEscapeKey(() => setQuickActionOpen(false), quickActionOpen);
-  useEscapeKey(() => setNotificationOpen(false), notificationOpen);
 
   function hiddenUnless(tab: TabId) {
     return activeTab === tab ? '' : 'hidden';
@@ -341,16 +337,35 @@ export default function FacilitatorDashboardPage() {
     [facilitatorAssignments]
   );
 
-  const filteredFacilitatorAssignments = useMemo(
+  // Search+batch filtered but not by status -- feeds the status Tabs' per-tab counts, which should
+  // reflect what else is currently selected without the count changing when you switch tabs.
+  const assignmentsBeforeStatusFilter = useMemo(
     () =>
       facilitatorAssignments.filter((a) => {
         const q = assignmentSearch.trim().toLowerCase();
         const matchesSearch = q === '' || a.title.toLowerCase().includes(q);
-        const matchesStatus = assignmentStatusFilter === 'All Statuses' || effectiveStatus(a) === assignmentStatusFilter;
         const matchesBatch = assignmentBatchFilter === 'All Batches' || a.batches.some((b) => b.name === assignmentBatchFilter);
-        return matchesSearch && matchesStatus && matchesBatch;
+        return matchesSearch && matchesBatch;
       }),
-    [facilitatorAssignments, assignmentSearch, assignmentStatusFilter, assignmentBatchFilter]
+    [facilitatorAssignments, assignmentSearch, assignmentBatchFilter]
+  );
+  const assignmentStatusTabs = useMemo(
+    () => [
+      { value: 'All Statuses', label: 'All', count: assignmentsBeforeStatusFilter.length },
+      ...(['Draft', 'Open', 'Closed', 'Overdue'] as const).map((status) => ({
+        value: status,
+        label: status,
+        count: assignmentsBeforeStatusFilter.filter((a) => effectiveStatus(a) === status).length
+      }))
+    ],
+    [assignmentsBeforeStatusFilter]
+  );
+  const filteredFacilitatorAssignments = useMemo(
+    () =>
+      assignmentsBeforeStatusFilter
+        .filter((a) => assignmentStatusFilter === 'All Statuses' || effectiveStatus(a) === assignmentStatusFilter)
+        .filter((a) => !pendingGradingOnly || a.submissions.some((s) => s.status === 'Under Review')),
+    [assignmentsBeforeStatusFilter, assignmentStatusFilter, pendingGradingOnly]
   );
   const ASSIGNMENT_PAGE_SIZE = 6;
   const assignmentPageCount = Math.max(1, Math.ceil(filteredFacilitatorAssignments.length / ASSIGNMENT_PAGE_SIZE));
@@ -428,17 +443,18 @@ export default function FacilitatorDashboardPage() {
   const baselineAvgScore = useBaseline(facilitatorAvgScore);
   const baselineAttendance = useBaseline(facilitatorAttendance);
 
-  function openQuickGrade(assignmentId: string, traineeName: string, current: { grade: number | null; status: SubmissionStatus }) {
+  function openQuickGrade(assignmentId: string, traineeName: string, current: { grade: number | null; status: SubmissionStatus; feedback: string }) {
     setQuickGradeTarget({ assignmentId, traineeName });
     setQuickGradeScore(current.grade !== null ? String(current.grade) : '');
     setQuickGradeStatus(current.status === 'Not Started' ? 'Completed' : current.status);
+    setQuickGradeFeedback(current.feedback);
   }
 
   async function saveQuickGrade() {
     if (!quickGradeTarget) return;
     const grade = quickGradeScore.trim() === '' ? null : Number(quickGradeScore);
     try {
-      await updateSubmission(quickGradeTarget.assignmentId, quickGradeTarget.traineeName, { grade, status: quickGradeStatus });
+      await updateSubmission(quickGradeTarget.assignmentId, quickGradeTarget.traineeName, { grade, status: quickGradeStatus, feedback: quickGradeFeedback });
       logEvent('Grading', `${quickGradeTarget.traineeName} was quick-graded ${grade ?? '—'}/100.`, { module: 'Assignments' });
       showToast('Grade saved');
       setQuickGradeTarget(null);
@@ -680,32 +696,7 @@ export default function FacilitatorDashboardPage() {
       headerTitle={HEADER_TITLES[activeTab]}
       headerRight={
         <>
-          <div className="relative" ref={notificationMenuRef}>
-            <button
-              className="relative text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-lg p-1"
-              onClick={() => setNotificationOpen(!notificationOpen)}
-              aria-label="Notifications"
-              aria-haspopup="true"
-              aria-expanded={notificationOpen}
-            >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
-              {unreadCount > 0 && (
-                <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] text-white">{unreadCount}</span>
-              )}
-            </button>
-
-            <div className={`${notificationOpen ? '' : 'hidden'} absolute top-full right-0 mt-2 bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden z-50`}>
-              <NotificationPanel
-                entries={auditEntries}
-                readIds={readLogIds}
-                onMarkRead={markNotificationRead}
-                onMarkAllRead={markAllNotificationsRead}
-                onViewAll={() => setNotificationOpen(false)}
-                viewAllLabel="Close"
-              />
-            </div>
-          </div>
-
+          <NotificationBell />
           <ProfileDropdown role="facilitator" onSignOut={() => setLogoutConfirmOpen(true)} />
         </>
       }
@@ -764,6 +755,7 @@ export default function FacilitatorDashboardPage() {
                 label="Pending Reviews"
                 value={facilitatorPendingReviews}
                 actionText={facilitatorPendingReviews > 0 ? 'Needs grading' : 'All caught up'}
+                onClick={() => { setActiveTab('assignments'); setPendingGradingOnly(facilitatorPendingReviews > 0); }}
                 hoverClassName="hover:shadow-md hover:-translate-y-0.5 transition-all duration-150"
               />
               <StatCard
@@ -843,28 +835,41 @@ export default function FacilitatorDashboardPage() {
                           </div>
                         </div>
                         {isQuickGrading && (
-                          <div className="mt-3 flex items-end gap-3 bg-blue-50/40 border border-blue-100 rounded-lg p-3">
+                          <div className="mt-3 bg-blue-50/40 border border-blue-100 rounded-lg p-3 space-y-3">
+                            <div className="flex items-end gap-3 flex-wrap">
+                              <div>
+                                <label htmlFor="facilitator-quick-grade-score" className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Score (0-100)</label>
+                                <input
+                                  id="facilitator-quick-grade-score"
+                                  type="number"
+                                  min={0}
+                                  max={100}
+                                  value={quickGradeScore}
+                                  onChange={(e) => setQuickGradeScore(e.target.value)}
+                                  className="w-24 px-2 py-1.5 border border-gray-300 rounded-lg text-sm outline-none"
+                                />
+                              </div>
+                              <div>
+                                <label htmlFor="facilitator-quick-grade-status" className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Status</label>
+                                <select id="facilitator-quick-grade-status" value={quickGradeStatus} onChange={(e) => setQuickGradeStatus(e.target.value as SubmissionStatus)} className="px-2 py-1.5 border border-gray-300 rounded-lg text-sm outline-none bg-white">
+                                  <option>Not Started</option>
+                                  <option>Under Review</option>
+                                  <option>Completed</option>
+                                  <option>Late</option>
+                                </select>
+                              </div>
+                              <button onClick={saveQuickGrade} className="px-4 py-1.5 bg-blue-600 text-white rounded-lg font-bold text-sm hover:bg-blue-700">Save Grade</button>
+                            </div>
                             <div>
-                              <label htmlFor="facilitator-quick-grade-score" className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Score (0-100)</label>
-                              <input
-                                id="facilitator-quick-grade-score"
-                                type="number"
-                                min={0}
-                                max={100}
-                                value={quickGradeScore}
-                                onChange={(e) => setQuickGradeScore(e.target.value)}
-                                className="w-24 px-2 py-1.5 border border-gray-300 rounded-lg text-sm outline-none"
+                              <label htmlFor="facilitator-quick-grade-feedback" className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Feedback</label>
+                              <textarea
+                                id="facilitator-quick-grade-feedback"
+                                value={quickGradeFeedback}
+                                onChange={(e) => setQuickGradeFeedback(e.target.value)}
+                                placeholder="Write constructive feedback here..."
+                                className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm outline-none h-16"
                               />
                             </div>
-                            <div>
-                              <label htmlFor="facilitator-quick-grade-status" className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Status</label>
-                              <select id="facilitator-quick-grade-status" value={quickGradeStatus} onChange={(e) => setQuickGradeStatus(e.target.value as SubmissionStatus)} className="px-2 py-1.5 border border-gray-300 rounded-lg text-sm outline-none bg-white">
-                                <option>Under Review</option>
-                                <option>Completed</option>
-                                <option>Late</option>
-                              </select>
-                            </div>
-                            <button onClick={saveQuickGrade} className="px-4 py-1.5 bg-blue-600 text-white rounded-lg font-bold text-sm hover:bg-blue-700">Save Grade</button>
                           </div>
                         )}
                       </div>
@@ -1029,17 +1034,17 @@ export default function FacilitatorDashboardPage() {
                   placeholder="Search assignments..."
                   className="px-4 py-2 border border-gray-300 rounded-lg outline-none w-56 text-sm focus:ring-2 focus:ring-blue-500"
                 />
-                <select value={assignmentStatusFilter} onChange={(e) => setAssignmentStatusFilter(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg outline-none text-sm bg-white">
-                  <option>All Statuses</option>
-                  <option>Draft</option>
-                  <option>Open</option>
-                  <option>Closed</option>
-                  <option>Overdue</option>
-                </select>
                 <select value={assignmentBatchFilter} onChange={(e) => setAssignmentBatchFilter(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg outline-none text-sm bg-white">
                   <option>All Batches</option>
                   {batches.map((b) => <option key={b.id}>{b.name}</option>)}
                 </select>
+                <label className="flex items-center gap-1.5 text-sm text-gray-700 font-medium px-2">
+                  <input type="checkbox" checked={pendingGradingOnly} onChange={(e) => setPendingGradingOnly(e.target.checked)} />
+                  Pending grading only
+                </label>
+              </div>
+              <div className="px-4 pt-2 border-b border-gray-200 bg-gray-50">
+                <Tabs tabs={assignmentStatusTabs} active={assignmentStatusFilter} onChange={setAssignmentStatusFilter} aria-label="Filter assignments by status" />
               </div>
 
               {selectedAssignmentIds.size > 0 && (

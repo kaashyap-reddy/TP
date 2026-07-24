@@ -2,10 +2,11 @@ import { create } from 'zustand';
 import type { Role } from '../types/role';
 import type { RoleProfile } from '../types/profile';
 import * as userService from '../services/api/userService';
+import type { ApiUser } from '../services/api/userService';
 
 export type { RoleProfile } from '../types/profile';
 
-const EMPTY_PROFILE: RoleProfile = { phone: '', location: '', avatarDataUrl: null };
+const EMPTY_PROFILE: RoleProfile = { phone: '', location: '', avatarStorageKey: null, avatarUpdatedAt: null };
 
 interface ProfileState {
   profiles: Record<Role, RoleProfile>;
@@ -13,7 +14,23 @@ interface ProfileState {
   error: string | null;
   /** Loads the currently authenticated user's own profile into profiles[role]. */
   fetchMyProfile: (role: Role) => Promise<void>;
-  updateProfile: (role: Role, patch: Partial<RoleProfile>) => Promise<void>;
+  /** Applies an already-fetched user's profile fields to the cache -- makes no network call
+   * itself, so callers that already hold a fresh ApiUser (post-save, post-avatar-upload) don't
+   * trigger a redundant GET just to keep the cache in sync. */
+  applyUserProfile: (role: Role, user: ApiUser) => void;
+}
+
+function profileFromUser(existing: RoleProfile, user: ApiUser): RoleProfile {
+  return {
+    ...existing,
+    phone: user.profile?.phone ?? '',
+    location: user.profile?.location ?? '',
+    avatarStorageKey: user.profile?.avatarStorageKey ?? null,
+    avatarUpdatedAt: user.profile?.avatarUpdatedAt ?? null,
+    company: user.profile?.company ?? undefined,
+    department: user.profile?.department ?? undefined,
+    idNumber: user.profile?.idNumber ?? undefined
+  };
 }
 
 export const useProfileStore = create<ProfileState>()((set, get) => ({
@@ -24,36 +41,12 @@ export const useProfileStore = create<ProfileState>()((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       const user = await userService.getMe();
-      const existing = get().profiles[role];
-      set({
-        isLoading: false,
-        profiles: {
-          ...get().profiles,
-          [role]: {
-            ...existing,
-            phone: user.profile?.phone ?? '',
-            location: user.profile?.location ?? '',
-            company: user.profile?.company ?? undefined,
-            department: user.profile?.department ?? undefined,
-            idNumber: user.profile?.idNumber ?? undefined
-          }
-        }
-      });
+      set({ isLoading: false, profiles: { ...get().profiles, [role]: profileFromUser(get().profiles[role], user) } });
     } catch (err) {
       set({ isLoading: false, error: err instanceof Error ? err.message : 'Unable to load profile.' });
     }
   },
-  updateProfile: async (role, patch) => {
-    // avatarDataUrl has no backend counterpart yet (no avatar-upload endpoint) — kept local-only.
-    const { avatarDataUrl, ...editable } = patch;
-    if (Object.keys(editable).length > 0) {
-      await userService.updateMe(editable);
-    }
-    set({
-      profiles: {
-        ...get().profiles,
-        [role]: { ...get().profiles[role], ...patch }
-      }
-    });
+  applyUserProfile: (role, user) => {
+    set({ profiles: { ...get().profiles, [role]: profileFromUser(get().profiles[role], user) } });
   }
 }));

@@ -9,6 +9,7 @@ export interface ApiUserProfile {
   department: string | null;
   idNumber: string | null;
   avatarStorageKey: string | null;
+  avatarUpdatedAt: string | null;
 }
 
 export interface ApiUser {
@@ -76,6 +77,18 @@ export async function updateUser(
 
 export async function deleteUser(id: string): Promise<void> {
   await api.delete(`/users/${id}`);
+}
+
+export async function uploadAvatar(file: File): Promise<ApiUser> {
+  const body = new FormData();
+  body.append('avatar', file);
+  const { user } = await api.post<{ user: ApiUser }>('/users/me/avatar', body);
+  return user;
+}
+
+export async function removeAvatar(): Promise<ApiUser> {
+  const { user } = await api.delete<{ user: ApiUser }>('/users/me/avatar');
+  return user;
 }
 
 /** Best-effort resolution for UI flows that only collect a free-text name (e.g. batch POC, invite recipient). */

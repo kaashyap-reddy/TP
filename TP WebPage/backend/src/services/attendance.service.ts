@@ -13,7 +13,7 @@ async function getSessionOrThrow(sessionId: string) {
 
 export async function listForSession(actor: AuthenticatedUser, sessionId: string) {
   const session = await getSessionOrThrow(sessionId);
-  assertOwnerOrAdmin(actor, session.facilitatorId);
+  await assertOwnerOrAdmin(actor, session.facilitatorId, session.batchId);
 
   return prisma.attendance.findMany({
     where: { sessionId },
@@ -24,7 +24,7 @@ export async function listForSession(actor: AuthenticatedUser, sessionId: string
 
 export async function bulkMark(actor: AuthenticatedUser, sessionId: string, input: z.infer<typeof bulkMarkAttendanceSchema>) {
   const session = await getSessionOrThrow(sessionId);
-  assertOwnerOrAdmin(actor, session.facilitatorId);
+  await assertOwnerOrAdmin(actor, session.facilitatorId, session.batchId);
 
   await prisma.$transaction(
     input.records.map((record) =>
@@ -42,7 +42,7 @@ export async function bulkMark(actor: AuthenticatedUser, sessionId: string, inpu
 export async function updateOne(actor: AuthenticatedUser, id: string, input: z.infer<typeof updateAttendanceSchema>) {
   const attendance = await prisma.attendance.findUnique({ where: { id }, include: { session: true } });
   if (!attendance) throw ApiError.notFound('Attendance record not found.');
-  assertOwnerOrAdmin(actor, attendance.session.facilitatorId);
+  await assertOwnerOrAdmin(actor, attendance.session.facilitatorId, attendance.session.batchId);
 
   return prisma.attendance.update({
     where: { id },

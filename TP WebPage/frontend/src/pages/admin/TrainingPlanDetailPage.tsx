@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import Breadcrumbs from '../../components/Breadcrumbs';
 import EmptyState from '../../components/EmptyState';
 import Modal from '../../components/Modal';
 import SavingButton from '../../components/SavingButton';
@@ -11,6 +10,7 @@ import { useToastStore } from '../../store/toastStore';
 import { useAuditLogStore } from '../../store/auditLogStore';
 import { ROUTES } from '../../constants/routes';
 import type { TrainingPlanAnnouncement, TrainingPlanAssignment, TrainingPlanResource, TrainingPlanSession } from '../../types/trainingPlan';
+import AuthenticatedDetailLayout from '../../layouts/AuthenticatedDetailLayout';
 
 function minutesToTimeInput(minutes: number): string {
   const h = Math.floor(minutes / 60) % 24;
@@ -486,25 +486,29 @@ export default function TrainingPlanDetailPage() {
 
   if (notFound) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 text-gray-600">
-        <p className="mb-4">Training plan not found.</p>
-        <button onClick={goBack} className="text-blue-600 font-medium hover:underline">
-          ‹ Back to Training Plans
-        </button>
-      </div>
+      <AuthenticatedDetailLayout
+        role="admin"
+        activeTab="trainingPlans"
+        headerTitle="Training Plan"
+        breadcrumbTrail={['Admin', 'Training Plans']}
+        onBack={goBack}
+        backLabel="Back to Training Plans"
+      >
+        <p className="text-sm text-gray-600">Training plan not found.</p>
+      </AuthenticatedDetailLayout>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="bg-white border-b border-gray-200 px-8 py-5">
-        <button onClick={goBack} className="text-sm text-blue-600 hover:underline font-medium mb-3">
-          ‹ Back to Training Plans
-        </button>
-        <Breadcrumbs trail={['Admin', 'Training Plans', detail?.name ?? summary?.name ?? '…']} />
-      </header>
-
-      <div className="p-8 max-w-5xl mx-auto space-y-8">
+    <AuthenticatedDetailLayout
+      role="admin"
+      activeTab="trainingPlans"
+      headerTitle={detail?.name ?? summary?.name ?? '…'}
+      breadcrumbTrail={['Admin', 'Training Plans', detail?.name ?? summary?.name ?? '…']}
+      onBack={goBack}
+      backLabel="Back to Training Plans"
+    >
+      <div className="max-w-5xl mx-auto space-y-8">
         {!detail ? (
           <p className="text-sm text-gray-400">Loading…</p>
         ) : (
@@ -513,7 +517,7 @@ export default function TrainingPlanDetailPage() {
             <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
               <div className="flex items-start justify-between gap-4 flex-wrap">
                 <div>
-                  <h1 className="text-2xl font-bold text-gray-900">{detail.name}</h1>
+                  <h2 className="text-2xl font-bold text-gray-900">{detail.name}</h2>
                   <p className="text-xs text-gray-400 mt-1">{detail.code}</p>
                   <p className="text-sm text-gray-600 mt-3 max-w-2xl">
                     {detail.description || <span className="text-gray-400 italic">No description yet.</span>}
@@ -934,6 +938,6 @@ export default function TrainingPlanDetailPage() {
           </div>
         </div>
       </Modal>
-    </div>
+    </AuthenticatedDetailLayout>
   );
 }

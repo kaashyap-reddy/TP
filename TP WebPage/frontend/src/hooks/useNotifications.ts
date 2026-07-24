@@ -1,48 +1,84 @@
-import { useState } from 'react';
-import { AuditLogEntry } from '../store/auditLogStore';
+import { useCallback, useRef, useState } from 'react';
 import * as notificationService from '../services/api/notificationService';
+import type { AppNotification } from '../services/api/notificationService';
 import { usePolling } from './usePolling';
 
 /**
- * Notification-bell state. Backed by the real GET /api/notifications (audit-log-derived,
- * per-user read state) whenever it returns data; falls back to the caller's client-side
- * audit entries when it doesn't — Demo Mode's interceptor returns an empty list, and a
- * dev server without a database errors, so both keep today's client-derived behavior.
+ * Notification-bell state, backed by the real per-recipient GET /api/notifications (see
+ * backend/src/services/notifications.service.ts) -- every entry returned already belongs solely
+ * to the current user, so no audit-log fallback or client-side filtering is needed here anymore.
  */
-export function useNotifications(auditEntries: AuditLogEntry[]) {
-  const [apiEntries, setApiEntries] = useState<AuditLogEntry[] | null>(null);
-  const [readLogIds, setReadLogIds] = useState<Set<string>>(new Set());
+export function useNotifications() {
+  const [entries, setEntries] = useState<AppNotification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  // Guards against overlapping refreshes (a slow request still in flight when the next poll
+  // tick or a manual "Retry" click fires) racing each other and applying stale results last.
+  const requestIdRef = useRef(0);
 
-  function refreshNotifications() {
+  const refreshNotifications = useCallback(() => {
+    const requestId = ++requestIdRef.current;
+    setError(null);
     return notificationService
-      .listNotifications()
-      .then(({ entries, readIds }) => {
-        if (entries.length === 0) return;
-        setApiEntries(entries);
-        setReadLogIds(readIds);
+      .listNotifications({ page: 1 })
+      .then(({ entries, unreadCount, totalPages }) => {
+        if (requestId !== requestIdRef.current) return;
+        setEntries(entries);
+        setUnreadCount(unreadCount);
+        setPage(1);
+        setTotalPages(totalPages);
+        setIsLoading(false);
       })
-      .catch(() => undefined);
-  }
+      .catch((err) => {
+        if (requestId !== requestIdRef.current) return;
+        setIsLoading(false);
+        setError(err instanceof Error ? err.message : 'Unable to load notifications.');
+      });
+  }, []);
 
   usePolling(refreshNotifications, 30_000);
 
-  const source = apiEntries ?? auditEntries;
-  const notificationEntries = source.slice(0, 8);
-  const unreadCount = source.filter((n) => !readLogIds.has(n.id)).length;
+  function loadMore() {
+    if (isLoadingMore || page >= totalPages) return;
+    const nextPage = page + 1;
+    setIsLoadingMore(true);
+    notificationService
+      .listNotifications({ page: nextPage })
+      .then(({ entries: more, totalPages }) => {
+        setEntries((prev) => [...prev, ...more]);
+        setPage(nextPage);
+        setTotalPages(totalPages);
+      })
+      .catch(() => undefined)
+      .finally(() => setIsLoadingMore(false));
+  }
 
   function markNotificationRead(id: string) {
-    setReadLogIds((prev) => new Set(prev).add(id));
-    if (apiEntries) void notificationService.markNotificationRead(id).catch(() => undefined);
+    setEntries((prev) => prev.map((n) => (n.id === id ? { ...n, readAt: n.readAt ?? new Date().toISOString() } : n)));
+    setUnreadCount((prev) => Math.max(0, prev - 1));
+    void notificationService.markNotificationRead(id).catch(() => undefined);
   }
 
   function markAllNotificationsRead() {
-    setReadLogIds((prev) => {
-      const next = new Set(prev);
-      source.forEach((n) => next.add(n.id));
-      return next;
-    });
-    if (apiEntries) void notificationService.markAllNotificationsRead().catch(() => undefined);
+    setEntries((prev) => prev.map((n) => ({ ...n, readAt: n.readAt ?? new Date().toISOString() })));
+    setUnreadCount(0);
+    void notificationService.markAllNotificationsRead().catch(() => undefined);
   }
 
-  return { readLogIds, notificationEntries, unreadCount, markNotificationRead, markAllNotificationsRead };
+  return {
+    entries,
+    unreadCount,
+    isLoading,
+    error,
+    hasMore: page < totalPages,
+    isLoadingMore,
+    loadMore,
+    refreshNotifications,
+    markNotificationRead,
+    markAllNotificationsRead
+  };
 }

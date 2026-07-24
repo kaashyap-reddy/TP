@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { prisma } from '../prisma/client';
 import { AuthenticatedUser } from '../types/auth';
 import { ApiError } from '../utils/ApiError';
+import { isOnAnyBatchTeam } from './facilitatorAssignments.service';
 import { feedbackFormBodySchema, updateFeedbackFormBodySchema } from '../validators/sessionFeedback.validator';
 
 // Mirrors sessionFeedback.service.ts one-to-one, but the form hangs off an Assignment. The one
@@ -24,10 +25,14 @@ function batchIdsOf(assignment: { batchId: string; batches: { batchId: string }[
 
 // facilitatorId is nullable — assignments generated from a Training Plan template usually have
 // no individual owner, so only admin can manage those; once a trainer is set, that facilitator
-// (or admin) can.
-function assertOwnerOrAdmin(actor: AuthenticatedUser, facilitatorId: string | null) {
+// (or admin) can. Also passes for any facilitator who is an active team member of any of the
+// assignment's batches -- mirrors assignments.service.ts's own (separately-defined)
+// assertOwnerOrAdmin, which this file intentionally does not import (this form's batchIds come
+// from the local batchIdsOf() below, not a single cached batchId).
+async function assertOwnerOrAdmin(actor: AuthenticatedUser, facilitatorId: string | null, batchIds: string[]) {
   if (actor.role === 'admin') return;
   if (actor.role === 'facilitator' && actor.id === facilitatorId) return;
+  if (actor.role === 'facilitator' && (await isOnAnyBatchTeam(actor.id, batchIds))) return;
   throw ApiError.forbidden('You do not own this assignment.');
 }
 
@@ -64,7 +69,7 @@ function isRespondent(actor: AuthenticatedUser, audience: string): boolean {
 
 export async function attach(actor: AuthenticatedUser, assignmentId: string, input: z.infer<typeof feedbackFormBodySchema>) {
   const assignment = await getAssignmentOrThrow(assignmentId);
-  assertOwnerOrAdmin(actor, assignment.facilitatorId);
+  await assertOwnerOrAdmin(actor, assignment.facilitatorId, batchIdsOf(assignment));
 
   const existing = await prisma.assignmentFeedbackForm.findUnique({ where: { assignmentId } });
   if (existing) throw ApiError.conflict('This assignment already has a feedback form attached — edit it instead.');
@@ -77,7 +82,7 @@ export async function attach(actor: AuthenticatedUser, assignmentId: string, inp
 
 export async function update(actor: AuthenticatedUser, assignmentId: string, input: z.infer<typeof updateFeedbackFormBodySchema>) {
   const assignment = await getAssignmentOrThrow(assignmentId);
-  assertOwnerOrAdmin(actor, assignment.facilitatorId);
+  await assertOwnerOrAdmin(actor, assignment.facilitatorId, batchIdsOf(assignment));
 
   const existing = await prisma.assignmentFeedbackForm.findUnique({ where: { assignmentId } });
   if (!existing) throw ApiError.notFound('No feedback form attached to this assignment yet.');
@@ -96,7 +101,7 @@ export async function update(actor: AuthenticatedUser, assignmentId: string, inp
 
 export async function remove(actor: AuthenticatedUser, assignmentId: string): Promise<void> {
   const assignment = await getAssignmentOrThrow(assignmentId);
-  assertOwnerOrAdmin(actor, assignment.facilitatorId);
+  await assertOwnerOrAdmin(actor, assignment.facilitatorId, batchIdsOf(assignment));
 
   const existing = await prisma.assignmentFeedbackForm.findUnique({ where: { assignmentId } });
   if (!existing) throw ApiError.notFound('No feedback form attached to this assignment.');
@@ -112,7 +117,10 @@ export async function getForAssignment(actor: AuthenticatedUser, assignmentId: s
   if (!form) return null;
 
   // Audience gating — identical to sessionFeedback.service.ts getForSession().
-  const isManager = actor.role === 'admin' || (actor.role === 'facilitator' && actor.id === assignment.facilitatorId);
+  const isManager =
+    actor.role === 'admin' ||
+    (actor.role === 'facilitator' &&
+      (actor.id === assignment.facilitatorId || (await isOnAnyBatchTeam(actor.id, batchIdsOf(assignment)))));
   if (!isManager) {
     if (actor.role === 'trainee' && form.audience === 'Facilitators') return null;
     if (actor.role === 'facilitator' && form.audience === 'Trainees') return null;

@@ -1,4 +1,4 @@
-import { handleDemoRequest, isDemoMode } from './demoMode';
+import { currentDemoUserId, getDemoAvatarFile, handleDemoRequest, isDemoMode } from './demoMode';
 
 const API_URL = import.meta.env.VITE_API_URL ?? '/api';
 
@@ -116,6 +116,14 @@ export const api = {
 
 export async function apiDownload(path: string): Promise<Blob> {
   if (isDemoMode()) {
+    // The avatar the user just uploaded this session is a real File in memory (see
+    // demoMode.ts's demoAvatarFiles) -- hand it back instead of the generic placeholder so the
+    // preview/round-trip is honest, not just theatrical.
+    if (path === '/users/me/avatar') {
+      const file = getDemoAvatarFile(currentDemoUserId());
+      if (!file) throw new ApiError(404, 'No avatar uploaded.');
+      return file;
+    }
     return new Blob(['This is a sample file — Demo Mode has no real file storage behind it.'], { type: 'text/plain' });
   }
 

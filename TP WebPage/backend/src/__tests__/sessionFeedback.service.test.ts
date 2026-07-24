@@ -9,6 +9,7 @@ const submissionFindUnique = vi.fn();
 const submissionUpsert = vi.fn();
 const batchTraineeCount = vi.fn();
 const batchTraineeFindUnique = vi.fn();
+const batchFacilitatorFindFirst = vi.fn();
 
 vi.mock('../prisma/client', () => ({
   prisma: {
@@ -26,7 +27,10 @@ vi.mock('../prisma/client', () => ({
     batchTrainee: {
       count: (...a: unknown[]) => batchTraineeCount(...a),
       findUnique: (...a: unknown[]) => batchTraineeFindUnique(...a)
-    }
+    },
+    // assertOwnerOrAdmin (sessions.service.ts) widens facilitator ownership to active batch-team
+    // membership via isOnBatchTeam(), which queries this table.
+    batchFacilitator: { findFirst: (...a: unknown[]) => batchFacilitatorFindFirst(...a) }
   }
 }));
 
@@ -38,7 +42,10 @@ const trainee = { id: 'trainee-1', email: 't@x.com', role: 'trainee' as const, p
 const session = { id: 'session-1', batchId: 'batch-1', facilitatorId: 'facilitator-1', deletedAt: null };
 
 describe('sessionFeedback.service', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    batchFacilitatorFindFirst.mockResolvedValue(null);
+  });
 
   it('lets the owning facilitator attach a feedback form', async () => {
     const { attach } = await import('../services/sessionFeedback.service');

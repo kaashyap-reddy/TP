@@ -26,11 +26,17 @@ async function resolveScopedBatchIds(actor: AuthenticatedUser, requestedBatchId?
     return requestedBatchId ? [requestedBatchId] : null;
   }
   if (actor.role === 'facilitator') {
-    const batches = await prisma.batch.findMany({
-      where: { facilitatorId: actor.id, deletedAt: null, ...(requestedBatchId ? { id: requestedBatchId } : {}) },
-      select: { id: true }
-    });
-    return batches.map((b) => b.id);
+    const [ownedBatches, teamAssignments] = await Promise.all([
+      prisma.batch.findMany({
+        where: { facilitatorId: actor.id, deletedAt: null, ...(requestedBatchId ? { id: requestedBatchId } : {}) },
+        select: { id: true }
+      }),
+      prisma.batchFacilitator.findMany({
+        where: { facilitatorId: actor.id, status: { not: 'Removed' }, ...(requestedBatchId ? { batchId: requestedBatchId } : {}) },
+        select: { batchId: true }
+      })
+    ]);
+    return [...new Set([...ownedBatches.map((b) => b.id), ...teamAssignments.map((a) => a.batchId)])];
   }
   const enrollments = await prisma.batchTrainee.findMany({
     where: { traineeId: actor.id, removedAt: null, ...(requestedBatchId ? { batchId: requestedBatchId } : {}) },

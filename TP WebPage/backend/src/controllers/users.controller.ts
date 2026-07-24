@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { recordAuditEvent } from '../services/audit';
 import * as usersService from '../services/users.service';
+import { getStorageProvider } from '../services/storage';
 import { ApiError } from '../utils/ApiError';
 import { asyncHandler } from '../utils/asyncHandler';
 
@@ -39,6 +40,26 @@ export const updateUserHandler = asyncHandler(async (req: Request, res: Response
     newValue: req.body.role ?? null
   });
   res.status(200).json({ user });
+});
+
+export const uploadAvatarHandler = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.user) throw ApiError.unauthorized();
+  if (!req.file) throw ApiError.badRequest('An image file is required.');
+  const user = await usersService.uploadAvatar(req.user.id, req.file);
+  res.status(200).json({ user });
+});
+
+export const removeAvatarHandler = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.user) throw ApiError.unauthorized();
+  const user = await usersService.removeAvatar(req.user.id);
+  res.status(200).json({ user });
+});
+
+export const getAvatarHandler = asyncHandler(async (req: Request, res: Response) => {
+  if (!req.user) throw ApiError.unauthorized();
+  const { storageKey, mimeType } = await usersService.getAvatarForStreaming(req.user.id);
+  const extension = mimeType === 'image/png' ? 'png' : 'jpg';
+  await getStorageProvider().sendFile(res, storageKey, `avatar.${extension}`, { inline: true });
 });
 
 export const deleteUserHandler = asyncHandler(async (req: Request, res: Response) => {

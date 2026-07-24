@@ -4,13 +4,16 @@ const batchFindMany = vi.fn();
 const batchTraineeFindMany = vi.fn();
 const sessionFindMany = vi.fn();
 const assignmentFindMany = vi.fn();
+const batchFacilitatorFindMany = vi.fn();
 
 vi.mock('../prisma/client', () => ({
   prisma: {
     batch: { findMany: (...a: unknown[]) => batchFindMany(...a) },
     batchTrainee: { findMany: (...a: unknown[]) => batchTraineeFindMany(...a) },
     session: { findMany: (...a: unknown[]) => sessionFindMany(...a) },
-    assignment: { findMany: (...a: unknown[]) => assignmentFindMany(...a) }
+    assignment: { findMany: (...a: unknown[]) => assignmentFindMany(...a) },
+    // resolveScopedBatchIds widens a facilitator's scope to active batch-team membership too.
+    batchFacilitator: { findMany: (...a: unknown[]) => batchFacilitatorFindMany(...a) }
   }
 }));
 
@@ -21,7 +24,10 @@ const trainee = { id: 'trainee-1', email: 't@x.com', role: 'trainee' as const, p
 const query = { type: 'all' as const };
 
 describe('calendar.service — event aggregation', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    batchFacilitatorFindMany.mockResolvedValue([]);
+  });
 
   it('does not scope by batch for an admin with no batchId filter, and issues exactly one session + one assignment query', async () => {
     sessionFindMany.mockResolvedValueOnce([
@@ -70,6 +76,20 @@ describe('calendar.service — event aggregation', () => {
     expect(batchFindMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ facilitatorId: facilitator.id }) }));
     expect(sessionFindMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: expect.objectContaining({ batchId: { in: ['batch-1'] } }) })
+    );
+  });
+
+  it("includes a facilitator's active team-membership batches alongside batches they own", async () => {
+    batchFindMany.mockResolvedValueOnce([{ id: 'batch-1' }]);
+    batchFacilitatorFindMany.mockResolvedValueOnce([{ batchId: 'batch-2' }]);
+    sessionFindMany.mockResolvedValueOnce([]);
+    assignmentFindMany.mockResolvedValueOnce([]);
+
+    const { getEvents } = await import('../services/calendar.service');
+    await getEvents(facilitator, query);
+
+    expect(sessionFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ batchId: { in: ['batch-1', 'batch-2'] } }) })
     );
   });
 

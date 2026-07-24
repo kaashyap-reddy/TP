@@ -39,6 +39,55 @@ describe('demo session (auth)', () => {
   });
 });
 
+describe('notifications (per-recipient scoping)', () => {
+  it("different demo users see different, correctly-scoped notification lists", () => {
+    demo.startDemoSession('admin');
+    const adminRes = get<{ data: { type: string }[]; unreadCount: number }>('/notifications');
+    expect(adminRes.data.every((n) => n.type !== 'AssignmentPublished' && n.type !== 'SubmissionReviewed')).toBe(true);
+    expect(adminRes.data.some((n) => n.type === 'BatchUnassigned')).toBe(true);
+
+    demo.startDemoSession('facilitator');
+    const facilitatorRes = get<{ data: { type: string }[] }>('/notifications');
+    expect(facilitatorRes.data.some((n) => n.type === 'SubmissionReceived')).toBe(true);
+    expect(facilitatorRes.data.some((n) => n.type === 'BatchUnassigned')).toBe(false);
+
+    // demo-trainee (Priya, the default trainee session) and demo-trainee-2 (Rahul) must not see
+    // each other's notifications -- this is the frontend-visible half of the authorization
+    // guarantee also covered server-side by backend/src/__tests__/notifications.authorization.test.ts.
+    demo.startDemoSession('trainee');
+    const traineeOneRes = get<{ data: { id: string }[] }>('/notifications');
+
+    sessionStorage.setItem('tp-demo-email', 'rahul.verma@company.com');
+    const traineeTwoRes = get<{ data: { id: string }[] }>('/notifications');
+
+    const traineeOneIds = new Set(traineeOneRes.data.map((n) => n.id));
+    const traineeTwoIds = new Set(traineeTwoRes.data.map((n) => n.id));
+    expect([...traineeOneIds].some((id) => traineeTwoIds.has(id))).toBe(false);
+    expect(traineeOneRes.data.length).toBeGreaterThan(0);
+    expect(traineeTwoRes.data.length).toBeGreaterThan(0);
+  });
+
+  it('marking one notification read only affects that recipient, and unreadCount reflects it', () => {
+    demo.startDemoSession('trainee');
+    const before = get<{ data: { id: string; readAt: string | null }[]; unreadCount: number }>('/notifications');
+    const target = before.data.find((n) => !n.readAt)!;
+    expect(before.unreadCount).toBeGreaterThan(0);
+
+    demo.handleDemoRequest('POST', `/notifications/${target.id}/read`, undefined);
+
+    const after = get<{ data: { id: string; readAt: string | null }[]; unreadCount: number }>('/notifications');
+    expect(after.data.find((n) => n.id === target.id)?.readAt).not.toBeNull();
+    expect(after.unreadCount).toBe(before.unreadCount - 1);
+  });
+
+  it('mark-all-read zeroes unreadCount for the current user without needing individual ids', () => {
+    demo.startDemoSession('trainee');
+    demo.handleDemoRequest('POST', '/notifications/read-all', undefined);
+    const after = get<{ unreadCount: number }>('/notifications');
+    expect(after.unreadCount).toBe(0);
+  });
+});
+
 describe('create-batch automation (template → copy)', () => {
   it('instantiates the full plan schedule onto the new batch without touching the template', () => {
     demo.startDemoSession('admin');

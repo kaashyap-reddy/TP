@@ -12,6 +12,7 @@ const attendanceFindMany = vi.fn();
 const attendanceCount = vi.fn();
 const feedbackEntryFindMany = vi.fn();
 const feedbackEntryAggregate = vi.fn();
+const batchFacilitatorFindFirst = vi.fn();
 
 vi.mock('../prisma/client', () => ({
   prisma: {
@@ -24,6 +25,9 @@ vi.mock('../prisma/client', () => ({
       findMany: (...a: unknown[]) => batchTraineeFindMany(...a),
       count: (...a: unknown[]) => batchTraineeCount(...a)
     },
+    // assertBatchAccess/assertFacilitatorOrAdminAccess widen facilitator ownership to active
+    // batch-team membership via isOnBatchTeam(), which queries this table.
+    batchFacilitator: { findFirst: (...a: unknown[]) => batchFacilitatorFindFirst(...a) },
     assignment: { findMany: (...a: unknown[]) => assignmentFindMany(...a) },
     submission: {
       aggregate: (...a: unknown[]) => submissionAggregate(...a),
@@ -55,9 +59,12 @@ function pctRounded(numerator: number, denominator: number): number {
 }
 
 describe('batches.service — facilitator batch scoping', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    batchFacilitatorFindFirst.mockResolvedValue(null);
+  });
 
-  it("list() scopes the query to only the given facilitator's batches", async () => {
+  it("list() scopes the query to only the given facilitator's batches (owner or active team member)", async () => {
     batchFindMany.mockResolvedValueOnce([]);
     batchCount.mockResolvedValueOnce(0);
 
@@ -65,7 +72,11 @@ describe('batches.service — facilitator batch scoping', () => {
     await list({ ...batchQuery, facilitatorId: 'facilitator-1' } as never);
 
     const whereArg = batchFindMany.mock.calls[0][0].where;
-    expect(whereArg.facilitatorId).toBe('facilitator-1');
+    const [{ OR }] = whereArg.AND;
+    expect(OR).toEqual([
+      { facilitatorId: 'facilitator-1' },
+      { facilitatorAssignments: { some: { facilitatorId: 'facilitator-1', status: { not: 'Removed' } } } }
+    ]);
   });
 
   describe('getMetrics', () => {
@@ -91,6 +102,22 @@ describe('batches.service — facilitator batch scoping', () => {
       const metrics = await getMetrics(facilitatorOwner, 'batch-1');
 
       expect(metrics.traineeCount).toBe(2);
+    });
+
+    it('allows a non-primary active team member (e.g. a Trainer on the facilitator team)', async () => {
+      batchFindFirst.mockResolvedValueOnce(ownedBatch);
+      batchFacilitatorFindFirst.mockResolvedValueOnce({ id: 'assignment-1', status: 'Active' });
+      batchTraineeCount.mockResolvedValueOnce(0);
+      submissionAggregate.mockResolvedValueOnce({ _avg: { grade: null } });
+      submissionCount.mockResolvedValueOnce(0).mockResolvedValueOnce(0).mockResolvedValueOnce(0);
+      attendanceCount.mockResolvedValueOnce(0).mockResolvedValueOnce(0);
+      feedbackEntryAggregate.mockResolvedValueOnce({ _avg: { rating: null } });
+
+      const { getMetrics } = await import('../services/batches.service');
+      await expect(getMetrics(facilitatorOutsider, 'batch-1')).resolves.toBeDefined();
+      expect(batchFacilitatorFindFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { batchId: 'batch-1', facilitatorId: 'facilitator-2', status: { not: 'Removed' } } })
+      );
     });
 
     it('does not restrict admin', async () => {

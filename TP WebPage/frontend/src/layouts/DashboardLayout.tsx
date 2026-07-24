@@ -3,7 +3,10 @@ import { NavItem } from '../constants/navigation';
 import { isDemoMode } from '../services/api/demoMode';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { useEscapeKey } from '../hooks/useEscapeKey';
+import { useSettingsDrawerStore } from '../store/settingsDrawerStore';
 import SettingsDrawer from '../components/SettingsDrawer';
+import MobileNavDrawer from '../components/MobileNavDrawer';
+import Button from '../components/Button';
 
 export interface NavGroupDef {
   key: string;
@@ -118,7 +121,10 @@ export default function DashboardLayout<TabId extends string>({
   children
 }: DashboardLayoutProps<TabId>) {
   const [openSection, setOpenSection] = useState<string | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const settingsOpen = useSettingsDrawerStore((s) => s.open);
+  const openSettings = useSettingsDrawerStore((s) => s.openSettings);
+  const closeSettings = useSettingsDrawerStore((s) => s.closeSettings);
   const dropdownsRef = useRef<HTMLDivElement>(null);
   useClickOutside(dropdownsRef, () => setOpenSection(null), openSection !== null);
   useEscapeKey(() => setOpenSection(null), openSection !== null);
@@ -177,8 +183,8 @@ export default function DashboardLayout<TabId extends string>({
         </div>
       )}
       <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar */}
-        <aside className="w-48 flex-shrink-0 bg-blue-950 flex flex-col z-20">
+        {/* Sidebar -- desktop only; tablet/mobile use the off-canvas MobileNavDrawer instead. */}
+        <aside className="hidden lg:flex w-48 flex-shrink-0 bg-blue-950 flex-col z-20">
           <div className="flex h-16 items-center justify-center border-b border-white/10 px-3">
             <span className="text-center text-sm font-bold leading-tight text-white">{brandLabel}</span>
           </div>
@@ -194,7 +200,7 @@ export default function DashboardLayout<TabId extends string>({
                 <Fragment key={group.key}>{renderDropdown(group.key, group.iconPath, group.label, itemsForGroup(group.key))}</Fragment>
               ))}
             </div>
-            <StackItem icon={SETTINGS_ICON} label="Settings" active={settingsOpen} onClick={() => setSettingsOpen(true)} />
+            <StackItem icon={SETTINGS_ICON} label="Settings" active={settingsOpen} onClick={openSettings} />
           </nav>
           <div className="mt-auto border-t border-white/10 px-3 py-3">
             <StackItem icon={LOGOUT_ICON} label="Logout" active={false} onClick={onLogout} />
@@ -202,10 +208,19 @@ export default function DashboardLayout<TabId extends string>({
         </aside>
 
         {/* Main Content */}
-        <main className="flex-1 flex flex-col overflow-hidden">
-          <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 sm:px-8 z-10 shadow-sm">
-            <h1 className={`${headerTitleClassName} truncate min-w-0`}>{headerTitle}</h1>
-            <div className="flex items-center space-x-6 flex-shrink-0">
+        <main className="flex-1 flex flex-col overflow-hidden min-w-0">
+          <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between gap-3 px-3 sm:px-4 lg:px-8 z-10 shadow-sm">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="-ml-1 lg:hidden">
+                <Button variant="ghost" size="icon" aria-label="Open menu" onClick={() => setMobileNavOpen(true)}>
+                  <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                  </svg>
+                </Button>
+              </div>
+              <h1 className={`${headerTitleClassName} truncate min-w-0`}>{headerTitle}</h1>
+            </div>
+            <div className="flex items-center gap-2 sm:gap-4 lg:space-x-6 flex-wrap justify-end flex-shrink min-w-0">
               {headerExtra}
               {headerRight}
             </div>
@@ -214,7 +229,18 @@ export default function DashboardLayout<TabId extends string>({
         </main>
       </div>
 
-      <SettingsDrawer open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <MobileNavDrawer
+        open={mobileNavOpen}
+        onClose={() => setMobileNavOpen(false)}
+        brandLabel={brandLabel}
+        navItems={navItems}
+        navGroups={navGroups}
+        activeTab={activeTab}
+        onTabChange={onTabChange}
+        onLogout={onLogout}
+      />
+
+      <SettingsDrawer open={settingsOpen} onClose={closeSettings} />
     </div>
   );
 }

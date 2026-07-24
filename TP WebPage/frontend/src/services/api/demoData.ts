@@ -24,6 +24,9 @@ export interface DemoUser extends PersonRef {
     department: string | null;
     idNumber: string;
     avatarStorageKey: string | null;
+    // Optional -- only set once a demo session actually uploads an avatar (see demoMode.ts);
+    // every seeded fixture starts with no avatar, so there's no need to touch every literal below.
+    avatarUpdatedAt?: string | null;
     batch?: string;
     course?: string;
   };
@@ -1250,5 +1253,67 @@ export const DEMO_ANNOUNCEMENTS: DemoAnnouncement[] = [
     createdAt: '2026-07-05T00:00:00.000Z',
     author: adminAlex,
     batch: null
+  }
+];
+
+export interface DemoNotification {
+  id: string;
+  recipientId: string;
+  type: string;
+  title: string;
+  message: string;
+  targetUrl: string | null;
+  severity: 'Info' | 'Warning' | 'Critical';
+  createdAt: string;
+  readAt: string | null;
+}
+
+// Deliberately scoped per-recipient, the same way the real backend generates notifications --
+// demo-trainee and demo-trainee-2 see different items below specifically so the role/user
+// scoping is visibly real in Demo Mode, not just enforced server-side where it can't be seen.
+export const DEMO_NOTIFICATIONS: DemoNotification[] = [
+  {
+    id: 'demo-notif-admin-1',
+    recipientId: adminAlex.id,
+    type: 'BatchUnassigned',
+    title: 'Batch has no facilitator',
+    message: '"UI/UX - September 2026" was created without a facilitator/POC assigned.',
+    targetUrl: '/admin/batches',
+    severity: 'Warning',
+    createdAt: '2026-07-22T09:00:00.000Z',
+    readAt: null
+  },
+  {
+    id: 'demo-notif-facilitator-1',
+    recipientId: facilitatorJunaid.id,
+    type: 'SubmissionReceived',
+    title: 'New submission to grade',
+    message: 'Priya Sharma submitted "Requirement Gathering Case Study — Day 2".',
+    targetUrl: '/facilitator/assignments',
+    severity: 'Info',
+    createdAt: '2026-07-22T14:30:00.000Z',
+    readAt: null
+  },
+  {
+    id: 'demo-notif-trainee-1',
+    recipientId: 'demo-trainee',
+    type: 'SubmissionReviewed',
+    title: 'Your submission was reviewed',
+    message: 'Feedback is available for "Requirement Gathering Case Study — Day 2".',
+    targetUrl: '/trainee/assignments',
+    severity: 'Info',
+    createdAt: '2026-07-21T16:00:00.000Z',
+    readAt: null
+  },
+  {
+    id: 'demo-notif-trainee-2',
+    recipientId: 'demo-trainee-2',
+    type: 'AssignmentPublished',
+    title: 'New assignment published',
+    message: '"SQL Basics Case Study — Day 6" is now available.',
+    targetUrl: '/trainee/assignments',
+    severity: 'Info',
+    createdAt: '2026-07-20T08:00:00.000Z',
+    readAt: '2026-07-20T09:00:00.000Z'
   }
 ];

@@ -15,9 +15,11 @@ const AccountSettingsPage = lazy(() => import('./pages/AccountSettingsPage'));
 const TraineeProfilePage = lazy(() => import('./pages/TraineeProfilePage'));
 const FacilitatorBatchDetailPage = lazy(() => import('./pages/FacilitatorBatchDetailPage'));
 const TrainingPlanDetailPage = lazy(() => import('./pages/admin/TrainingPlanDetailPage'));
+const AdminBatchDetailPage = lazy(() => import('./pages/admin/AdminBatchDetailPage'));
 const AdminTraineeProfilePage = lazy(() => import('./pages/admin/AdminTraineeProfilePage'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'));
+const AccessDeniedPage = lazy(() => import('./pages/AccessDeniedPage'));
 
 function RouteLoadingFallback() {
   return (
@@ -41,6 +43,7 @@ export default function App() {
           <Route path={ROUTES.LOGIN} element={<LoginPage />} />
           <Route path={ROUTES.INVITE} element={<InvitePage />} />
           <Route path={ROUTES.RESET_PASSWORD} element={<ResetPasswordPage />} />
+          <Route path={ROUTES.ACCESS_DENIED} element={<AccessDeniedPage />} />
           <Route
             path={ROUTES.ADMIN}
             element={
@@ -65,7 +68,14 @@ export default function App() {
               </RequireAuth>
             }
           />
-          <Route path={ROUTE_PATTERNS.ASSIGNMENT_DETAIL} element={<AssignmentDetailPage />} />
+          <Route
+            path={ROUTE_PATTERNS.ASSIGNMENT_DETAIL}
+            element={
+              <RequireAuth role={['admin', 'facilitator']}>
+                <AssignmentDetailPage />
+              </RequireAuth>
+            }
+          />
           <Route
             path={ROUTE_PATTERNS.FACILITATOR_TRAINEE_PROFILE}
             element={
@@ -87,6 +97,14 @@ export default function App() {
             element={
               <RequireAuth role="admin">
                 <TrainingPlanDetailPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path={ROUTE_PATTERNS.ADMIN_BATCH_DETAIL}
+            element={
+              <RequireAuth role="admin">
+                <AdminBatchDetailPage />
               </RequireAuth>
             }
           />

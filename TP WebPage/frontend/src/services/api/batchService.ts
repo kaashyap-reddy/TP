@@ -151,12 +151,18 @@ export async function createBatch(input: CreateBatchInput): Promise<Batch> {
 export async function updateBatch(id: string, changes: Partial<Batch>): Promise<Batch> {
   // trainingPlanId is immutable after creation (see backend's updateBatchSchema) — program/track
   // are derived from it, so they aren't independently editable either.
-  const { poc, startMonth, status, name, members } = changes;
+  const { poc, startMonth, startDate, status, name, code, endDate, members } = changes;
 
   const patch: Record<string, unknown> = {};
   if (name !== undefined) patch.name = name;
+  if (code !== undefined) patch.code = code;
   if (status !== undefined) patch.status = status;
-  if (startMonth !== undefined) patch.startMonth = monthNameToDate(startMonth);
+  // startDate (a real ISO date, e.g. from a date picker) takes precedence over the lossy
+  // month-name-only startMonth path -- monthNameToDate() always anchors to the *current* year,
+  // which silently corrupts any batch not starting in the current calendar year.
+  if (startDate !== undefined) patch.startMonth = startDate ? new Date(startDate).toISOString() : undefined;
+  else if (startMonth !== undefined) patch.startMonth = monthNameToDate(startMonth);
+  if (endDate !== undefined) patch.endDate = endDate ? new Date(endDate).toISOString() : null;
   if (poc !== undefined) {
     patch.facilitatorId = (await findUserIdByName(poc, 'facilitator')) ?? null;
   }

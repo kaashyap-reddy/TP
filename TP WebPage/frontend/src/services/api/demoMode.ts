@@ -15,6 +15,7 @@ import {
   DEMO_BATCHES,
   DEMO_FACILITATOR_ASSIGNMENTS,
   DEMO_FEEDBACK,
+  DEMO_NOTIFICATIONS,
   DEMO_REASSIGNMENT_REQUESTS,
   DEMO_RESOURCES,
   DEMO_SESSIONS,
@@ -66,6 +67,20 @@ function currentDemoUser() {
   return DEMO_USERS.find((u) => u.email === email) ?? DEMO_USERS[0];
 }
 
+/** Used by apiClient's apiDownload() to know whose uploaded avatar file to hand back. */
+export function currentDemoUserId(): string {
+  return currentDemoUser().id;
+}
+
+// Uploaded avatar files, keyed by demo user id -- kept out of DEMO_USERS itself (which is JSON-
+// cloneable fixture data) since a File/Blob isn't serializable the same way. apiDownload() reads
+// from this map to answer GET /users/me/avatar the same way a real upload would round-trip.
+const demoAvatarFiles = new Map<string, File>();
+
+export function getDemoAvatarFile(userId: string): File | undefined {
+  return demoAvatarFiles.get(userId);
+}
+
 // ---- in-memory, mutable copies so create/update/delete during a demo session feel real ----
 let batches = clone(DEMO_BATCHES);
 let assignments = clone(DEMO_ASSIGNMENTS);
@@ -74,6 +89,7 @@ let attendance = clone(DEMO_ATTENDANCE);
 let resources = clone(DEMO_RESOURCES);
 let feedback = clone(DEMO_FEEDBACK);
 let announcements = clone(DEMO_ANNOUNCEMENTS);
+const notifications = clone(DEMO_NOTIFICATIONS);
 let announcementReads: { announcementId: string; userId: string }[] = [];
 let facilitatorAssignments = clone(DEMO_FACILITATOR_ASSIGNMENTS);
 let reassignmentRequests = clone(DEMO_REASSIGNMENT_REQUESTS);
@@ -261,6 +277,36 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
   if (method === 'PATCH' && path === '/users/me') {
     const user = currentDemoUser();
     Object.assign(user, b);
+    return { user };
+  }
+  if (method === 'POST' && path === '/users/me/avatar') {
+    const file = b.avatar;
+    if (!(file instanceof File)) {
+      const err = new Error('An image file is required.') as Error & { status?: number };
+      err.status = 400;
+      throw err;
+    }
+    if (file.type !== 'image/jpeg' && file.type !== 'image/png') {
+      const err = new Error('Avatar must be a JPG or PNG image.') as Error & { status?: number };
+      err.status = 400;
+      throw err;
+    }
+    if (file.size > 1_000_000) {
+      const err = new Error('Avatar image must be smaller than 1MB.') as Error & { status?: number };
+      err.status = 400;
+      throw err;
+    }
+    const user = currentDemoUser();
+    demoAvatarFiles.set(user.id, file);
+    user.profile.avatarStorageKey = `demo-avatar-${user.id}`;
+    user.profile.avatarUpdatedAt = new Date().toISOString();
+    return { user };
+  }
+  if (method === 'DELETE' && path === '/users/me/avatar') {
+    const user = currentDemoUser();
+    demoAvatarFiles.delete(user.id);
+    user.profile.avatarStorageKey = null;
+    user.profile.avatarUpdatedAt = null;
     return { user };
   }
   if (method === 'GET' && path === '/users') {
@@ -784,6 +830,7 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
   if (method === 'GET' && path === '/assignments') {
     let results = assignments;
     if (query?.batchId) results = results.filter((a) => a.batches.some((bb) => bb.id === query.batchId));
+    if (query?.status) results = results.filter((a) => a.status === query.status);
     return paginated(results.map((a) => withAssignmentFeedbackFormVisibility(a)));
   }
   if (method === 'POST' && path === '/assignments') {
@@ -1000,7 +1047,7 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
     if (!session) notFound();
     if (method === 'GET') return { session: withFeedbackFormVisibility(session) };
     if (method === 'PATCH') {
-      const trainerKeys = ['primaryTrainerId', 'coTrainerIds', 'guestTrainer', 'trainerNotes'];
+      const trainerKeys = ['facilitatorId', 'coTrainerIds', 'guestTrainer', 'trainerNotes'];
       if (trainerKeys.some((k) => k in b)) applyTrainerAssignmentPatch(session, b);
       const rest = Object.fromEntries(Object.entries(b).filter(([k]) => !trainerKeys.includes(k)));
       Object.assign(session, rest);
@@ -1430,9 +1477,31 @@ export function handleDemoRequest(method: Method, path: string, body: unknown, q
     return { events: [...sessionEvents, ...assignmentEvents].sort((x, y) => x.start.localeCompare(y.start)) };
   }
 
-  // Anything not covered above (e.g. notifications — never wired to the real API either, see
-  // DEPLOYMENT.md) — return an empty paginated shape rather than throwing, so an unanticipated
-  // read during the demo degrades to "no data" instead of a hard error.
+  // ---- notifications (scoped to the current demo user exactly like the real backend's
+  // `WHERE recipientId = req.user.id` -- see backend/src/services/notifications.service.ts) ----
+  if (method === 'GET' && path === '/notifications') {
+    const me = currentDemoUser();
+    const mine = notifications.filter((n) => n.recipientId === me.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const unreadOnly = query?.unreadOnly === true || query?.unreadOnly === 'true';
+    const filtered = unreadOnly ? mine.filter((n) => !n.readAt) : mine;
+    const unreadCount = mine.filter((n) => !n.readAt).length;
+    return { ...paginated(filtered), unreadCount };
+  }
+  const notificationReadMatch = matchPath('/notifications/:id/read', path);
+  if (method === 'POST' && notificationReadMatch) {
+    const me = currentDemoUser();
+    const notification = notifications.find((n) => n.id === notificationReadMatch.id && n.recipientId === me.id);
+    if (notification && !notification.readAt) notification.readAt = new Date().toISOString();
+    return undefined;
+  }
+  if (method === 'POST' && path === '/notifications/read-all') {
+    const me = currentDemoUser();
+    notifications.filter((n) => n.recipientId === me.id).forEach((n) => (n.readAt = n.readAt ?? new Date().toISOString()));
+    return undefined;
+  }
+
+  // Anything not covered above — return an empty paginated shape rather than throwing, so an
+  // unanticipated read during the demo degrades to "no data" instead of a hard error.
   if (method === 'GET') return paginated([]);
   return {};
 }
@@ -1504,12 +1573,14 @@ function setPrimaryCoordinatorViaLegacyEdit(batchId: string, facilitatorId: stri
   syncBatchPrimaryCoordinator(batchId);
 }
 
-/** Resolves primaryTrainerId/coTrainerIds/guestTrainer patch fields into the DemoSession shape --
+/** Resolves facilitatorId/coTrainerIds/guestTrainer patch fields into the DemoSession shape --
  * kept separate from the generic Object.assign in the /sessions/:id PATCH handler because these
- * three need id -> PersonRef resolution, not a raw pass-through. */
+ * three need id -> PersonRef resolution, not a raw pass-through. `facilitatorId` (not
+ * `primaryTrainerId`) matches the real backend's updateSessionSchema field name -- see
+ * sessionService.ts#assignSessionTrainer, which sends the same key to both. */
 function applyTrainerAssignmentPatch(session: DemoSession, patch: Record<string, unknown>): void {
-  if ('primaryTrainerId' in patch) {
-    const id = patch.primaryTrainerId as string | null | undefined;
+  if ('facilitatorId' in patch) {
+    const id = patch.facilitatorId as string | null | undefined;
     session.facilitator = id ? facilitatorRefFor(id) : null;
   }
   if ('coTrainerIds' in patch) {

@@ -6,6 +6,8 @@ import { AuthenticatedUser } from '../types/auth';
 import { ApiError } from '../utils/ApiError';
 import { buildPaginatedResponse, getPagination, PaginationQuery } from '../utils/pagination';
 import { gradeSubmissionSchema } from '../validators/submissions.validator';
+import { isOnAnyBatchTeam } from './facilitatorAssignments.service';
+import { notifyUser } from './notifications.service';
 
 const include = {
   trainee: { select: { id: true, name: true, email: true } },
@@ -22,10 +24,12 @@ async function getAssignmentWithBatchesOrThrow(assignmentId: string) {
 }
 
 // facilitatorId is nullable — assignments generated from a Training Plan template usually have
-// no individual owner, in which case only admin can manage submissions for them.
-function assertCanManage(actor: AuthenticatedUser, facilitatorId: string | null) {
+// no individual owner, in which case only admin can manage submissions for them. Also passes for
+// any facilitator who is an active team member of any of the assignment's batches.
+async function assertCanManage(actor: AuthenticatedUser, facilitatorId: string | null, batchIds: string[]) {
   if (actor.role === 'admin') return;
   if (actor.role === 'facilitator' && actor.id === facilitatorId) return;
+  if (actor.role === 'facilitator' && (await isOnAnyBatchTeam(actor.id, batchIds))) return;
   throw ApiError.forbidden('You do not have access to this assignment.');
 }
 
@@ -48,14 +52,17 @@ interface SubmissionRow {
  * being absent from the table, so the roster (and "Not submitted" state) is always complete.
  */
 export async function listForAssignment(
-  _actor: AuthenticatedUser,
+  actor: AuthenticatedUser,
   assignmentId: string,
   query: PaginationQuery & { status?: SubmissionStatus; sortBy: string }
 ) {
-  // Intentionally unrestricted read (any authenticated user) — matches the mock data layer's
-  // existing behavior, where Assignment.submissions was visible to whoever held the store.
+  // Route-level requireRole('admin', 'facilitator') keeps trainees out entirely; here we further
+  // scope a facilitator to assignments they own or are an active batch-team member of, so this
+  // full-roster view (names/grades/feedback for every enrolled trainee) can't be read for a batch
+  // an unrelated facilitator has no relationship to.
   const assignment = await getAssignmentWithBatchesOrThrow(assignmentId);
   const batchIds = assignment.batches.map((b) => b.batchId);
+  await assertCanManage(actor, assignment.facilitatorId, batchIds);
 
   const [enrollments, submissions] = await Promise.all([
     prisma.batchTrainee.findMany({
@@ -119,12 +126,12 @@ export async function listForAssignment(
 export async function getById(actor: AuthenticatedUser, id: string) {
   const submission = await prisma.submission.findUnique({
     where: { id },
-    include: { ...include, assignment: true }
+    include: { ...include, assignment: { include: { batches: { select: { batchId: true } } } } }
   });
   if (!submission) throw ApiError.notFound('Submission not found.');
 
   const isOwner = actor.id === submission.traineeId;
-  if (!isOwner) assertCanManage(actor, submission.assignment.facilitatorId);
+  if (!isOwner) await assertCanManage(actor, submission.assignment.facilitatorId, submission.assignment.batches.map((b) => b.batchId));
 
   return submission;
 }
@@ -142,7 +149,7 @@ export async function submitOwn(actor: AuthenticatedUser, assignmentId: string) 
 
   const isLate = assignment.deadline < new Date();
 
-  return prisma.submission.upsert({
+  const submission = await prisma.submission.upsert({
     where: { assignmentId_traineeId: { assignmentId, traineeId: actor.id } },
     create: {
       assignmentId,
@@ -156,14 +163,39 @@ export async function submitOwn(actor: AuthenticatedUser, assignmentId: string) 
     },
     include
   });
+
+  if (assignment.facilitatorId) {
+    await notifyUser(assignment.facilitatorId, {
+      type: 'SubmissionReceived',
+      title: 'New submission to grade',
+      message: `${submission.trainee.name} submitted "${assignment.title}".`,
+      targetUrl: `/facilitator/assignments/${assignmentId}`,
+      severity: 'Info'
+    });
+  }
+
+  return submission;
 }
 
 export async function grade(actor: AuthenticatedUser, id: string, input: z.infer<typeof gradeSubmissionSchema>) {
-  const submission = await prisma.submission.findUnique({ where: { id }, include: { assignment: true } });
+  const submission = await prisma.submission.findUnique({
+    where: { id },
+    include: { assignment: { include: { batches: { select: { batchId: true } } } } }
+  });
   if (!submission) throw ApiError.notFound('Submission not found.');
-  assertCanManage(actor, submission.assignment.facilitatorId);
+  await assertCanManage(actor, submission.assignment.facilitatorId, submission.assignment.batches.map((b) => b.batchId));
 
-  return prisma.submission.update({ where: { id }, data: input, include });
+  const graded = await prisma.submission.update({ where: { id }, data: input, include });
+
+  await notifyUser(submission.traineeId, {
+    type: 'SubmissionReviewed',
+    title: 'Your submission was reviewed',
+    message: `Feedback is available for "${submission.assignment.title}".`,
+    targetUrl: `/trainee/assignments/${submission.assignmentId}`,
+    severity: 'Info'
+  });
+
+  return graded;
 }
 
 export async function addAttachment(actor: AuthenticatedUser, submissionId: string, file: Express.Multer.File) {
@@ -206,11 +238,14 @@ export async function addAttachment(actor: AuthenticatedUser, submissionId: stri
 }
 
 export async function getAttachmentForDownload(actor: AuthenticatedUser, submissionId: string, attachmentId: string) {
-  const submission = await prisma.submission.findUnique({ where: { id: submissionId }, include: { assignment: true } });
+  const submission = await prisma.submission.findUnique({
+    where: { id: submissionId },
+    include: { assignment: { include: { batches: { select: { batchId: true } } } } }
+  });
   if (!submission) throw ApiError.notFound('Submission not found.');
 
   const isOwner = actor.id === submission.traineeId;
-  if (!isOwner) assertCanManage(actor, submission.assignment.facilitatorId);
+  if (!isOwner) await assertCanManage(actor, submission.assignment.facilitatorId, submission.assignment.batches.map((b) => b.batchId));
 
   const attachment = await prisma.submissionAttachment.findFirst({ where: { id: attachmentId, submissionId } });
   if (!attachment) throw ApiError.notFound('Attachment not found.');

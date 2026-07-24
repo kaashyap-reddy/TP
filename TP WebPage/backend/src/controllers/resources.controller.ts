@@ -7,7 +7,8 @@ import { asyncHandler } from '../utils/asyncHandler';
 import { logger } from '../utils/logger';
 
 export const listResourcesHandler = asyncHandler(async (req: Request, res: Response) => {
-  res.status(200).json(await resourcesService.list(req.query as never));
+  if (!req.user) throw ApiError.unauthorized();
+  res.status(200).json(await resourcesService.list(req.user, req.query as never));
 });
 
 export const createResourceHandler = asyncHandler(async (req: Request, res: Response) => {
@@ -19,7 +20,8 @@ export const createResourceHandler = asyncHandler(async (req: Request, res: Resp
 });
 
 export const getResourceHandler = asyncHandler(async (req: Request, res: Response) => {
-  const resource = await resourcesService.getById(req.params.id);
+  if (!req.user) throw ApiError.unauthorized();
+  const resource = await resourcesService.getById(req.user, req.params.id);
   res.status(200).json({ resource });
 });
 
@@ -39,7 +41,7 @@ export const updateResourceHandler = asyncHandler(async (req: Request, res: Resp
 
 export const deleteResourceHandler = asyncHandler(async (req: Request, res: Response) => {
   if (!req.user) throw ApiError.unauthorized();
-  const resource = await resourcesService.getById(req.params.id);
+  const resource = await resourcesService.getById(req.user, req.params.id);
   await resourcesService.softDelete(req.user, req.params.id);
   await recordAuditEvent({
     eventType: 'FileDeleted',
@@ -51,8 +53,9 @@ export const deleteResourceHandler = asyncHandler(async (req: Request, res: Resp
 });
 
 export const downloadResourceHandler = asyncHandler(async (req: Request, res: Response) => {
-  const resource = await resourcesService.getForDownload(req.params.id);
-  logger.info('file.downloaded', { resourceId: resource.id, downloadedBy: req.user?.id ?? null });
+  if (!req.user) throw ApiError.unauthorized();
+  const resource = await resourcesService.getForDownload(req.user, req.params.id);
+  logger.info('file.downloaded', { resourceId: resource.id, downloadedBy: req.user.id });
   // A Training-Plan-sourced resource is a shared external link (e.g. copied from a template),
   // not an uploaded file — redirect instead of trying to stream a file that doesn't exist here.
   if (resource.externalUrl) {

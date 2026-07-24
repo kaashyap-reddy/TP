@@ -4,6 +4,7 @@ import { prisma } from '../prisma/client';
 import { AuthenticatedUser } from '../types/auth';
 import { ApiError } from '../utils/ApiError';
 import { buildPaginatedResponse, getPagination } from '../utils/pagination';
+import { isOnBatchTeam } from './facilitatorAssignments.service';
 import {
   createAnnouncementSchema,
   listAnnouncementsQuerySchema,
@@ -24,11 +25,14 @@ function serialize(row: AnnouncementRow, readIds: Set<string>) {
   return { ...rest, readByCount: _count.reads, isRead: readIds.has(row.id) };
 }
 
-/** Which batches this non-admin actor belongs to (facilitator: owns; trainee: enrolled). */
+/** Which batches this non-admin actor belongs to (facilitator: owns or is an active team member of; trainee: enrolled). */
 async function visibleBatchIds(actor: AuthenticatedUser): Promise<string[]> {
   if (actor.role === 'facilitator') {
-    const batches = await prisma.batch.findMany({ where: { facilitatorId: actor.id, deletedAt: null }, select: { id: true } });
-    return batches.map((b) => b.id);
+    const [ownedBatches, teamAssignments] = await Promise.all([
+      prisma.batch.findMany({ where: { facilitatorId: actor.id, deletedAt: null }, select: { id: true } }),
+      prisma.batchFacilitator.findMany({ where: { facilitatorId: actor.id, status: { not: 'Removed' } }, select: { batchId: true } })
+    ]);
+    return [...new Set([...ownedBatches.map((b) => b.id), ...teamAssignments.map((a) => a.batchId)])];
   }
   const enrollments = await prisma.batchTrainee.findMany({ where: { traineeId: actor.id, removedAt: null }, select: { batchId: true } });
   return enrollments.map((e) => e.batchId);
@@ -75,7 +79,7 @@ export async function create(actor: AuthenticatedUser, input: z.infer<typeof cre
   if (input.batchId) {
     const batch = await prisma.batch.findFirst({ where: { id: input.batchId, deletedAt: null } });
     if (!batch) throw ApiError.badRequest('No such batch.');
-    if (actor.role === 'facilitator' && batch.facilitatorId !== actor.id) {
+    if (actor.role === 'facilitator' && batch.facilitatorId !== actor.id && !(await isOnBatchTeam(actor.id, batch.id))) {
       throw ApiError.forbidden('You may only post announcements to your own batches.');
     }
   } else if (actor.role !== 'admin') {
@@ -115,6 +119,23 @@ export async function remove(actor: AuthenticatedUser, id: string): Promise<void
 export async function markRead(actor: AuthenticatedUser, id: string): Promise<void> {
   const announcement = await prisma.announcement.findFirst({ where: { id, deletedAt: null } });
   if (!announcement) throw ApiError.notFound('Announcement not found.');
+
+  // A global announcement (batchId: null) is visible to everyone; a batch-scoped one requires
+  // the same relationship list() already enforces for reading it in the first place.
+  if (announcement.batchId && actor.role !== 'admin') {
+    if (actor.role === 'facilitator') {
+      const batch = await prisma.batch.findFirst({ where: { id: announcement.batchId } });
+      const owns = batch?.facilitatorId === actor.id;
+      if (!owns && !(await isOnBatchTeam(actor.id, announcement.batchId))) {
+        throw ApiError.forbidden('You do not have access to this announcement.');
+      }
+    } else {
+      const enrollment = await prisma.batchTrainee.findUnique({
+        where: { batchId_traineeId: { batchId: announcement.batchId, traineeId: actor.id } }
+      });
+      if (!enrollment || enrollment.removedAt) throw ApiError.forbidden('You do not have access to this announcement.');
+    }
+  }
 
   await prisma.announcementRead.upsert({
     where: { announcementId_userId: { announcementId: id, userId: actor.id } },

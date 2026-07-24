@@ -112,7 +112,7 @@ router.get('/:id/attachment', validate({ params: assignmentIdParamsSchema }), vi
  * /assignments/{id}/submissions:
  *   get:
  *     tags: [Submissions]
- *     summary: List submissions for an assignment, including a placeholder row (status NotStarted, id null) for every enrolled trainee who hasn't submitted yet
+ *     summary: List submissions for an assignment (admin, or the owning/team facilitator), including a placeholder row (status NotStarted, id null) for every enrolled trainee who hasn't submitted yet
  *     responses:
  *       200: { description: Paginated submission list }
  *   post:
@@ -123,6 +123,7 @@ router.get('/:id/attachment', validate({ params: assignmentIdParamsSchema }), vi
  */
 router.get(
   '/:id/submissions',
+  requireRole('admin', 'facilitator'),
   validate({ params: assignmentIdParamsSchema, query: listSubmissionsQuerySchema }),
   listSubmissionsForAssignmentHandler
 );
